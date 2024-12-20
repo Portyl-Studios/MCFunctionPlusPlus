@@ -1,0 +1,39 @@
+{
+  "name": "MCFunction++",
+  "version": "1.0.0",
+  "description": "MCFunction++ is a transpiler that hopes to bring modern programming constructs, like variables, arithmetic operations, and control structures, to the world of Minecraft.",
+  "type": "module",
+  "main": "./out/main/main.js",
+  "scripts": {
+    "build": "vite build && tsc && tailwindcss -i ./src/renderer/index.css -o ./out/renderer/index.css",
+    "dev": "concurrently \"node dev.js\" \"npx tailwindcss -i ./src/renderer/index.css -o ./out/renderer/index.css --watch\" \"tsc --watch\" \"vite\"",
+    "electron": "npm run build && electron .",
+    "start": "electron ."
+  },
+  "keywords": [],
+  "author": "touchportyl",
+  "license": "GPL-3.0",
+  "devDependencies": {
+    "@types/electron": "^1.4.38",
+    "@types/react": "^19.0.2",
+    "@types/react-dom": "^19.0.2",
+    "@vitejs/plugin-react": "^4.3.4",
+    "autoprefixer": "^10.4.20",
+    "concurrently": "^9.1.0",
+    "electron": "^33.2.1",
+    "open": "^10.1.0",
+    "postcss": "^8.4.49",
+    "postcss-cli": "^11.0.0",
+    "tailwindcss": "^3.4.17",
+    "typescript": "^5.7.2",
+    "vite": "^6.0.4"
+  },
+  "dependencies": {
+    "@radix-ui/react-icons": "^1.3.2",
+    "electron-is-dev": "^3.0.1",
+    "firebase": "^11.1.0",
+    "lucide-react": "^0.468.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  }
+}
