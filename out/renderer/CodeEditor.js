@@ -2,6 +2,10 @@ import { jsx as _jsx, jsxs as _jsxs } from "react/jsx-runtime";
 import { useState } from 'react';
 import { Play } from 'lucide-react'; // Importing the Play icon from Lucide
 import { transpile } from './transpiler/test';
+// for testing
+// this will output to the console for now
+import { testExampleCode } from './transpiler/examplecode';
+testExampleCode();
 const App = () => {
     const [code, setCode] = useState('');
     const [output, setOutput] = useState('');

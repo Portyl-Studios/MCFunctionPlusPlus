@@ -6,7 +6,7 @@
   "main": "./out/main/main.js",
   "scripts": {
     "build": "vite build && tsc && tailwindcss -i ./src/renderer/index.css -o ./out/renderer/index.css",
-    "dev": "concurrently \"node dev.js\" \"npx tailwindcss -i ./src/renderer/index.css -o ./out/renderer/index.css --watch\" \"tsc --watch\" \"vite\"",
+    "dev": "concurrently \"npx tailwindcss -i ./src/renderer/index.css -o ./out/renderer/index.css --watch\" \"tsc --watch\" \"vite\"",
     "electron": "npm run build && electron .",
     "start": "electron ."
   },
@@ -30,6 +30,7 @@
   },
   "dependencies": {
     "@radix-ui/react-icons": "^1.3.2",
+    "chevrotain": "^11.0.3",
     "electron-is-dev": "^3.0.1",
     "firebase": "^11.1.0",
     "lucide-react": "^0.468.0",
