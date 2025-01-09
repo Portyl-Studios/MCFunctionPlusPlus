@@ -13,13 +13,10 @@ export default class Parser extends CstParser {
       })
     })
 
-    // A statement can be a function declaration, variable declaration, assignment, or a print statement
     $.RULE("statement", () => {
       $.OR([
         { ALT: () => $.SUBRULE($.functionDeclaration) },
         { ALT: () => $.SUBRULE($.variableDeclaration) },
-        { ALT: () => $.SUBRULE($.assignment) },
-        { ALT: () => $.SUBRULE($.printStatement) },
       ])
     })
 
@@ -44,10 +41,24 @@ export default class Parser extends CstParser {
       $.CONSUME(Token.CloseBrace)
     })
 
-    // Variable declaration: type name
+    // Variable declaration: type name() = expression
     $.RULE("variableDeclaration", () => {
-      $.CONSUME(Token.NumberType)
+      $.CONSUME(Token.SelectorType)
       $.CONSUME(Token.Identifier)
+      $.CONSUME(Token.OpenParen)
+
+      // paramters are optional
+      $.OPTION(() => {
+        $.CONSUME1(Token.Identifier)
+        $.MANY(() => {
+          $.CONSUME(Token.Comma)
+          $.CONSUME2(Token.Identifier)
+        })
+      })
+
+      $.CONSUME(Token.CloseParen)
+      $.CONSUME(Token.Assignment)
+      $.SUBRULE($.expression)
     })
 
     // Assignment: name = expression
@@ -57,21 +68,13 @@ export default class Parser extends CstParser {
       $.SUBRULE($.expression)
     })
 
-    // Print statement: print(expression)
-    $.RULE("printStatement", () => {
-      $.CONSUME(Token.Print)
-      $.CONSUME(Token.OpenParen)
-      $.SUBRULE($.expression)
-      $.CONSUME(Token.CloseParen)
-    })
-
-    // An expression can be a number literal or an identifier
+    // An expression can be anything that is a literal or an identifier
     $.RULE("expression", () => {
       $.OR([
-        { ALT: () => $.CONSUME(Token.NumberLiteral) },
-        { ALT: () => $.CONSUME(Token.StringLiteral) },
-        { ALT: () => $.CONSUME(Token.BooleanLiteral) },
+        { ALT: () => $.CONSUME(Token.SelectorLiteral) },
+        { ALT: () => $.CONSUME(Token.CoordinateLiteral) },
         { ALT: () => $.CONSUME(Token.Identifier) },
+        { ALT: () => $.CONSUME(Token.VariableIdentifier) },
       ])
     })
 

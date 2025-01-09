@@ -20,23 +20,29 @@ export const Keyword = createToken({
   name: "Keyword",
   pattern: Lexer.NA,
 })
-export const Struct = createToken({ name: "Struct", pattern: "struct", categories: Keyword })
+//export const Struct = createToken({ name: "Struct", pattern: "struct", categories: Keyword })
 export const Function = createToken({ name: "Function", pattern: "function", categories: Keyword })
-export const Print = createToken({ name: "Print", pattern: "print", categories: Keyword })
+//export const Print = createToken({ name: "Print", pattern: "print", categories: Keyword })
 
 // Types
 export const Type = createToken({
   name: "Type",
   pattern: Lexer.NA,
 })
-export const NumberType = createToken({ name: "NumberType", pattern: "number", categories: Type })
-export const StringType = createToken({ name: "StringType", pattern: "string", categories: Type })
-export const BooleanType = createToken({ name: "BooleanType", pattern: "boolean", categories: Type })
+//export const NumberType = createToken({ name: "NumberType", pattern: "number", categories: Type })
+//export const StringType = createToken({ name: "StringType", pattern: "string", categories: Type })
+//export const BooleanType = createToken({ name: "BooleanType", pattern: "boolean", categories: Type })
+export const SelectorType = createToken({ name: "SelectorType", pattern: "selector", categories: Type })
+export const CoordinateType = createToken({ name: "CoordinateType", pattern: "coordinate", categories: Type })
 
 // Identifiers
 export const Identifier = createToken({
   name: "Identifier",
   pattern: /[a-zA-Z_][a-zA-Z0-9_]*/,
+})
+export const VariableIdentifier = createToken({
+  name: "VariableIdentifier",
+  pattern: /\$\([a-zA-Z_][a-zA-Z0-9_]*\)/,
 })
 
 // Operators
@@ -77,6 +83,16 @@ export const Comma = createToken({ name: "Comma", pattern: "," })
 export const Dot = createToken({ name: "Dot", pattern: "." })
 
 // Literals
+export const SelectorLiteral = createToken({
+  name: "SelectorLiteral",
+  pattern: /@(?:p|a|r|e|s)(?:\[(?:[^\[\]]*)\])?/,
+})
+
+export const CoordinateLiteral = createToken({
+  name: "CoordinateLiteral",
+  pattern: /([~^]?-?\d*\.?\d*\s+[~^]?-?\d*\.?\d*\s+[~^]?-?\d*\.?\d*)/,
+})
+
 export const NumberLiteral = createToken({
   name: "NumberLiteral",
   pattern: /[0-9]+(?:\.[0-9]+)?/,
@@ -96,13 +112,16 @@ export const BooleanLiteral = createToken({
 export const tokens = [
   Whitespace,
   Comment,
-  Struct,
+  //Struct,
   Function,
-  Print,
-  NumberType,
-  StringType,
-  BooleanType,
+  //Print,
+  //NumberType,
+  //StringType,
+  //BooleanType,
+  SelectorType,
+  CoordinateType,
   Identifier,
+  VariableIdentifier,
   Assignment,
   Equal,
   NotEqual,
@@ -122,6 +141,8 @@ export const tokens = [
   CloseBrace,
   OpenParen,
   CloseParen,
+  SelectorLiteral,
+  CoordinateLiteral,
   NumberLiteral,
   StringLiteral,
   BooleanLiteral,
