@@ -52,24 +52,46 @@ export default class Interpreter extends BaseCstVisitor {
 
   //#endregion
 
-  //#region Variable management
+  //#region Scoreboard variable management
 
   // This tracks the variables that have been declared
-  globalVariables: Set<string> = new Set<string>();
+  scoreboardVariables: Set<string> = new Set<string>();
 
   // Check for a global variable only
-  hasGlobalVariable(variableName: any): boolean {
-    return this.globalVariables.has(variableName)
+  hasScoreboardVariable(variableName: any): boolean {
+    return this.scoreboardVariables.has(variableName)
   }
 
   // Add a global variable
   // Make sure it doesn't already exist in a parent context
-  addGlobalVariable(variableName: any) {
-    console.log(`Add global variable: ${variableName}`)
-    if (this.hasGlobalVariable(variableName)) {
-      throw new Error(`Variable ${variableName} already exists in the global scope`)
+  addScoreboardVariable(variableName: any) {
+    console.log(`addVariable: ${variableName}`)
+    if (this.hasScoreboardVariable(variableName)) {
+      throw new Error(`Scoreboard variable ${variableName} already exists in the global scope`)
     }
-    this.globalVariables.add(variableName)
+    this.scoreboardVariables.add(variableName)
+  }
+
+  //#endregion
+
+  //#region Internal variable management
+
+  // This tracks the variables that have been declared
+  internalVariables: Set<string> = new Set<string>();
+
+  // Check for a global variable only
+  hasInternalVariable(variableName: any): boolean {
+    return this.internalVariables.has(variableName)
+  }
+
+  // Add a global variable
+  // Make sure it doesn't already exist in a parent context
+  addInternalVariable(variableName: any) {
+    console.log(`addInternalVariable: ${variableName}`)
+    if (this.hasInternalVariable(variableName)) {
+      throw new Error(`Internal variable ${variableName} already exists in the global scope`)
+    }
+    this.internalVariables.add(variableName)
   }
 
   //#endregion
@@ -105,26 +127,16 @@ export default class Interpreter extends BaseCstVisitor {
   variableDeclaration(ctx: any) {
     console.log("Variable Declaration:", ctx.Identifier[0].image)
     const variableName = ctx.Identifier[0].image
-    if (this.currentContext()) {
-      this.currentContext().addLocalVariable(variableName)
-    } else {
-      this.addGlobalVariable(variableName)
-    }
+    this.addVariable(variableName)
     this.addCommand(new IR.variableDeclaration(variableName))
   }
 
   assignment(ctx: any) {
     console.log("Assignment:", ctx.Identifier[0].image)
     const variableName = ctx.Identifier[0].image
-
-    if (this.currentContext()) {
-      if (!this.currentContext().hasLocalVariable(variableName)) {
-        throw new Error(`Variable ${variableName} has not been declared in the current context: ${this.currentContext().functionName}`)
-      }
-    } else {
-      if (!this.hasGlobalVariable(variableName)) {
-        throw new Error(`Variable ${variableName} has not been declared in the global scope`)
-      }
+    
+    if (!this.hasVariable(variableName)) {
+      throw new Error(`Variable ${variableName} has not been declared in the global scope`)
     }
 
     const value = this.visit(ctx.expression)

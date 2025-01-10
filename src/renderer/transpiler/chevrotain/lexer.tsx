@@ -83,14 +83,28 @@ export const Comma = createToken({ name: "Comma", pattern: "," })
 export const Dot = createToken({ name: "Dot", pattern: "." })
 
 // Literals
+
+// currently does not validate within the square brackets
+// example matches:
+// @p
+// @r[distance=..5]
+// @e[type=example,name=example]
+// @s[tag=$(tag)]
 export const SelectorLiteral = createToken({
   name: "SelectorLiteral",
   pattern: /@(?:p|a|r|e|s)(?:\[(?:[^\[\]]*)\])?/,
 })
 
+// does not validate if all are ~ or ^
+// example matches:
+// ~ ~ ~
+// ^ ^ ^
+// ~1 ~-2 ~3
+// 1 ~2 $(z)
+// ~ ~$(y) ~
 export const CoordinateLiteral = createToken({
   name: "CoordinateLiteral",
-  pattern: /([~^]?-?\d*\.?\d*\s+[~^]?-?\d*\.?\d*\s+[~^]?-?\d*\.?\d*)/,
+  pattern: /([~^]?(?:-?\d*\.?\d*|\$\([a-zA-Z_][a-zA-Z0-9_]*\))\s+[~^]?(?:-?\d*\.?\d*|\$\([a-zA-Z_][a-zA-Z0-9_]*\))\s+[~^]?(?:-?\d*\.?\d*|\$\([a-zA-Z_][a-zA-Z0-9_]*\)))/,
 })
 
 export const NumberLiteral = createToken({

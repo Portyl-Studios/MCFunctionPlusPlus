@@ -2,18 +2,11 @@
 
 const examplecode =
 `
-function main()
-{
-  // Create a new variable
-  number x
+selector any_with_tag(tag) = @e[tag=$(tag)]
+//coordinates offset(y) = ~4 ~$(y) ~-2
 
-  // Assign a value to the variable
-  x = 5
-  
-  // Print the variable
-  print("x = ")
-  print(x)
-}
+//execute at offset(2) if entity any_with_tag(npc)
+// execute at ~4 ~2 ~-2 if entity @e[tag=npc]
 `
 
 import { lexer } from './chevrotain/lexer'
@@ -43,7 +36,9 @@ export function testExampleCode() {
     }
     return
   }
-  //console.log(lexingResult)
+
+  //for (const token of lexingResult.tokens) console.log(token)
+  //return
 
   // parse the example code
   const parser = new Parser()
@@ -57,7 +52,9 @@ export function testExampleCode() {
     }
     return
   }
+
   //console.log("CST Output:", JSON.stringify(cst, null, 2))
+  //return
 
   // interpret the example code
   const interpreter = new Interpreter()
