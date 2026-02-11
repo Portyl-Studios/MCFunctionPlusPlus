@@ -16,8 +16,8 @@ MCFunction++ is ideal for both new and experienced developers who want to get in
 
 ### Prerequisites
 
-- [Node.js](https://nodejs.org/) (v18 or higher)
-- [npm](https://www.npmjs.com/) (comes with Node.js)
+- [Node.js](https://nodejs.org/) (v20 or higher)
+- [npm](https://www.npmjs.com/) (v10 or higher, comes with Node.js)
 
 ### Installation
 
