@@ -77,6 +77,10 @@
     "vite": "^7.3.1"
   },
   "dependencies": {
+    "@codemirror/lang-javascript": "^6.2.4",
+    "@codemirror/state": "^6.5.4",
+    "@codemirror/view": "^6.39.13",
+    "codemirror": "^6.0.2",
     "react": "^19.2.4",
     "react-dom": "^19.2.4"
   }
