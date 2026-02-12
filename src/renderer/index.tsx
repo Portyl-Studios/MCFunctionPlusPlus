@@ -6,6 +6,8 @@ import ReactDOM from 'react-dom/client'
 import { basicSetup } from 'codemirror'
 import { EditorState } from '@codemirror/state'
 import { EditorView } from '@codemirror/view'
+import { EditorView, keymap } from '@codemirror/view'
+import { indentWithTab } from '@codemirror/commands'
 import { javascript } from '@codemirror/lang-javascript'
 import './index.css'
 
@@ -18,7 +20,11 @@ function CodeEditor() {
 
     const state = EditorState.create({
       doc: "// Welcome to CodeMirror!\nconsole.log('Hello, MCFunction++!');",
-      extensions: [basicSetup, javascript()],
+      extensions: [
+        basicSetup,
+        keymap.of([indentWithTab]),
+        javascript()
+      ],
     })
 
     const view = new EditorView({
