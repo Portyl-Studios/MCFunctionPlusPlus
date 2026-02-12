@@ -1,5 +1,7 @@
-import { contextBridge } from 'electron'
+import { contextBridge, ipcRenderer } from 'electron'
 
 contextBridge.exposeInMainWorld('electron', {
-  // Add APIs if needed
+  writeFile: (directory: string, filename: string, contents: string) => {
+    return ipcRenderer.invoke('write-file', { directory, filename, contents })
+  }
 })
