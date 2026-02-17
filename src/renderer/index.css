@@ -1,1 +1,75 @@
 @import "tailwindcss";
+@import '@vscode/codicons/dist/codicon.css';
+
+@theme {
+  --color-codemirror-default: #282c34;
+  --color-codemirror-highlight: #2a313d;
+  --color-codemirror-select: #3f4859;
+  --color-codemirror-50: #f0f2f5;
+  --color-codemirror-100: #d4d7dd;
+  --color-codemirror-200: #b8bdc6;
+  --color-codemirror-300: #8a9199;
+  --color-codemirror-400: #5a6270;
+  --color-codemirror-500: #282c34;
+  --color-codemirror-600: #21252c;
+  --color-codemirror-700: #1a1d23;
+  --color-codemirror-800: #14171c;
+  --color-codemirror-900: #0d0f12;
+  --color-codemirror-950: #060708;
+}
+
+@layer components {
+  .header-button-left {
+    @apply
+      bg-codemirror-700 hover:bg-codemirror-500
+      text-codemirror-100
+      px-3 py-2
+      cursor-pointer
+      select-none
+    ;
+  }
+  .header-button-right {
+    @apply
+      bg-codemirror-700 hover:bg-codemirror-500
+      text-codemirror-100
+      px-3 py-2
+      cursor-pointer
+      select-none
+    ;
+  }
+
+  .button {
+    @apply
+      bg-codemirror-600 hover:bg-codemirror-500
+      border-1 border-codemirror-500 rounded
+      text-codemirror-100
+      px-3 py-1
+      cursor-pointer
+      select-none
+    ;
+  }
+}
+
+/* Scrollbar styling */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-track {
+  background: #1a1d23;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #282c34;
+  border-radius: 5px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #2a313d;
+}
+
+* {
+  scrollbar-color: #282c34 #1a1d23;
+  scrollbar-width: auto;
+}

@@ -8,23 +8,44 @@ import { EditorState } from '@codemirror/state'
 import { EditorView, keymap } from '@codemirror/view'
 import { indentWithTab } from '@codemirror/commands'
 import { javascript } from '@codemirror/lang-javascript'
+import { oneDark } from '@codemirror/theme-one-dark'
 import './index.css'
-
-const MIN_PANEL_WIDTH = 150
-const MAX_PANEL_WIDTH = 600
+import { Panel, ResizeHandle, useResizablePanel } from './panel'
+import { FileTree } from './filetree'
+import { DropdownMenu, type MenuItem } from './dropdownmenu'
+import { useWorkspace } from './use-workspace'
+import iconPath from '../../assets/icon.png'
 
 function CodeEditor() {
   const editorRef = useRef<HTMLDivElement>(null)
   const viewRef = useRef<EditorView | null>(null)
-  const [leftPanelWidth, setLeftPanelWidth] = useState(250)
-  const isDraggingRef = useRef(false)
+  const leftPanel = useResizablePanel({ initialWidth: 250, position: 'left' })
+  const rightPanel = useResizablePanel({ initialWidth: 350, position: 'right' })
+  const [selectedFolder, setSelectedFolder] = useState<string | null>(null)
+  const [filePaths, setFilePaths] = useState<string[]>([])
+  const [isFileMenuOpen, setIsFileMenuOpen] = useState(false)
+  const { workspaceInfo, handleOpenWorkspace, handleSaveWorkspace, handleSaveWorkspaceAs } = useWorkspace()
+
+  const handlePickFolder = async () => {
+    const folder = await (window as any).electron.pickFolder()
+    if (folder) {
+      setSelectedFolder(folder)
+      try {
+        const files = await (window as any).electron.listFiles(folder)
+        setFilePaths(Array.isArray(files) ? files : [])
+      } catch {
+        setFilePaths([])
+      }
+    }
+  }
 
   useEffect(() => {
     if (!editorRef.current) return
 
     const state = EditorState.create({
-      doc: "// Welcome to CodeMirror!\nconsole.log('Hello, MCFunction++!');",
+      doc: "# Welcome to CodeMirror!\n",
       extensions: [
+        oneDark,
         basicSetup,
         keymap.of([indentWithTab]),
         javascript()
@@ -43,64 +64,109 @@ function CodeEditor() {
     }
   }, [])
 
-  const handleMouseDown = () => {
-    isDraggingRef.current = true
-  }
+  const relativePaths = React.useMemo(() => {
+    if (!selectedFolder) return []
 
-  useEffect(() => {
-    const handleMouseMove = (e: MouseEvent) => {
-      if (!isDraggingRef.current) return
+    const base = selectedFolder.replace(/\\/g, '/').replace(/\/+$/, '')
+    return filePaths.map((rawPath) => {
+      const normalized = rawPath.replace(/\\/g, '/')
+      const baseWithSlash = `${base}/`
 
-      const newWidth = e.clientX
-      if (newWidth >= MIN_PANEL_WIDTH && newWidth <= MAX_PANEL_WIDTH) {
-        setLeftPanelWidth(newWidth)
+      if (normalized.toLowerCase().startsWith(baseWithSlash.toLowerCase())) {
+        return normalized.slice(baseWithSlash.length)
       }
-    }
 
-    const handleMouseUp = () => {
-      isDraggingRef.current = false
-    }
-
-    window.addEventListener('mousemove', handleMouseMove)
-    window.addEventListener('mouseup', handleMouseUp)
-
-    return () => {
-      window.removeEventListener('mousemove', handleMouseMove)
-      window.removeEventListener('mouseup', handleMouseUp)
-    }
-  }, [])
+      return normalized
+    })
+  }, [filePaths, selectedFolder])
 
   return (
-    <div className="w-full h-full flex flex-col">
-      {/* Header */}
-      <div className="bg-gray-200 text-gray-900 p-4 border-b border-gray-300">
-        <h1 className="text-xl font-bold">MCFunction++ Editor</h1>
-      </div>
-      {/* Main Panel */}
-      <div className="flex flex-row flex-1 overflow-hidden bg-gray-50">
-        {/* Left Panel */}
-        <div
-          style={{ width: leftPanelWidth }}
-          className="bg-gray-100 border-r border-gray-300 overflow-auto"
-        >
-          <div className="p-4">
-            <h2 className="font-semibold text-gray-900 mb-4">Files</h2>
-            <div className="text-sm text-gray-600">Panel content here</div>
-          </div>
-        </div>
+    <div className="w-full h-full flex flex-col select-none">
 
-        {/* Resize Handle */}
-        <div
-          onMouseDown={handleMouseDown}
-          className="w-1 bg-gray-300 hover:bg-blue-500 cursor-col-resize transition-colors"
-        ></div>
+      {/* Header */}
+      <div className="flex flex-row bg-codemirror-700 text-sm text-codemirror-100 border-b border-codemirror-600">
+        <div className="px-4 py-2 font-bold">
+          <img src={iconPath} alt="MCFunction++" style={{ height: '20px', width: '20px' }} />
+        </div>
+        
+        {/* Buttons */}
+        <div className="flex flex-row flex-1">
+
+          <DropdownMenu 
+            label="File"
+            items={[
+              { label: 'Open Folder', onClick: handlePickFolder },
+              {},
+              { label: 'Open Workspace', onClick: handleOpenWorkspace },
+              { label: 'Save Workspace', onClick: handleSaveWorkspace },
+              { label: 'Save Workspace As', onClick: handleSaveWorkspaceAs },
+              {},
+              { label: 'Exit', onClick: () => (window as any).electron.quit() }
+            ] as MenuItem[]}
+            isOpen={isFileMenuOpen}
+            setIsOpen={setIsFileMenuOpen}
+          />
+
+          <div className="flex-1"></div>
+          <div
+            onClick={() => (window as any).electron.minimize()} 
+            className="header-button-right pt-2.5 pb-2 codicon codicon-chrome-minimize"
+          />
+          <div
+            onClick={() => (window as any).electron.toggleFullscreen()}
+            className="header-button-right pt-2.5 pb-2 codicon codicon-chrome-restore"
+          />
+          <div
+            onClick={() => (window as any).electron.quit()}
+            className="header-button-right hover:bg-rose-600 pt-2.5 pb-2 codicon codicon-chrome-close"
+          />
+        </div>
+      </div>
+
+      {/* Main Panel */}
+      <div className="flex flex-row flex-1 overflow-hidden">
+
+        {/* Left Panel */}
+        <Panel width={leftPanel.width} position="left" title="Files">
+          {
+            selectedFolder ? (
+              <FileTree paths={relativePaths} className="mt-2"/>
+            ) : (<>
+              <div className="text-sm text-codemirror-300">No folder selected</div>
+              <div className="flex flex-col items-center m-4 button" onClick={handlePickFolder}>
+                <div className="text-sm text-codemirror-100">Open Folder</div>
+              </div>
+            </>)
+          }
+        </Panel>
+
+        {/* Left Panel Resize Handle */}
+        <ResizeHandle onMouseDown={leftPanel.handleMouseDown} />
 
         {/* Editor Panel */}
-        <div className="flex-1 overflow-auto bg-gray-50" ref={editorRef}></div>
+        <div className="flex-1 overflow-auto bg-codemirror-default" ref={editorRef}></div>
+
+        {/* Right Panel Resize Handle */}
+        <ResizeHandle onMouseDown={rightPanel.handleMouseDown} />
+        
+        {/* Right Panel */}
+        <Panel width={rightPanel.width} position="right" title="Settings">
+          {
+            workspaceInfo.dir ? (
+              <div className="text-sm text-codemirror-300">
+                <div className="font-mono break-words">{workspaceInfo.dir}</div>
+              </div>
+            ) : (<>
+              <div className="text-sm text-codemirror-300">No folder selected</div>
+            </>)
+          }
+        </Panel>
+
       </div>
+
       {/* Footer Panel */}
-      <div className="bg-gray-200 text-gray-900 p-4 border-t border-gray-300">
-        <div className="text-sm">Footer content here</div>
+      <div className="flex flex-row bg-codemirror-700 text-codemirror-100 px-2 py-1 border-t border-codemirror-600">
+        <div className="text-sm">Made by touchportyl</div>
       </div>
     </div>
   )
@@ -108,7 +174,7 @@ function CodeEditor() {
 
 function App() {
   return (
-    <div className="h-screen bg-gray-100">
+    <div className="h-screen bg-codemirror-700 font-sans">
       <CodeEditor />
     </div>
   )

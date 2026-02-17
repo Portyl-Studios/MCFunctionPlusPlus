@@ -1,7 +1,10 @@
 import { app, BrowserWindow, ipcMain } from 'electron'
-import { promises as fs } from 'fs'
 import path from 'path'
 import { fileURLToPath } from 'url'
+import { getAllFiles, registerPickFolderHandler } from './folderops'
+import { registerWindowControlHandlers } from './window'
+import { readFile, writeFile, readFileFromDirectory } from './fileops'
+import { registerWorkspaceHandlers } from './workspace'
 
 // Replicating __dirname using ES Modules
 const __filename = fileURLToPath(import.meta.url)
@@ -9,100 +12,38 @@ const __dirname = path.dirname(__filename)
 
 let mainWindow: BrowserWindow | null = null
 
-
-// Helper functions for validation
-const isInvalidFilename = (filename: string): boolean => {
-  const trimmed = filename.trim()
-
-  if (!trimmed) return true
-  if (trimmed === '.' || trimmed === '..') return true
-
-  // Invalid characters for Windows filenames.
-  if (/[<>:"/\\|?*]/.test(trimmed)) return true
-
-  // Control characters are not allowed.
-  if (/^[\x00-\x1F]/.test(trimmed) || /[\x00-\x1F]/.test(trimmed)) return true
-
-  // No trailing spaces or periods.
-  if (/[\.\s]$/.test(trimmed)) return true
-
-  // Reserved device names (case-insensitive), even with extensions.
-  const reserved = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(\..*)?$/i
-  if (reserved.test(trimmed)) return true
-
-  return false
-}
-
-const isInvalidPathSegment = (segment: string): boolean => {
-  const trimmed = segment.trim()
-
-  if (!trimmed) return true
-  if (trimmed === '.' || trimmed === '..') return true
-
-  // Invalid characters for Windows path segments.
-  if (/[<>:"/\\|?*]/.test(trimmed)) return true
-
-  // Control characters are not allowed.
-  if (/^[\x00-\x1F]/.test(trimmed) || /[\x00-\x1F]/.test(trimmed)) return true
-
-  // No trailing spaces or periods.
-  if (/[\.\s]$/.test(trimmed)) return true
-
-  // Reserved device names (case-insensitive), even with extensions.
-  const reserved = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(\..*)?$/i
-  if (reserved.test(trimmed)) return true
-
-  return false
-}
-
-const isInvalidDirectory = (directory: string): boolean => {
-  const trimmed = directory.trim()
-  if (!trimmed) return true
-
-  // Require absolute paths to avoid traversal or relative escapes.
-  if (!path.isAbsolute(trimmed)) return true
-
-  // Disallow null bytes.
-  if (/\x00/.test(trimmed)) return true
-
-  // Validate each path segment.
-  const segments = trimmed.split(path.sep).filter(Boolean)
-  for (const segment of segments) {
-    if (isInvalidPathSegment(segment)) return true
-  }
-
-  return false
-}
+registerPickFolderHandler(() => mainWindow)
+registerWindowControlHandlers(() => mainWindow)
+registerWorkspaceHandlers(() => mainWindow)
 
 
 // IPC handler to write a file after validation
 ipcMain.handle('write-file', async (_event, { directory, filename, contents }) => {
-  // Check for invalid filename
-  if (isInvalidFilename(filename)) {
-    throw new Error('Invalid filename')
-  }
+  return await writeFile(directory, filename, contents)
+})
 
-  // Check for invalid directories
-  if (isInvalidDirectory(directory)) {
+// IPC handler to read a file
+ipcMain.handle('read-file', async (_event, { directory, filePath }) => {
+  return await readFileFromDirectory(directory, filePath)
+})
+
+// IPC handler to list files in a directory
+ipcMain.handle('list-files', async (_event, { directory }) => {
+  if (!directory || typeof directory !== 'string') {
     throw new Error('Invalid directory')
   }
-
-  const stats = await fs.stat(directory)
-  if (!stats.isDirectory()) {
-    throw new Error('Invalid directory')
-  }
-
-  const targetPath = path.join(directory, filename)
-  await fs.writeFile(targetPath, contents, 'utf-8')
-  return targetPath
+  return getAllFiles(directory)
 })
 
 app.on('ready', () => {
+  const iconPath = path.resolve(__dirname, '../../assets/icon.ico')
   mainWindow = new BrowserWindow({
     width: 1600,
     height: 900,
+    frame: false,
+    icon: iconPath,
     webPreferences: {
-      preload: path.join(__dirname, '../main/preload.js'),
+      preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
       nodeIntegration: false, // Disable node integration for security
       sandbox: true, // Enable the sandbox for added security
@@ -110,7 +51,12 @@ app.on('ready', () => {
     },
   })
 
-  mainWindow.loadFile(path.join(__dirname, '../renderer/index.html'))
+  // In development, use Vite dev server; in production, load built files
+  if (process.env.VITE_DEV_SERVER_URL) {
+    mainWindow.loadURL(process.env.VITE_DEV_SERVER_URL)
+  } else {
+    mainWindow.loadFile(path.join(__dirname, '../renderer/index.html'))
+  }
 
   mainWindow.on('closed', () => (mainWindow = null))
 })
