@@ -24,6 +24,7 @@ function CodeEditor() {
   const [selectedFolder, setSelectedFolder] = useState<string | null>(null)
   const [filePaths, setFilePaths] = useState<string[]>([])
   const [isFileMenuOpen, setIsFileMenuOpen] = useState(false)
+  const [isFullScreen, setIsFullScreen] = useState(false)
   const { workspaceInfo, handleOpenWorkspace, handleSaveWorkspace, handleSaveWorkspaceAs } = useWorkspace()
 
   const handlePickFolder = async () => {
@@ -62,6 +63,16 @@ function CodeEditor() {
     return () => {
       view.destroy()
     }
+  }, [])
+
+  useEffect(() => {
+    // Get initial fullscreen state
+    ;(window as any).electron.isFullScreen().then(setIsFullScreen)
+
+    // Listen for fullscreen changes
+    ;(window as any).electron.onFullscreenChange((isFullScreen: boolean) => {
+      setIsFullScreen(isFullScreen)
+    })
   }, [])
 
   const relativePaths = React.useMemo(() => {
@@ -114,7 +125,7 @@ function CodeEditor() {
           />
           <div
             onClick={() => (window as any).electron.toggleFullscreen()}
-            className="header-button-right pt-2.5 pb-2 codicon codicon-chrome-restore"
+            className={`header-button-right pt-2.5 pb-2 codicon ${isFullScreen ? 'codicon-chrome-restore' : 'codicon-chrome-maximize'}`}
           />
           <div
             onClick={() => (window as any).electron.quit()}

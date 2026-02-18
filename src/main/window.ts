@@ -10,7 +10,15 @@ export const registerWindowControlHandlers = (
 
   ipcMain.handle('toggle-fullscreen', async () => {
     const mainWindow = getMainWindow()
-    if (mainWindow) mainWindow.setFullScreen(!mainWindow.isFullScreen())
+    if (mainWindow) {
+      mainWindow.setFullScreen(!mainWindow.isFullScreen())
+      mainWindow.webContents.send('fullscreen-changed', mainWindow.isFullScreen())
+    }
+  })
+
+  ipcMain.handle('is-fullscreen', async () => {
+    const mainWindow = getMainWindow()
+    return mainWindow?.isFullScreen() ?? false
   })
 
   ipcMain.handle('quit', async () => {

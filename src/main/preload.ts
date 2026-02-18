@@ -8,6 +8,12 @@ contextBridge.exposeInMainWorld('electron', {
   toggleFullscreen: () => {
     return ipcRenderer.invoke('toggle-fullscreen')
   },
+  isFullScreen: () => {
+    return ipcRenderer.invoke('is-fullscreen')
+  },
+  onFullscreenChange: (callback: (isFullScreen: boolean) => void) => {
+    ipcRenderer.on('fullscreen-changed', (_event: any, isFullScreen: boolean) => callback(isFullScreen))
+  },
   quit: () => {
     return ipcRenderer.invoke('quit')
   },
