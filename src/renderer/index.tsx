@@ -95,13 +95,13 @@ function CodeEditor() {
     <div className="w-full h-full flex flex-col select-none">
 
       {/* Header */}
-      <div className="flex flex-row bg-codemirror-700 text-sm text-codemirror-100 border-b border-codemirror-600">
+      <div className="flex flex-row bg-codemirror-700 text-sm text-codemirror-100 border-b border-codemirror-600" style={{ WebkitAppRegion: 'drag' } as any}>
         <div className="px-4 py-2 font-bold">
           <img src={iconPath} alt="MCFunction++" style={{ height: '20px', width: '20px' }} />
         </div>
         
         {/* Buttons */}
-        <div className="flex flex-row flex-1">
+        <div className="flex flex-row flex-1" style={{ WebkitAppRegion: 'no-drag' } as any}>
 
           <DropdownMenu 
             label="File"
@@ -118,7 +118,8 @@ function CodeEditor() {
             setIsOpen={setIsFileMenuOpen}
           />
 
-          <div className="flex-1"></div>
+          <div className="flex-1" style={{ WebkitAppRegion: 'drag' } as any}></div>
+
           <div
             onClick={() => (window as any).electron.minimize()} 
             className="header-button-right pt-2.5 pb-2 codicon codicon-chrome-minimize"
