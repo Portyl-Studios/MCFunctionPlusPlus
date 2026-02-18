@@ -10,6 +10,11 @@ import { registerWorkspaceHandlers } from './workspace'
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
 
+const __resourcepath = app.isPackaged
+  ? path.join(process.resourcesPath, 'resources')
+  : path.join(__dirname, '../../resources')
+const __userDataPath = app.getPath('userData')
+
 let mainWindow: BrowserWindow | null = null
 
 registerPickFolderHandler(() => mainWindow)
