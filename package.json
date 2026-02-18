@@ -21,10 +21,10 @@
     "ide",
     "transpiler"
   ],
-  "author": "touchportyl",
+  "author": "portylstudios",
   "license": "GPL-3.0",
   "build": {
-    "appId": "com.touchportyl.mcfunctionplusplus",
+    "appId": "com.portylstudios.mcfunctionplusplus",
     "productName": "MCFunction++",
     "directories": {
       "output": "release"
