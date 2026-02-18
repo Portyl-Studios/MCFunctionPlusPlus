@@ -11,7 +11,7 @@ interface PanelProps {
 }
 
 export function Panel({ width, position, title, children }: PanelProps) {
-  const baseClasses = "bg-codemirror-700 overflow-auto"
+  const baseClasses = "bg-codemirror-700 overflow-auto text-nowrap"
   const borderClass = position === 'left' ? 'border-r' : 'border-l'
   
   return (
