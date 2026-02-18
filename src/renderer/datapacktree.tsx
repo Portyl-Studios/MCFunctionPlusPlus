@@ -1,11 +1,15 @@
 import React from 'react'
 import datapackSchema from '../../resources/datapackschema/94.1.json'
+import { ContextMenu, useContextMenu } from './contextmenu'
+import type { MenuItem } from './menuitem'
 
 interface DataPackTreeProps {
   paths: string[]
   className?: string
   folderName?: string
+  basePath?: string
   onSelect?: (path: string, isFile: boolean) => void
+  onFolderCreated?: () => void
 }
 
 type TreeNode = {
@@ -126,7 +130,7 @@ const collectDirectoryPaths = (node: TreeNode, pathKey: string, output: string[]
   }
 }
 
-export function DatapackTree({ paths, className, folderName, onSelect }: DataPackTreeProps) {
+export function DatapackTree({ paths, className, folderName, basePath, onSelect, onFolderCreated }: DataPackTreeProps) {
   const tree = React.useMemo(() => {
     const builtTree = buildTree(paths, folderName)
     // Enrich with schema starting from the root schema node
@@ -134,6 +138,8 @@ export function DatapackTree({ paths, className, folderName, onSelect }: DataPac
     return builtTree
   }, [paths, folderName])
   const [selectedPath, setSelectedPath] = React.useState<string | null>(null)
+  const [contextItems, setContextItems] = React.useState<MenuItem[]>([])
+  const contextMenu = useContextMenu()
   const [expandedPaths, setExpandedPaths] = React.useState<Set<string>>(() => {
     const dirs: string[] = []
     // Expand root by default
@@ -183,11 +189,64 @@ export function DatapackTree({ paths, className, folderName, onSelect }: DataPac
     }
   }
 
-  const handleRightClick = (e: React.MouseEvent, node: TreeNode) => {
-    e.preventDefault()
-    console.log(`Right-clicked: ${node.name}`)
-    console.log('Allowed children:', node.allowedChildren)
-    console.log('Schema node:', node.schemaNode)
+  const normalizePath = (value: string) => value.replace(/\\/g, '/').replace(/\/+$/, '')
+
+  const resolveTargetPath = (rootPath: string, key: string, childName: string) => {
+    const normalizedBase = normalizePath(rootPath)
+    const normalizedKey = key.replace(/\\/g, '/')
+    const rootPrefix = `${tree.name}/`
+    const relative = normalizedKey === tree.name
+      ? ''
+      : normalizedKey.startsWith(rootPrefix)
+        ? normalizedKey.slice(rootPrefix.length)
+        : normalizedKey
+
+    const parts = [normalizedBase]
+    if (relative) parts.push(relative)
+    parts.push(childName)
+    return parts.join('/')
+  }
+
+  const handleRightClick = (e: React.MouseEvent, node: TreeNode, pathKey: string) => {
+    const allowedChildren = node.allowedChildren ?? []
+    const submenuItems: MenuItem[] = allowedChildren.map((child) => {
+      const isTemplate = child.startsWith('<') && child.endsWith('>')
+      const isFile = child.includes('.')
+      const folderExists = node.children?.has(child) ?? false
+      return {
+        label: child,
+        onClick: async () => {
+          if (!isTemplate && !isFile && !folderExists) {
+            const targetPath = basePath
+              ? resolveTargetPath(basePath, pathKey, child)
+              : `${pathKey}/${child}`
+            try {
+              await (window as any).electron.createFolder(targetPath)
+              if (onFolderCreated) {
+                onFolderCreated()
+              }
+            } catch (error) {
+              console.error('Failed to create folder:', error)
+            }
+          }
+        },
+        disabled: isTemplate || isFile || folderExists,
+        existingFolder: folderExists,
+      }
+    })
+
+    setContextItems([
+      {label: 'Cut', onClick: () => {}},
+      {label: 'Copy', onClick: () => {}},
+      {label: 'Paste', onClick: () => {}},
+      {},
+      {
+        label: 'Create Datapack Directory',
+        children: submenuItems.length ? submenuItems : undefined,
+        disabled: submenuItems.length === 0,
+      },
+    ])
+    contextMenu.openContextMenu(e)
   }
 
   const renderNode = (node: TreeNode, depth: number, pathKey: string): React.ReactNode => {
@@ -202,7 +261,7 @@ export function DatapackTree({ paths, className, folderName, onSelect }: DataPac
           className={`flex items-center cursor-pointer rounded px-1 ${isSelected ? 'bg-codemirror-select' : 'hover:bg-codemirror-highlight'}`}
           style={{ paddingLeft: padding }}
           onClick={() => handleSelect(pathKey, !!node.isFile, !!hasChildren)}
-          onContextMenu={(e) => handleRightClick(e, node)}
+          onContextMenu={(e) => handleRightClick(e, node, pathKey)}
           title={node.description || ''}
         >
           <span className="mr-2 flex items-center text-codemirror-100 w-4 h-4">
@@ -261,6 +320,13 @@ export function DatapackTree({ paths, className, folderName, onSelect }: DataPac
       <ul className="space-y-1">
         {renderNode(tree, 0, tree.name)}
       </ul>
+      <ContextMenu
+        items={contextItems}
+        x={contextMenu.position.x}
+        y={contextMenu.position.y}
+        isOpen={contextMenu.isOpen}
+        onClose={contextMenu.closeContextMenu}
+      />
     </div>
   )
 }

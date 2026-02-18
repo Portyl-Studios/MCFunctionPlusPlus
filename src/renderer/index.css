@@ -38,6 +38,28 @@
     ;
   }
 
+  .panel-menu-button {
+    @apply
+      bg-codemirror-700 hover:bg-codemirror-500
+      text-codemirror-100
+      px-1 pt-1
+      rounded
+      cursor-pointer
+      select-none
+    ;
+  }
+
+  .menu-layer {
+    @apply
+      z-[9999]
+    ;
+  }
+
+  /* This is equivalent to px-?, handles the scrollbar width */
+  .scrollbar-padding {
+    scrollbar-gutter: stable both-edges;
+  }
+
   .button {
     @apply
       bg-codemirror-600 hover:bg-codemirror-500

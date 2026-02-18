@@ -1,4 +1,5 @@
 import React, { ReactNode, useEffect, useRef, useState } from 'react'
+import { DropdownMenu, type MenuItem } from './dropdownmenu'
 
 export const MIN_PANEL_WIDTH = 150
 export const MAX_PANEL_WIDTH = 600
@@ -8,21 +9,50 @@ interface PanelProps {
   position: 'left' | 'right'
   title: string
   children: ReactNode
+  menuItems?: MenuItem[]
 }
 
-export function Panel({ width, position, title, children }: PanelProps) {
-  const baseClasses = "bg-codemirror-700 overflow-auto text-nowrap"
+export function Panel({ width, position, title, children, menuItems = [] }: PanelProps) {
   const borderClass = position === 'left' ? 'border-r' : 'border-l'
+  const [isMenuOpen, setIsMenuOpen] = useState(false)
+  const hasMenuItems = menuItems.length > 0
+
+  useEffect(() => {
+    if (!hasMenuItems && isMenuOpen) {
+      setIsMenuOpen(false)
+    }
+  }, [hasMenuItems, isMenuOpen])
   
   return (
     <div
       style={{ width }}
-      className={`${baseClasses} ${borderClass} border-codemirror-600`}
+      className={`${borderClass} border-codemirror-600 flex flex-col bg-codemirror-700 text-nowrap`}
     >
-      <div className="p-2">
-        <div className="font-semibold border-b border-codemirror-600 text-codemirror-100 uppercase mb-2 pb-2">{title}</div>
-        {children}
+
+      <div className="m-4 flex items-center justify-between flex-shrink-0">
+        <div className="flex-1 font-semibold text-xs text-codemirror-100 uppercase tracking-wider">
+          {title}
+        </div>
+        <div className="relative">
+          <DropdownMenu
+            label={<div className="codicon codicon-ellipsis text-codemirror-300 p-1" />}
+            items={menuItems}
+            isOpen={isMenuOpen}
+            setIsOpen={setIsMenuOpen}
+            buttonClassName="panel-menu-button"
+            disabled={!hasMenuItems}
+          />
+        </div>
       </div>
+
+      <div className="h-px bg-codemirror-600 flex-shrink-0"/>
+
+      <div className="flex-1 overflow-auto scrollbar-padding">
+        <div className="my-4">
+          {children}
+        </div>
+      </div>
+
     </div>
   )
 }

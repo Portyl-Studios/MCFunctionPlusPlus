@@ -1,19 +1,21 @@
 import React, { useEffect } from 'react'
+import { MenuItems, type MenuItem } from './menuitem'
 
-export interface MenuItem {
-  label?: string
-  onClick?: () => void
-}
+export type { MenuItem }
 
 interface DropdownMenuProps {
-  label: string
+  label: React.ReactNode
   items: MenuItem[]
   isOpen: boolean
   setIsOpen: (open: boolean) => void
+  buttonClassName?: string
+  disabled?: boolean
 }
 
-export function DropdownMenu({ label, items, isOpen, setIsOpen }: DropdownMenuProps) {
+export function DropdownMenu({ label, items, isOpen, setIsOpen, buttonClassName, disabled }: DropdownMenuProps) {
   const menuRef = React.useRef<HTMLDivElement>(null)
+  const buttonClass = buttonClassName ?? 'header-button-left'
+  const disabledClass = disabled ? 'opacity-50 cursor-not-allowed pointer-events-none' : ''
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -33,58 +35,19 @@ export function DropdownMenu({ label, items, isOpen, setIsOpen }: DropdownMenuPr
   return (
     <div ref={menuRef} className="relative">
       <div 
-        onClick={() => setIsOpen(!isOpen)}
-        className="header-button-left"
+        onClick={() => {
+          if (disabled) return
+          setIsOpen(!isOpen)
+        }}
+        className={`${buttonClass} ${disabledClass}`}
       >
         {label}
       </div>
-      {isOpen && (
-        <div className="absolute top-full left-0 bg-codemirror-600 border border-codemirror-500 rounded shadow-lg z-50 mt-0">
-          {items.map((item, index) => {
-            const isDivider = !item.label || !item.onClick
-            
-            if (isDivider) {
-              return (
-                <div key={index} className="h-px bg-codemirror-500 m-1" />
-              )
-            }
-            
-            return (
-              <div 
-                key={index}
-                onClick={() => {
-                  item.onClick?.()
-                  setIsOpen(false)
-                }}
-                className="px-3 py-2 hover:bg-codemirror-500 cursor-pointer text-sm text-codemirror-100 whitespace-nowrap"
-              >
-                {item.label}
-              </div>
-            )
-          })}
+      {isOpen && !disabled && (
+        <div className="absolute top-full left-0 mt-0 menu-layer">
+          <MenuItems items={items} maxItems={10} onItemClick={() => setIsOpen(false)} />
         </div>
       )}
     </div>
-  )
-}
-
-interface FileMenuProps {
-  isOpen: boolean
-  setIsOpen: (open: boolean) => void
-  onOpenFolder: () => void
-}
-
-export function FileMenu({ isOpen, setIsOpen, onOpenFolder }: FileMenuProps) {
-  const fileMenuItems: MenuItem[] = [
-    { label: 'Open Folder', onClick: onOpenFolder },
-  ]
-
-  return (
-    <DropdownMenu 
-      label="File"
-      items={fileMenuItems}
-      isOpen={isOpen}
-      setIsOpen={setIsOpen}
-    />
   )
 }

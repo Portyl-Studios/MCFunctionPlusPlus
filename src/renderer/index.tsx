@@ -41,11 +41,49 @@ function CodeEditor() {
     }
   }
 
+  const handleRefreshExplorer = async () => {
+    if (!selectedFolder) return
+    try {
+      const files = await (window as any).electron.listFiles(selectedFolder)
+      setFilePaths(Array.isArray(files) ? files : [])
+    } catch {
+      setFilePaths([])
+    }
+  }
+
+  const handleExplorerSelect = async (pathKey: string, isFile: boolean) => {
+    if (!isFile || !selectedFolder) return
+
+    const rootName = selectedFolder.split(/[\\/]/).pop() || ''
+    const normalizedKey = pathKey.replace(/\\/g, '/')
+    const rootPrefix = rootName ? `${rootName}/` : ''
+    const relativePath = normalizedKey === rootName
+      ? ''
+      : normalizedKey.startsWith(rootPrefix)
+        ? normalizedKey.slice(rootPrefix.length)
+        : normalizedKey
+
+    const trimmedRelative = relativePath.replace(/^\/+/, '')
+    const fileName = trimmedRelative.split('/').pop() || ''
+    if (!trimmedRelative || !fileName.includes('.')) return
+
+    try {
+      const contents = await (window as any).electron.readFile(selectedFolder, trimmedRelative)
+      const view = viewRef.current
+      if (!view) return
+      view.dispatch({
+        changes: { from: 0, to: view.state.doc.length, insert: contents },
+      })
+    } catch (error) {
+      console.error('Failed to read file:', error)
+    }
+  }
+
   useEffect(() => {
     if (!editorRef.current) return
 
     const state = EditorState.create({
-      doc: "# Welcome to CodeMirror!\n",
+      doc: "",
       extensions: [
         oneDark,
         basicSetup,
@@ -67,10 +105,8 @@ function CodeEditor() {
   }, [])
 
   useEffect(() => {
-    // Get initial fullscreen state
     ;(window as any).electron.isFullScreen().then(setIsFullScreen)
 
-    // Listen for fullscreen changes
     ;(window as any).electron.onFullscreenChange((isFullScreen: boolean) => {
       setIsFullScreen(isFullScreen)
     })
@@ -140,13 +176,22 @@ function CodeEditor() {
       <div className="flex flex-row flex-1 overflow-hidden">
 
         {/* Left Panel */}
-        <Panel width={leftPanel.width} position="left" title="Explorer">
+        <Panel
+          width={leftPanel.width} position="left"
+          title="Explorer"
+          menuItems={[
+            {label: 'Refresh', onClick: handleRefreshExplorer}
+          ] as MenuItem[]}
+        >
           {
             selectedFolder ? (
-              <DatapackTree 
-                paths={relativePaths} 
+              <DatapackTree
+                paths={relativePaths}
                 folderName={selectedFolder.split(/[\\/]/).pop() || 'datapack'}
+                basePath={selectedFolder}
                 className="mt-2"
+                onFolderCreated={handleRefreshExplorer}
+                onSelect={handleExplorerSelect}
               />
             ) : (<>
               <div className="text-sm text-codemirror-300">No folder selected</div>
@@ -161,7 +206,9 @@ function CodeEditor() {
         <ResizeHandle onMouseDown={leftPanel.handleMouseDown} />
 
         {/* Editor Panel */}
-        <div className="flex-1 overflow-auto bg-codemirror-default" ref={editorRef}></div>
+        <div className="flex-1 bg-codemirror-default">
+          <div className="overflow-auto" ref={editorRef} />
+        </div>
 
         {/* Right Panel Resize Handle */}
         <ResizeHandle onMouseDown={rightPanel.handleMouseDown} />
