@@ -48,6 +48,17 @@
       select-none
     ;
   }
+
+  .pillbox {
+    @apply
+      bg-codemirror-highlight
+      text-xs text-codemirror-300
+      ml-2
+      px-1
+      rounded
+      select-none
+    ;
+  }
 }
 
 /* Scrollbar styling */

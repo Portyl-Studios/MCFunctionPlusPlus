@@ -15,6 +15,7 @@ import { FileTree } from './filetree'
 import { DropdownMenu, type MenuItem } from './dropdownmenu'
 import { useWorkspace } from './use-workspace'
 import iconPath from '../../assets/icon.png'
+import { DatapackTree } from './datapacktree'
 
 function CodeEditor() {
   const editorRef = useRef<HTMLDivElement>(null)
@@ -139,10 +140,14 @@ function CodeEditor() {
       <div className="flex flex-row flex-1 overflow-hidden">
 
         {/* Left Panel */}
-        <Panel width={leftPanel.width} position="left" title="Files">
+        <Panel width={leftPanel.width} position="left" title="Explorer">
           {
             selectedFolder ? (
-              <FileTree paths={relativePaths} className="mt-2"/>
+              <DatapackTree 
+                paths={relativePaths} 
+                folderName={selectedFolder.split(/[\\/]/).pop() || 'datapack'}
+                className="mt-2"
+              />
             ) : (<>
               <div className="text-sm text-codemirror-300">No folder selected</div>
               <div className="flex flex-col items-center m-4 button" onClick={handlePickFolder}>
