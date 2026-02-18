@@ -50,7 +50,7 @@ function CodeEditor() {
         oneDark,
         basicSetup,
         keymap.of([indentWithTab]),
-        javascript()
+        json()
       ],
     })
 
