@@ -55,5 +55,8 @@ contextBridge.exposeInMainWorld('electron', {
   },
   workspaceSave: () => {
     return ipcRenderer.invoke('workspace-save')
+  },
+  createFolder: (folderPath: string) => {
+    return ipcRenderer.invoke('create-folder', { folderPath })
   }
 })

@@ -1,9 +1,8 @@
 import { app, BrowserWindow, ipcMain } from 'electron'
 import path from 'path'
 import { fileURLToPath } from 'url'
-import { getAllFiles, registerPickFolderHandler } from './folderops'
 import { registerWindowControlHandlers } from './window'
-import { readFile, writeFile, readFileFromDirectory } from './fileops'
+import { readFile, writeFile, readFileFromDirectory, createFolder, getAllFiles, registerPickFolderHandler } from './fileops'
 import { registerWorkspaceHandlers } from './workspace'
 
 // Replicating __dirname using ES Modules
@@ -38,6 +37,11 @@ ipcMain.handle('list-files', async (_event, { directory }) => {
     throw new Error('Invalid directory')
   }
   return getAllFiles(directory)
+})
+
+// IPC handler to create a folder
+ipcMain.handle('create-folder', async (_event, { folderPath }) => {
+  return await createFolder(folderPath)
 })
 
 app.on('ready', () => {

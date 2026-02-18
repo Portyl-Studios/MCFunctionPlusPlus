@@ -1,3 +1,4 @@
+import { BrowserWindow, dialog, ipcMain } from 'electron'
 import { promises as fs } from 'fs'
 import path from 'path'
 
@@ -56,8 +57,10 @@ const isInvalidDirectory = (directory: string): boolean => {
   // Disallow null bytes.
   if (/\x00/.test(trimmed)) return true
 
+  const normalized = path.normalize(trimmed)
+
   // Validate each path segment, allowing Windows drive letters.
-  const segments = trimmed.split(path.sep).filter(Boolean)
+  const segments = normalized.split(path.sep).filter(Boolean)
   for (let index = 0; index < segments.length; index += 1) {
     const segment = segments[index]
     const isDriveLetter = index === 0 && /^[A-Za-z]:$/.test(segment)
@@ -79,6 +82,45 @@ const isValidFileAccess = (filePath: string, baseDirectory: string): boolean => 
 }
 
 // File operations
+export const registerPickFolderHandler = (
+  getMainWindow: () => BrowserWindow | null
+) => {
+  ipcMain.handle('pick-folder', async () => {
+    const mainWindow = getMainWindow()
+    if (!mainWindow) throw new Error('No main window')
+
+    const result = await dialog.showOpenDialog(mainWindow, {
+      properties: ['openDirectory'],
+    })
+
+    if (result.canceled || result.filePaths.length === 0) {
+      return null
+    }
+
+    return result.filePaths[0]
+  })
+}
+
+export const getAllFiles = async (rootDir: string): Promise<string[]> => {
+  const results: string[] = []
+  const entries = await fs.readdir(rootDir, { withFileTypes: true })
+
+  for (const entry of entries) {
+    const fullPath = path.join(rootDir, entry.name)
+
+    if (entry.isDirectory()) {
+      // Include the directory itself
+      results.push(fullPath)
+      const nested = await getAllFiles(fullPath)
+      results.push(...nested)
+    } else if (entry.isFile()) {
+      results.push(fullPath)
+    }
+  }
+
+  return results
+}
+
 export async function readFile(filePath: string): Promise<string> {
   if (!filePath || typeof filePath !== 'string') {
     throw new Error('Invalid file path')
@@ -187,6 +229,28 @@ export async function readFileFromDirectory(directory: string, filePath: string)
 
     return await readFile(targetPath)
   } catch (error) {
+    throw error
+  }
+}
+
+export async function createFolder(folderPath: string): Promise<string> {
+  // Validate inputs
+  if (!folderPath || typeof folderPath !== 'string') {
+    throw new Error('Invalid folder path')
+  }
+
+  if (isInvalidDirectory(folderPath)) {
+    throw new Error('Invalid folder path')
+  }
+
+  try {
+    // Create the folder recursively (mkdir -p equivalent)
+    await fs.mkdir(folderPath, { recursive: true })
+    return folderPath
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'EEXIST') {
+      throw new Error('Folder already exists')
+    }
     throw error
   }
 }
