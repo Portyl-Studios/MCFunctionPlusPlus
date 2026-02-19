@@ -19,6 +19,7 @@ interface DialogProps {
 export function Dialog({ isOpen, title, message, buttons, autoCloseMs, onClose }: DialogProps) {
   const [elapsedMs, setElapsedMs] = useState(0)
 
+  // Auto-close timer: closes dialog after specified duration
   useEffect(() => {
     if (!isOpen || !autoCloseMs) return
 
@@ -31,12 +32,14 @@ export function Dialog({ isOpen, title, message, buttons, autoCloseMs, onClose }
     }
   }, [isOpen, autoCloseMs, onClose])
 
+  // Reset elapsed time when dialog opens
   useEffect(() => {
     if (isOpen) {
       setElapsedMs(0)
     }
   }, [isOpen])
 
+  // Track elapsed time for visual timer indicator (updates every 50ms)
   useEffect(() => {
     if (!isOpen || !autoCloseMs) return
 
@@ -75,7 +78,7 @@ export function Dialog({ isOpen, title, message, buttons, autoCloseMs, onClose }
     >
       <div
         className="flex flex-col min-w-sm max-w-xl min-h-auto max-h-[42%] p-2 bg-codemirror-700 border border-codemirror-400 rounded shadow-2xl"
-        onClick={(e) => e.stopPropagation()}
+        onClick={(e) => e.stopPropagation()} // Prevent clicks inside dialog from closing it
       >
         {/* Title Bar */}
         <div className="flex flex-row items-center justify-between p-2">
@@ -152,6 +155,8 @@ export function useDialog(): UseDialogResult {
     setIsOpen(false)
   }
 
+  // Promise-based alert/confirm helpers that mimic native browser dialogs
+  // but use the custom dialog component for consistent styling
   const showAlert = (title: string, message: string): Promise<void> => {
     return new Promise((resolve) => {
       openDialog({

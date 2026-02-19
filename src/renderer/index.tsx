@@ -17,6 +17,8 @@ import iconPath from '../../assets/icon.png'
 import { DatapackTree } from './datapacktree'
 import { Dialog, useDialog } from './dialog'
 
+// Annotation to mark editor transactions that are programmatic content loads
+// This prevents marking files as modified when we're just loading content from disk
 const isLoadingContent = Annotation.define<boolean>()
 
 type DatapackEntry = {
@@ -52,7 +54,10 @@ function CodeEditor() {
   const [modifiedFiles, setModifiedFiles] = useState<Set<string>>(new Set())
   const tabsRef = useRef<HTMLDivElement>(null)
   const [isAutoSaveEnabled, setIsAutoSaveEnabled] = useState(false)
+  // Refs are used to access current state values inside closures (e.g., editor listeners)
+  // without triggering re-renders or stale closure issues
   const isAutoSaveEnabledRef = useRef(isAutoSaveEnabled)
+  // Track auto-save timers per file using fileKey format: "datapackDir|relativePath"
   const autoSaveTimersRef = useRef<Map<string, number>>(new Map())
   const dialog = useDialog()
   const isDialogOpenRef = useRef(dialog.isOpen)
@@ -164,7 +169,8 @@ function CodeEditor() {
       return
     }
 
-    // Show dialog with three options
+    // Use Promise wrapper to make async dialog behave synchronously
+    // This ensures workspace change only happens after user makes a choice
     await new Promise<void>((resolve) => {
       dialog.openDialog({
         title: 'Unsaved Changes',
@@ -291,6 +297,8 @@ function CodeEditor() {
     
     const view = viewRef.current
     if (!view) return
+    // Mark this change with isLoadingContent annotation to prevent the update listener
+    // from treating this programmatic change as a user edit
     view.dispatch({
       changes: { from: 0, to: view.state.doc.length, insert: contents },
       annotations: [isLoadingContent.of(true)],
@@ -458,6 +466,7 @@ function CodeEditor() {
     }
   }
 
+  // Keep refs in sync with state so they can be used in event listeners and closures
   const activeFileRef = useRef(activeFile)
   useEffect(() => {
     activeFileRef.current = activeFile
@@ -467,7 +476,8 @@ function CodeEditor() {
     isAutoSaveEnabledRef.current = isAutoSaveEnabled
   }, [isAutoSaveEnabled])
 
-  // Sync dialog open state to ref and clear auto-save timers when dialog opens
+  // Pause auto-save while dialogs are open to prevent saves during user confirmation prompts
+  // Resume auto-save when dialog closes to continue saving modified files
   useEffect(() => {
     const wasOpen = isDialogOpenRef.current
     isDialogOpenRef.current = dialog.isOpen
