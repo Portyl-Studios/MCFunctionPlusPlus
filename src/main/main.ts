@@ -2,8 +2,10 @@ import { app, BrowserWindow, ipcMain } from 'electron'
 import path from 'path'
 import { fileURLToPath } from 'url'
 import { registerWindowControlHandlers } from './window'
-import { readFile, writeFile, readFileFromDirectory, createFolder, getAllFiles, registerPickFolderHandler } from './fileops'
+import { readFile, writeFile, readFileFromDirectory, createFolder, getAllFiles, registerPickFolderHandler, validateDatapackFolder } from './fileops'
 import { registerWorkspaceHandlers } from './workspace'
+import workspaceManager from './workspace'
+import { registerDatapackHandlers, datapackManager } from './datapack'
 
 // Replicating __dirname using ES Modules
 const __filename = fileURLToPath(import.meta.url)
@@ -19,6 +21,23 @@ let mainWindow: BrowserWindow | null = null
 registerPickFolderHandler(() => mainWindow)
 registerWindowControlHandlers(() => mainWindow)
 registerWorkspaceHandlers(() => mainWindow)
+registerDatapackHandlers()
+
+// IPC handler to get or create default workspace
+ipcMain.handle('workspace-get-or-create-default', async () => {
+  try {
+    const workspaceDir = __userDataPath
+    const workspaceName = 'default'
+    const workspace = await workspaceManager.loadWorkspace(workspaceDir, workspaceName)
+    return {
+      dir: workspaceDir,
+      name: workspaceName,
+      workspace
+    }
+  } catch (error) {
+    throw new Error(`Failed to get or create default workspace: ${error instanceof Error ? error.message : 'Unknown error'}`)
+  }
+})
 
 
 // IPC handler to write a file after validation
@@ -42,6 +61,33 @@ ipcMain.handle('list-files', async (_event, { directory }) => {
 // IPC handler to create a folder
 ipcMain.handle('create-folder', async (_event, { folderPath }) => {
   return await createFolder(folderPath)
+})
+
+// IPC handler to add an existing datapack
+ipcMain.handle('add-datapack-existing', async (_event, { datapackDir }) => {
+  // Validate the folder is a datapack
+  const isValidDatapack = await validateDatapackFolder(datapackDir)
+  if (!isValidDatapack) {
+    throw new Error('Folder does not contain a valid datapack (pack.mcmeta not found)')
+  }
+
+  // Load or create datapack metadata
+  const metadata = await datapackManager.loadDatapack(datapackDir)
+  
+  // Get the metadata file path
+  const { getDatapackMetadataPath } = await import('./datapack-parser')
+  const metadataPath = getDatapackMetadataPath(datapackDir)
+  
+  // Add to workspace if one is loaded
+  if (workspaceManager.getWorkspace()) {
+    workspaceManager.addDatapack(metadataPath)
+    await workspaceManager.saveWorkspace()
+  }
+
+  return {
+    metadataPath,
+    metadata
+  }
 })
 
 app.on('ready', () => {

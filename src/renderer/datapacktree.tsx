@@ -7,6 +7,9 @@ interface DataPackTreeProps {
   paths: string[]
   className?: string
   folderName?: string
+  rootId?: string
+  rootName?: string
+  rootPackVersion?: string
   basePath?: string
   onSelect?: (path: string, isFile: boolean) => void
   onFolderCreated?: () => void
@@ -49,9 +52,7 @@ const buildTree = (paths: string[], rootName: string = 'root'): TreeNode => {
       }
 
       const isLeaf = i === parts.length - 1
-      if (isLeaf) {
-        child.isFile = true
-      }
+      child.isFile = isLeaf
 
       current = child
     }
@@ -120,17 +121,20 @@ const sortChildren = (children: Map<string, TreeNode>): TreeNode[] => {
   return nodes
 }
 
-const collectDirectoryPaths = (node: TreeNode, pathKey: string, output: string[]) => {
+const collectDirectoryPaths = (node: TreeNode, pathKey: string, output: string[], depth: number) => {
   const hasChildren = node.children && node.children.size > 0
   if (!hasChildren) return
 
-  output.push(pathKey)
-  for (const child of node.children!.values()) {
-    collectDirectoryPaths(child, `${pathKey}/${child.name}`, output)
+  // Only expand nodes at depth < 3
+  if (depth < 3) {
+    output.push(pathKey)
+    for (const child of node.children!.values()) {
+      collectDirectoryPaths(child, `${pathKey}/${child.name}`, output, depth + 1)
+    }
   }
 }
 
-export function DatapackTree({ paths, className, folderName, basePath, onSelect, onFolderCreated }: DataPackTreeProps) {
+export function DatapackTree({ paths, className, folderName, rootId, rootName, rootPackVersion, basePath, onSelect, onFolderCreated }: DataPackTreeProps) {
   const tree = React.useMemo(() => {
     const builtTree = buildTree(paths, folderName)
     // Enrich with schema starting from the root schema node
@@ -146,7 +150,7 @@ export function DatapackTree({ paths, className, folderName, basePath, onSelect,
     dirs.push(tree.name)
     if (tree.children) {
       for (const child of tree.children.values()) {
-        collectDirectoryPaths(child, `${tree.name}/${child.name}`, dirs)
+        collectDirectoryPaths(child, `${tree.name}/${child.name}`, dirs, 2)
       }
     }
     return new Set(dirs)
@@ -158,7 +162,7 @@ export function DatapackTree({ paths, className, folderName, basePath, onSelect,
     dirs.push(tree.name)
     if (tree.children) {
       for (const child of tree.children.values()) {
-        collectDirectoryPaths(child, `${tree.name}/${child.name}`, dirs)
+        collectDirectoryPaths(child, `${tree.name}/${child.name}`, dirs, 2)
       }
     }
     setExpandedPaths(new Set(dirs))
@@ -254,17 +258,18 @@ export function DatapackTree({ paths, className, folderName, basePath, onSelect,
     const isExpanded = hasChildren && expandedPaths.has(pathKey)
     const padding = depth * 12
     const isSelected = selectedPath === pathKey
+    const isRoot = depth === 0
 
     return (
       <li key={pathKey}>
         <div
-          className={`flex items-center cursor-pointer rounded px-1 ${isSelected ? 'bg-codemirror-select' : 'hover:bg-codemirror-highlight'}`}
+          className={`flex items-center cursor-pointer rounded px-1  ${isSelected ? 'bg-codemirror-select' : 'hover:bg-codemirror-highlight'} ${isRoot ? 'py-2' : ''}`}
           style={{ paddingLeft: padding }}
           onClick={() => handleSelect(pathKey, !!node.isFile, !!hasChildren)}
           onContextMenu={(e) => handleRightClick(e, node, pathKey)}
           title={node.description || ''}
         >
-          <span className="mr-2 flex items-center text-codemirror-100 w-4 h-4">
+          <span className={`mr-2 flex items-center text-codemirror-100 h-4 ${isRoot ? 'w-auto' : 'w-4'}`}>
             {hasChildren ? (
               isExpanded ? (
                 <i className="codicon codicon-chevron-down" />
@@ -274,35 +279,54 @@ export function DatapackTree({ paths, className, folderName, basePath, onSelect,
             ) : (
               <i className="codicon codicon-file" />
             )}
+            {/* Datapack ID */}
+            {isRoot ? (
+              <span className="pillbox px-2 pt-1 pb-0.5 bg-emerald-800 text-sm font-mono font-bold text-codemirror-50">
+                {rootId || 'ID'}
+              </span>
+            ) : (<div></div>)}
           </span>
-          <span className={`${node.isFile ? 'text-codemirror-100' : 'text-codemirror-100 font-medium'} ${node.experimental ? 'italic opacity-75' : ''} ${node.schemaNode ? 'text-emerald-300' : ''}`}>
-            {node.name}
+
+          {/* Name */}
+          <span className={`
+            ${node.isFile ? 'font-normal' : (isRoot ? 'font-bold' : 'font-semibold')}
+            ${node.schemaNode ? 'text-emerald-300' : 'text-codemirror-100'}
+            ${node.experimental ? 'italic' : ''}
+          `}>
+            {isRoot ? rootName || node.name : node.name}
           </span>
-          {node.experimental && (
-            <span className="ml-2 text-xs text-amber-400 bg-amber-900 bg-opacity-30 px-1 rounded">
-              exp
+
+          {/* Pillboxes */}
+          {isRoot && rootPackVersion && (
+            <span className="pillbox bg-indigo-800 text-indigo-100">
+              v{rootPackVersion}
             </span>
           )}
+          {isRoot && node.packFormatVersion && (
+            <span className="pillbox">
+              {node.packFormatVersion}
+            </span>
+          )}
+          {/*isRoot && node.minMinecraftVersion && (
+            <span className="pillbox">
+              {node.minMinecraftVersion}
+            </span>
+          )*/}
+          {/*isRoot && node.maxMinecraftVersion && (
+            <span className="pillbox">
+              {node.maxMinecraftVersion}
+            </span>
+          )*/}
           {node.contentType && (
             <span className="pillbox">
               {node.contentType}
             </span>
           )}
-          {depth === 0 && node.packFormatVersion && (
-            <span className="pillbox">
-              {node.packFormatVersion}
+          {node.experimental && (
+            <span className="pillbox bg-amber-900 text-amber-400">
+              exp
             </span>
           )}
-          {/*depth === 0 && node.minMinecraftVersion && (
-            <span className="pillbox">
-              {node.minMinecraftVersion}
-            </span>
-          )}
-          {depth === 0 && node.maxMinecraftVersion && (
-            <span className="pillbox">
-              {node.maxMinecraftVersion}
-            </span>
-          )*/}
         </div>
         {hasChildren && isExpanded && (
           <ul className="mt-1 space-y-1">

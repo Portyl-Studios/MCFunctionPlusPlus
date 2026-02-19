@@ -8,6 +8,7 @@ export interface WorkspaceData {
   version: number
   lastOpened?: string
   settings?: Record<string, unknown>
+  datapacks?: string[]
 }
 
 export const getWorkspaceFilePath = (directory: string, name: string): string => {
@@ -44,6 +45,28 @@ export const createDefaultWorkspace = (): WorkspaceData => {
   return {
     version: WORKSPACE_VERSION,
     lastOpened: new Date().toISOString(),
-    settings: {}
+    settings: {},
+    datapacks: []
   }
+}
+
+export const addDatapackPath = (data: WorkspaceData, metadataPath: string): WorkspaceData => {
+  if (!data.datapacks) {
+    data.datapacks = []
+  }
+  if (!data.datapacks.includes(metadataPath)) {
+    data.datapacks.push(metadataPath)
+  }
+  return data
+}
+
+export const removeDatapackPath = (data: WorkspaceData, metadataPath: string): WorkspaceData => {
+  if (data.datapacks) {
+    data.datapacks = data.datapacks.filter((path) => path !== metadataPath)
+  }
+  return data
+}
+
+export const getDatapackPaths = (data: WorkspaceData): string[] => {
+  return data.datapacks ?? []
 }

@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 
 interface WorkspaceInfo {
   dir: string | null
@@ -10,6 +10,21 @@ export function useWorkspace() {
     dir: null,
     name: null
   })
+
+  // Load or create default workspace on mount
+  useEffect(() => {
+    const loadDefaultWorkspace = async () => {
+      try {
+        const result = await (window as any).electron.workspaceGetOrCreateDefault()
+        await (window as any).electron.workspaceLoad(result.dir, result.name)
+        setWorkspaceInfo({ dir: result.dir, name: result.name })
+      } catch (error) {
+        console.error('Failed to load default workspace:', error)
+      }
+    }
+
+    loadDefaultWorkspace()
+  }, [])
 
   const handleOpenWorkspace = async () => {
     const result = await (window as any).electron.workspaceOpenDialog()
@@ -56,12 +71,40 @@ export function useWorkspace() {
     }
   }
 
+  const handleAddDatapack = async (metadataPath: string) => {
+    try {
+      await (window as any).electron.workspaceAddDatapack(metadataPath)
+    } catch (error) {
+      console.error('Failed to add datapack to workspace:', error)
+    }
+  }
+
+  const handleRemoveDatapack = async (metadataPath: string) => {
+    try {
+      await (window as any).electron.workspaceRemoveDatapack(metadataPath)
+    } catch (error) {
+      console.error('Failed to remove datapack from workspace:', error)
+    }
+  }
+
+  const handleGetDatapacks = async () => {
+    try {
+      return await (window as any).electron.workspaceGetDatapacks()
+    } catch (error) {
+      console.error('Failed to get datapacks from workspace:', error)
+      return []
+    }
+  }
+
   return {
     workspaceInfo,
     setWorkspaceInfo,
     handleOpenWorkspace,
     handleSaveWorkspace,
-    handleSaveWorkspaceAs
+    handleSaveWorkspaceAs,
+    handleAddDatapack,
+    handleRemoveDatapack,
+    handleGetDatapacks
   }
 }
 

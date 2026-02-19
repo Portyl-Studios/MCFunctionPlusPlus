@@ -32,6 +32,9 @@ contextBridge.exposeInMainWorld('electron', {
   workspaceLoad: (directory: string, name: string) => {
     return ipcRenderer.invoke('workspace-load', { directory, name })
   },
+  workspaceGetOrCreateDefault: () => {
+    return ipcRenderer.invoke('workspace-get-or-create-default')
+  },
   workspaceGet: () => {
     return ipcRenderer.invoke('workspace-get')
   },
@@ -56,7 +59,34 @@ contextBridge.exposeInMainWorld('electron', {
   workspaceSave: () => {
     return ipcRenderer.invoke('workspace-save')
   },
+  workspaceAddDatapack: (metadataPath: string) => {
+    return ipcRenderer.invoke('workspace-add-datapack', { metadataPath })
+  },
+  workspaceRemoveDatapack: (metadataPath: string) => {
+    return ipcRenderer.invoke('workspace-remove-datapack', { metadataPath })
+  },
+  workspaceGetDatapacks: () => {
+    return ipcRenderer.invoke('workspace-get-datapacks')
+  },
   createFolder: (folderPath: string) => {
     return ipcRenderer.invoke('create-folder', { folderPath })
+  },
+  addDatapackExisting: (datapackDir: string) => {
+    return ipcRenderer.invoke('add-datapack-existing', { datapackDir })
+  },
+  datapackLoad: (datapackDir: string) => {
+    return ipcRenderer.invoke('datapack-load', { datapackDir })
+  },
+  datapackGet: () => {
+    return ipcRenderer.invoke('datapack-get')
+  },
+  datapackUpdate: (updates: Record<string, unknown>) => {
+    return ipcRenderer.invoke('datapack-update', { updates })
+  },
+  datapackSave: () => {
+    return ipcRenderer.invoke('datapack-save')
+  },
+  datapackClear: () => {
+    return ipcRenderer.invoke('datapack-clear')
   }
 })

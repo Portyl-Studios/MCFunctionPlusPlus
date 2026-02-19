@@ -11,50 +11,123 @@ import { json } from '@codemirror/lang-json'
 import { oneDark } from '@codemirror/theme-one-dark'
 import './index.css'
 import { Panel, ResizeHandle, useResizablePanel } from './panel'
-import { FileTree } from './filetree'
 import { DropdownMenu, type MenuItem } from './dropdownmenu'
 import { useWorkspace } from './use-workspace'
 import iconPath from '../../assets/icon.png'
 import { DatapackTree } from './datapacktree'
 
+type DatapackEntry = {
+  dir: string
+  name: string
+  paths: string[]
+  id?: string
+  displayName?: string
+  packVersion?: string
+}
+
 function CodeEditor() {
   const editorRef = useRef<HTMLDivElement>(null)
   const viewRef = useRef<EditorView | null>(null)
-  const leftPanel = useResizablePanel({ initialWidth: 250, position: 'left' })
+  const leftPanel = useResizablePanel({ initialWidth: 350, position: 'left' })
   const rightPanel = useResizablePanel({ initialWidth: 350, position: 'right' })
-  const [selectedFolder, setSelectedFolder] = useState<string | null>(null)
-  const [filePaths, setFilePaths] = useState<string[]>([])
+  const [datapacks, setDatapacks] = useState<DatapackEntry[]>([])
   const [isFileMenuOpen, setIsFileMenuOpen] = useState(false)
   const [isFullScreen, setIsFullScreen] = useState(false)
-  const { workspaceInfo, handleOpenWorkspace, handleSaveWorkspace, handleSaveWorkspaceAs } = useWorkspace()
+  const {
+    workspaceInfo,
+    handleOpenWorkspace,
+    handleSaveWorkspace,
+    handleSaveWorkspaceAs,
+    handleGetDatapacks,
+  } = useWorkspace()
 
-  const handlePickFolder = async () => {
-    const folder = await (window as any).electron.pickFolder()
-    if (folder) {
-      setSelectedFolder(folder)
-      try {
-        const files = await (window as any).electron.listFiles(folder)
-        setFilePaths(Array.isArray(files) ? files : [])
-      } catch {
-        setFilePaths([])
+  const getDirFromPath = (filePath: string) => {
+    const lastSlash = Math.max(filePath.lastIndexOf('\\'), filePath.lastIndexOf('/'))
+    if (lastSlash === -1) return filePath
+    return filePath.slice(0, lastSlash)
+  }
+
+  const toRelativePaths = (baseDir: string, rawPaths: string[]) => {
+    const base = baseDir.replace(/\\/g, '/').replace(/\/+$/, '')
+    return rawPaths.map((rawPath) => {
+      const normalized = rawPath.replace(/\\/g, '/')
+      const baseWithSlash = `${base}/`
+
+      if (normalized.toLowerCase().startsWith(baseWithSlash.toLowerCase())) {
+        return normalized.slice(baseWithSlash.length)
       }
+
+      return normalized
+    })
+  }
+
+  const loadDatapackEntry = async (datapackDir: string): Promise<DatapackEntry | null> => {
+    try {
+      const files = await (window as any).electron.listFiles(datapackDir)
+      const paths = Array.isArray(files) ? files : []
+      const name = datapackDir.split(/[\\/]/).pop() || 'datapack'
+      let id: string | undefined
+      let displayName: string | undefined
+      let packVersion: string | undefined
+      try {
+        const metadataRaw = await (window as any).electron.readFile(datapackDir, '.mpp-datapack')
+        const parsed = JSON.parse(metadataRaw)
+        if (parsed && typeof parsed.id === 'string') {
+          id = parsed.id
+        }
+        if (parsed && typeof parsed.name === 'string') {
+          displayName = parsed.name
+        }
+        if (parsed && typeof parsed.packVersion === 'string') {
+          packVersion = parsed.packVersion
+        }
+      } catch {
+        id = undefined
+        displayName = undefined
+        packVersion = undefined
+      }
+      return {
+        dir: datapackDir,
+        name,
+        paths: toRelativePaths(datapackDir, paths),
+        id,
+        displayName,
+        packVersion,
+      }
+    } catch {
+      return null
     }
+  }
+
+  const refreshDatapacks = async (dirs: string[]) => {
+    const uniqueDirs = Array.from(new Set(dirs.filter(Boolean)))
+    const entries = await Promise.all(uniqueDirs.map((dir) => loadDatapackEntry(dir)))
+    setDatapacks(entries.filter((entry): entry is DatapackEntry => !!entry))
   }
 
   const handleRefreshExplorer = async () => {
-    if (!selectedFolder) return
+    if (!datapacks.length) return
+    await refreshDatapacks(datapacks.map((datapack) => datapack.dir))
+  }
+
+  const handleAddDatapack = async () => {
+    const folder = await (window as any).electron.pickFolder()
+    if (!folder) return
+
     try {
-      const files = await (window as any).electron.listFiles(selectedFolder)
-      setFilePaths(Array.isArray(files) ? files : [])
-    } catch {
-      setFilePaths([])
+      await (window as any).electron.addDatapackExisting(folder)
+      const existingDirs = datapacks.map((datapack) => datapack.dir)
+      await refreshDatapacks([...existingDirs, folder])
+    } catch (error) {
+      console.error('Failed to add datapack:', error)
+      alert(`Failed to add datapack: ${error instanceof Error ? error.message : 'Unknown error'}`)
     }
   }
 
-  const handleExplorerSelect = async (pathKey: string, isFile: boolean) => {
-    if (!isFile || !selectedFolder) return
+  const handleExplorerSelect = async (datapackDir: string, pathKey: string, isFile: boolean) => {
+    if (!isFile) return
 
-    const rootName = selectedFolder.split(/[\\/]/).pop() || ''
+    const rootName = datapackDir.split(/[\\/]/).pop() || ''
     const normalizedKey = pathKey.replace(/\\/g, '/')
     const rootPrefix = rootName ? `${rootName}/` : ''
     const relativePath = normalizedKey === rootName
@@ -68,7 +141,7 @@ function CodeEditor() {
     if (!trimmedRelative || !fileName.includes('.')) return
 
     try {
-      const contents = await (window as any).electron.readFile(selectedFolder, trimmedRelative)
+      const contents = await (window as any).electron.readFile(datapackDir, trimmedRelative)
       const view = viewRef.current
       if (!view) return
       view.dispatch({
@@ -112,21 +185,20 @@ function CodeEditor() {
     })
   }, [])
 
-  const relativePaths = React.useMemo(() => {
-    if (!selectedFolder) return []
-
-    const base = selectedFolder.replace(/\\/g, '/').replace(/\/+$/, '')
-    return filePaths.map((rawPath) => {
-      const normalized = rawPath.replace(/\\/g, '/')
-      const baseWithSlash = `${base}/`
-
-      if (normalized.toLowerCase().startsWith(baseWithSlash.toLowerCase())) {
-        return normalized.slice(baseWithSlash.length)
+  useEffect(() => {
+    const loadWorkspaceDatapacks = async () => {
+      if (!workspaceInfo.dir) return
+      try {
+        const metadataPaths = await handleGetDatapacks()
+        const datapackDirs = metadataPaths.map((metadataPath: string) => getDirFromPath(metadataPath))
+        await refreshDatapacks(datapackDirs)
+      } catch (error) {
+        console.error('Failed to load workspace datapacks:', error)
       }
+    }
 
-      return normalized
-    })
-  }, [filePaths, selectedFolder])
+    loadWorkspaceDatapacks()
+  }, [workspaceInfo.dir])
 
   return (
     <div className="w-full h-full flex flex-col select-none">
@@ -143,7 +215,7 @@ function CodeEditor() {
           <DropdownMenu 
             label="File"
             items={[
-              { label: 'Open Folder', onClick: handlePickFolder },
+              { label: 'Add Existing Datapack', onClick: handleAddDatapack },
               {},
               { label: 'Open Workspace', onClick: handleOpenWorkspace },
               { label: 'Save Workspace', onClick: handleSaveWorkspace },
@@ -183,23 +255,31 @@ function CodeEditor() {
             {label: 'Refresh', onClick: handleRefreshExplorer}
           ] as MenuItem[]}
         >
-          {
-            selectedFolder ? (
-              <DatapackTree
-                paths={relativePaths}
-                folderName={selectedFolder.split(/[\\/]/).pop() || 'datapack'}
-                basePath={selectedFolder}
-                className="mt-2"
-                onFolderCreated={handleRefreshExplorer}
-                onSelect={handleExplorerSelect}
-              />
-            ) : (<>
-              <div className="text-sm text-codemirror-300">No folder selected</div>
-              <div className="flex flex-col items-center m-4 button" onClick={handlePickFolder}>
-                <div className="text-sm text-codemirror-100">Open Folder</div>
+          {datapacks.length ? (
+            <div className="space-y-4">
+              {datapacks.map((datapack) => (
+                <DatapackTree
+                  key={datapack.dir}
+                  paths={datapack.paths}
+                  folderName={datapack.name}
+                  rootId={datapack.id}
+                  rootName={datapack.displayName}
+                  rootPackVersion={datapack.packVersion}
+                  basePath={datapack.dir}
+                  className="mt-2"
+                  onFolderCreated={handleRefreshExplorer}
+                  onSelect={(pathKey, isFile) => handleExplorerSelect(datapack.dir, pathKey, isFile)}
+                />
+              ))}
+            </div>
+          ) : (
+            <>
+              <div className="text-sm text-codemirror-300">No datapacks added</div>
+              <div className="flex flex-col items-center m-4 button" onClick={handleAddDatapack}>
+                <div className="text-sm text-codemirror-100">Add Existing Datapack</div>
               </div>
-            </>)
-          }
+            </>
+          )}
         </Panel>
 
         {/* Left Panel Resize Handle */}

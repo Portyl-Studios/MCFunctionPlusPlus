@@ -4,6 +4,9 @@ import {
   parseWorkspaceFile,
   writeWorkspaceFile,
   createDefaultWorkspace,
+  addDatapackPath,
+  removeDatapackPath,
+  getDatapackPaths,
   type WorkspaceData
 } from './workspace-parser'
 
@@ -65,6 +68,21 @@ class WorkspaceManager {
   getSetting(key: string): unknown {
     if (!this.currentWorkspaceData) return null
     return this.currentWorkspaceData.settings?.[key] ?? null
+  }
+
+  addDatapack(metadataPath: string): void {
+    if (!this.currentWorkspaceData) return
+    this.currentWorkspaceData = addDatapackPath(this.currentWorkspaceData, metadataPath)
+  }
+
+  removeDatapack(metadataPath: string): void {
+    if (!this.currentWorkspaceData) return
+    this.currentWorkspaceData = removeDatapackPath(this.currentWorkspaceData, metadataPath)
+  }
+
+  getDatapacks(): string[] {
+    if (!this.currentWorkspaceData) return []
+    return getDatapackPaths(this.currentWorkspaceData)
   }
 
   async saveWorkspace(): Promise<void> {
@@ -178,6 +196,22 @@ export const registerWorkspaceHandlers = (getMainWindow: () => BrowserWindow | n
 
   ipcMain.handle('workspace-save', async () => {
     await workspaceManager.saveWorkspace()
+  })
+
+  ipcMain.handle('workspace-add-datapack', async (_event, { metadataPath }) => {
+    workspaceManager.addDatapack(metadataPath)
+    await workspaceManager.saveWorkspace()
+    return workspaceManager.getDatapacks()
+  })
+
+  ipcMain.handle('workspace-remove-datapack', async (_event, { metadataPath }) => {
+    workspaceManager.removeDatapack(metadataPath)
+    await workspaceManager.saveWorkspace()
+    return workspaceManager.getDatapacks()
+  })
+
+  ipcMain.handle('workspace-get-datapacks', async () => {
+    return workspaceManager.getDatapacks()
   })
 }
 

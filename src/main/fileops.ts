@@ -254,3 +254,27 @@ export async function createFolder(folderPath: string): Promise<string> {
     throw error
   }
 }
+export async function validateDatapackFolder(folderPath: string): Promise<boolean> {
+  // Validate inputs
+  if (!folderPath || typeof folderPath !== 'string') {
+    throw new Error('Invalid folder path')
+  }
+
+  if (isInvalidDirectory(folderPath)) {
+    throw new Error('Invalid folder path')
+  }
+
+  try {
+    const stats = await fs.stat(folderPath)
+    if (!stats.isDirectory()) {
+      throw new Error('Path is not a directory')
+    }
+
+    // Check for pack.mcmeta in the root directory (not recursive)
+    const packMcmetaPath = path.join(folderPath, 'pack.mcmeta')
+    const packMcmetaStats = await fs.stat(packMcmetaPath)
+    return packMcmetaStats.isFile()
+  } catch {
+    return false
+  }
+}
