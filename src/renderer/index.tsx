@@ -16,6 +16,7 @@ import { useWorkspace } from './use-workspace'
 import iconPath from '../../assets/icon.png'
 import { DatapackTree } from './datapacktree'
 import { Dialog, useDialog } from './dialog'
+import { getDirFromPath, toRelativePaths, createFileKey, parseFileKey } from './utils'
 
 // Annotation to mark editor transactions that are programmatic content loads
 // This prevents marking files as modified when we're just loading content from disk
@@ -97,25 +98,13 @@ function CodeEditor() {
     }
   }
 
-
-  const getDirFromPath = (filePath: string) => {
-    const lastSlash = Math.max(filePath.lastIndexOf('\\'), filePath.lastIndexOf('/'))
-    if (lastSlash === -1) return filePath
-    return filePath.slice(0, lastSlash)
-  }
-
-  const toRelativePaths = (baseDir: string, rawPaths: string[]) => {
-    const base = baseDir.replace(/\\/g, '/').replace(/\/+$/, '')
-    return rawPaths.map((rawPath) => {
-      const normalized = rawPath.replace(/\\/g, '/')
-      const baseWithSlash = `${base}/`
-
-      if (normalized.toLowerCase().startsWith(baseWithSlash.toLowerCase())) {
-        return normalized.slice(baseWithSlash.length)
-      }
-
-      return normalized
-    })
+  /**
+   * Helper to clear all workspace state when changing workspaces
+   */
+  const clearWorkspaceState = () => {
+    setOpenedFiles([])
+    setActiveFile(null)
+    setModifiedFiles(new Set())
   }
 
   const loadDatapackEntry = async (datapackDir: string): Promise<DatapackEntry | null> => {
@@ -205,9 +194,7 @@ function CodeEditor() {
   const handleOpenWorkspaceWithConfirm = async () => {
     await handleWorkspaceChangeWithConfirm(async () => {
       // Clear all files and modified set before changing workspace
-      setOpenedFiles([])
-      setActiveFile(null)
-      setModifiedFiles(new Set())
+      clearWorkspaceState()
       await handleOpenWorkspace()
     })
   }
@@ -215,9 +202,7 @@ function CodeEditor() {
   const handleNewWorkspaceWithConfirm = async () => {
     await handleWorkspaceChangeWithConfirm(async () => {
       // Clear all files and modified set before changing workspace
-      setOpenedFiles([])
-      setActiveFile(null)
-      setModifiedFiles(new Set())
+      clearWorkspaceState()
       await handleNewWorkspace()
     })
   }
@@ -225,9 +210,7 @@ function CodeEditor() {
   const handleOpenDefaultWorkspaceWithConfirm = async () => {
     await handleWorkspaceChangeWithConfirm(async () => {
       // Clear all files and modified set before changing workspace
-      setOpenedFiles([])
-      setActiveFile(null)
-      setModifiedFiles(new Set())
+      clearWorkspaceState()
       await handleOpenDefaultWorkspace()
     })
   }
@@ -316,10 +299,10 @@ function CodeEditor() {
     if (!fileKey) return
     
     // Parse file key to get datapack dir and relative path
-    const [datapackDir, relativePath] = fileKey.split('|')
+    const { datapackDir, relativePath } = parseFileKey(fileKey)
     
     // Find the opened file to get cached content
-    const openedFile = openedFiles.find((f) => `${f.datapackDir}|${f.relativePath}` === fileKey)
+    const openedFile = openedFiles.find((f) => createFileKey(f.datapackDir, f.relativePath) === fileKey)
     
     let contents = ''
     
@@ -363,10 +346,10 @@ function CodeEditor() {
     if (!trimmedRelative || !fileName.includes('.')) return
 
     // Create file key for tracking
-    const fileKey = `${datapackDir}|${trimmedRelative}`
+    const fileKey = createFileKey(datapackDir, trimmedRelative)
     
     // Check if file is already open
-    const existingFile = openedFiles.find((f) => `${f.datapackDir}|${f.relativePath}` === fileKey)
+    const existingFile = openedFiles.find((f) => createFileKey(f.datapackDir, f.relativePath) === fileKey)
     if (!existingFile) {
       // Load content from disk for new files
       try {
@@ -391,7 +374,7 @@ function CodeEditor() {
   }
 
   const saveFile = async (fileKey: string, contents: string) => {
-    const [datapackDir, relativePath] = fileKey.split('|')
+    const { datapackDir, relativePath } = parseFileKey(fileKey)
 
     try {
       await (window as any).electron.saveFile(datapackDir, relativePath, contents)
@@ -399,7 +382,7 @@ function CodeEditor() {
       // Update cached content
       setOpenedFiles((prev) => 
         prev.map((f) => 
-          `${f.datapackDir}|${f.relativePath}` === fileKey
+          createFileKey(f.datapackDir, f.relativePath) === fileKey
             ? { ...f, content: contents }
             : f
         )
@@ -446,7 +429,7 @@ function CodeEditor() {
 
     // Collect all modified files with their cached content
     for (const fileKey of modifiedFiles) {
-      const openedFile = openedFiles.find((f) => `${f.datapackDir}|${f.relativePath}` === fileKey)
+      const openedFile = openedFiles.find((f) => createFileKey(f.datapackDir, f.relativePath) === fileKey)
       if (openedFile) {
         filesToSave.push({ 
           fileKey, 
@@ -471,7 +454,7 @@ function CodeEditor() {
   const closeTab = async (fileKey: string) => {
     // Check if file is modified and confirm close
     if (modifiedFiles.has(fileKey)) {
-      const fileName = openedFiles.find((f) => `${f.datapackDir}|${f.relativePath}` === fileKey)?.fileName || 'this file'
+      const fileName = openedFiles.find((f) => createFileKey(f.datapackDir, f.relativePath) === fileKey)?.fileName || 'this file'
       const confirmed = await dialog.showConfirm('Close File?', `${fileName} has unsaved changes. Do you want to close it without saving?`)
       if (!confirmed) {
         return // User cancelled, don't close
@@ -482,8 +465,8 @@ function CodeEditor() {
     clearAutoSaveTimer(fileKey)
 
     // Find the index of the file being closed
-    const closingIndex = openedFiles.findIndex((f) => `${f.datapackDir}|${f.relativePath}` === fileKey)
-    const updatedFiles = openedFiles.filter((f) => `${f.datapackDir}|${f.relativePath}` !== fileKey)
+    const closingIndex = openedFiles.findIndex((f) => createFileKey(f.datapackDir, f.relativePath) === fileKey)
+    const updatedFiles = openedFiles.filter((f) => createFileKey(f.datapackDir, f.relativePath) !== fileKey)
     setOpenedFiles(updatedFiles)
     
     // Clear modified state for this file
@@ -498,7 +481,7 @@ function CodeEditor() {
         // Try to open the next tab (same index), or previous tab if no next tab exists
         const nextIndex = closingIndex < updatedFiles.length ? closingIndex : updatedFiles.length - 1
         const nextFile = updatedFiles[nextIndex]
-        const newActive = `${nextFile.datapackDir}|${nextFile.relativePath}`
+        const newActive = createFileKey(nextFile.datapackDir, nextFile.relativePath)
         await openFile(newActive)
       } else {
         await openFile(null)
@@ -529,7 +512,7 @@ function CodeEditor() {
     } else if (wasOpen && !dialog.isOpen) {
       // Dialog just closed - restart auto-save for all modified files
       modifiedFiles.forEach((fileKey) => {
-        const openedFile = openedFiles.find((f) => `${f.datapackDir}|${f.relativePath}` === fileKey)
+        const openedFile = openedFiles.find((f) => createFileKey(f.datapackDir, f.relativePath) === fileKey)
         if (openedFile) {
           scheduleAutoSave(fileKey, openedFile.content)
         }
@@ -562,7 +545,7 @@ function CodeEditor() {
               // Update cached content
               setOpenedFiles((prev) => 
                 prev.map((f) => 
-                  `${f.datapackDir}|${f.relativePath}` === fileKey
+                  createFileKey(f.datapackDir, f.relativePath) === fileKey
                     ? { ...f, content: newContent }
                     : f
                 )
@@ -801,7 +784,7 @@ function CodeEditor() {
               className="flex overflow-x-auto overflow-y-hidden bg-codemirror-700 border-b border-codemirror-600 scroll-smooth select-none"
             >
               {openedFiles.map((file, idx) => {
-                const fileKey = `${file.datapackDir}|${file.relativePath}`
+                const fileKey = createFileKey(file.datapackDir, file.relativePath)
                 const isActive = activeFile === fileKey
                 return (
                   <div
