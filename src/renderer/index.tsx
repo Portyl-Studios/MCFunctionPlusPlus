@@ -602,6 +602,7 @@ function CodeEditor() {
             ] as MenuItem[]}
             isOpen={isHeaderMenuOneOpen}
             setIsOpen={setIsHeaderMenuOneOpen}
+            disabled={dialog.isOpen}
           />
 
           <DropdownMenu 
@@ -626,6 +627,7 @@ function CodeEditor() {
             ] as MenuItem[]}
             isOpen={isHeaderMenuTwoOpen}
             setIsOpen={setIsHeaderMenuTwoOpen}
+            disabled={dialog.isOpen}
           />
 
           <DropdownMenu 
@@ -640,6 +642,7 @@ function CodeEditor() {
             ] as MenuItem[]}
             isOpen={isHeaderMenuThreeOpen}
             setIsOpen={setIsHeaderMenuThreeOpen}
+            disabled={dialog.isOpen}
           />
 
           <DropdownMenu 
@@ -650,6 +653,7 @@ function CodeEditor() {
             ] as MenuItem[]}
             isOpen={isHeaderMenuFourOpen}
             setIsOpen={setIsHeaderMenuFourOpen}
+            disabled={dialog.isOpen}
           />
 
           <div className="flex-1" style={{ WebkitAppRegion: 'drag' } as any}></div>
