@@ -39,12 +39,12 @@ export function DropdownMenu({ label, items, isOpen, setIsOpen, buttonClassName,
           if (disabled) return
           setIsOpen(!isOpen)
         }}
-        className={`${buttonClass} ${disabledClass}`}
+        className={`${buttonClass} ${disabledClass} ${isOpen ? 'border-b border-codemirror-select' : ''}`}
       >
         {label}
       </div>
       {isOpen && !disabled && (
-        <div className="absolute top-full left-0 mt-0 menu-layer">
+        <div className="absolute top-full left-0 mt-2 menu-layer">
           <MenuItems items={items} maxItems={10} onItemClick={() => setIsOpen(false)} />
         </div>
       )}
