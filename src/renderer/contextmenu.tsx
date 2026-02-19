@@ -43,7 +43,7 @@ export function ContextMenu({ items, x, y, isOpen, onClose }: ContextMenuProps) 
       className="fixed menu-layer"
       style={{ top: y, left: x }}
     >
-      <MenuItems items={items} onItemClick={onClose} />
+      <MenuItems items={items} maxItems={10} onItemClick={onClose} />
     </div>
   )
 }

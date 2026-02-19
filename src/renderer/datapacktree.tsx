@@ -240,9 +240,12 @@ export function DatapackTree({ paths, className, folderName, rootId, rootName, r
     })
 
     setContextItems([
-      {label: 'Cut', onClick: () => {}},
-      {label: 'Copy', onClick: () => {}},
-      {label: 'Paste', onClick: () => {}},
+      {label: 'Cut', onClick: undefined, disabled: true},
+      {label: 'Copy', onClick: undefined, disabled: true},
+      {label: 'Paste', onClick: undefined, disabled: true},
+      {},
+      {label: 'Rename', onClick: undefined, disabled: true},
+      {label: 'Delete', onClick: undefined, disabled: true},
       {},
       {
         label: 'Create Datapack Directory',

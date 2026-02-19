@@ -492,7 +492,7 @@ function CodeEditor() {
         </div>
       </div>
 
-      {/* Main Panel */}
+      {/* App */}
       <div className="flex flex-row flex-1 overflow-hidden flex-nowrap">
 
         {/* Left Panel */}
@@ -620,7 +620,7 @@ function CodeEditor() {
 
       </div>
 
-      {/* Footer Panel */}
+      {/* Footer */}
       <div className="flex flex-row bg-codemirror-700 text-codemirror-100 px-2 py-1 border-t border-codemirror-600">
         <div className="text-sm">Made by touchportyl</div>
       </div>
