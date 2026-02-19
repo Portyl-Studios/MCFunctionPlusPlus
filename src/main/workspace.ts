@@ -116,6 +116,13 @@ class WorkspaceManager {
     this.currentWorkspaceDir = null
     this.currentWorkspaceData = null
   }
+
+  newWorkspace(): void {
+    // Create a new default workspace in memory without saving
+    this.currentWorkspaceData = createDefaultWorkspace()
+    this.currentWorkspaceDir = null
+    this.currentWorkspaceName = null
+  }
 }
 
 // Create singleton instance
@@ -212,6 +219,11 @@ export const registerWorkspaceHandlers = (getMainWindow: () => BrowserWindow | n
 
   ipcMain.handle('workspace-get-datapacks', async () => {
     return workspaceManager.getDatapacks()
+  })
+
+  ipcMain.handle('workspace-new', async () => {
+    workspaceManager.newWorkspace()
+    return { success: true }
   })
 }
 

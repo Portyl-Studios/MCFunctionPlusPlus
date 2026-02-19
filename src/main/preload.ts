@@ -68,6 +68,9 @@ contextBridge.exposeInMainWorld('electron', {
   workspaceGetDatapacks: () => {
     return ipcRenderer.invoke('workspace-get-datapacks')
   },
+  workspaceNew: () => {
+    return ipcRenderer.invoke('workspace-new')
+  },
   createFolder: (folderPath: string) => {
     return ipcRenderer.invoke('create-folder', { folderPath })
   },

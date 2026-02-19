@@ -96,12 +96,23 @@ export function useWorkspace() {
     }
   }
 
+  const handleNewWorkspace = async () => {
+    try {
+      await (window as any).electron.workspaceNew()
+      // Automatically trigger Save As dialog
+      await handleSaveWorkspaceAs()
+    } catch (error) {
+      console.error('Failed to create new workspace:', error)
+    }
+  }
+
   return {
     workspaceInfo,
     setWorkspaceInfo,
     handleOpenWorkspace,
     handleSaveWorkspace,
     handleSaveWorkspaceAs,
+    handleNewWorkspace,
     handleAddDatapack,
     handleRemoveDatapack,
     handleGetDatapacks
