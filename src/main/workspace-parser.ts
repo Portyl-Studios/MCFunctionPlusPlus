@@ -7,7 +7,7 @@ const WORKSPACE_EXTENSION = '.mpp-workspace'
 export interface WorkspaceData {
   version: number
   lastOpened?: string
-  settings?: Record<string, unknown>
+  preferences?: Record<string, unknown>
   datapacks?: string[]
 }
 
@@ -45,7 +45,7 @@ export const createDefaultWorkspace = (): WorkspaceData => {
   return {
     version: WORKSPACE_VERSION,
     lastOpened: new Date().toISOString(),
-    settings: {},
+    preferences: {},
     datapacks: []
   }
 }

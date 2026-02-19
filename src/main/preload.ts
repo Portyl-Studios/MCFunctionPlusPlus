@@ -50,11 +50,11 @@ contextBridge.exposeInMainWorld('electron', {
   workspaceSaveAs: (directory: string, name: string) => {
     return ipcRenderer.invoke('workspace-save-as', { directory, name })
   },
-  workspaceUpdateSetting: (key: string, value: unknown) => {
-    return ipcRenderer.invoke('workspace-update-setting', { key, value })
+  workspaceUpdatePreference: (key: string, value: unknown) => {
+    return ipcRenderer.invoke('workspace-update-preference', { key, value })
   },
-  workspaceGetSetting: (key: string) => {
-    return ipcRenderer.invoke('workspace-get-setting', { key })
+  workspaceGetPreference: (key: string) => {
+    return ipcRenderer.invoke('workspace-get-preference', { key })
   },
   workspaceSave: () => {
     return ipcRenderer.invoke('workspace-save')

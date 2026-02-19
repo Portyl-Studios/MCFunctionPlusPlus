@@ -55,19 +55,19 @@ class WorkspaceManager {
     }
   }
 
-  updateSetting(key: string, value: unknown): void {
+  updatePreference(key: string, value: unknown): void {
     if (!this.currentWorkspaceData) return
 
-    if (!this.currentWorkspaceData.settings) {
-      this.currentWorkspaceData.settings = {}
+    if (!this.currentWorkspaceData.preferences) {
+      this.currentWorkspaceData.preferences = {}
     }
 
-    this.currentWorkspaceData.settings[key] = value
+    this.currentWorkspaceData.preferences[key] = value
   }
 
-  getSetting(key: string): unknown {
+  getPreference(key: string): unknown {
     if (!this.currentWorkspaceData) return null
-    return this.currentWorkspaceData.settings?.[key] ?? null
+    return this.currentWorkspaceData.preferences?.[key] ?? null
   }
 
   addDatapack(metadataPath: string): void {
@@ -192,13 +192,13 @@ export const registerWorkspaceHandlers = (getMainWindow: () => BrowserWindow | n
     return result
   })
 
-  ipcMain.handle('workspace-update-setting', async (_event, { key, value }) => {
-    workspaceManager.updateSetting(key, value)
+  ipcMain.handle('workspace-update-preference', async (_event, { key, value }) => {
+    workspaceManager.updatePreference(key, value)
     await workspaceManager.saveWorkspace()
   })
 
-  ipcMain.handle('workspace-get-setting', async (_event, { key }) => {
-    return workspaceManager.getSetting(key)
+  ipcMain.handle('workspace-get-preference', async (_event, { key }) => {
+    return workspaceManager.getPreference(key)
   })
 
   ipcMain.handle('workspace-save', async () => {
