@@ -55,6 +55,7 @@ function CodeEditor() {
   const isAutoSaveEnabledRef = useRef(isAutoSaveEnabled)
   const autoSaveTimersRef = useRef<Map<string, number>>(new Map())
   const dialog = useDialog()
+  const isDialogOpenRef = useRef(dialog.isOpen)
   const {
     workspaceInfo,
     handleOpenWorkspace,
@@ -379,6 +380,7 @@ function CodeEditor() {
 
   const scheduleAutoSave = (fileKey: string, contents: string) => {
     if (!isAutoSaveEnabledRef.current) return
+    if (isDialogOpenRef.current) return // Pause auto-save while dialog is open
 
     // Clear existing timer for this file
     clearAutoSaveTimer(fileKey)
@@ -464,6 +466,26 @@ function CodeEditor() {
   useEffect(() => {
     isAutoSaveEnabledRef.current = isAutoSaveEnabled
   }, [isAutoSaveEnabled])
+
+  // Sync dialog open state to ref and clear auto-save timers when dialog opens
+  useEffect(() => {
+    const wasOpen = isDialogOpenRef.current
+    isDialogOpenRef.current = dialog.isOpen
+    
+    if (dialog.isOpen) {
+      // Clear all auto-save timers when dialog opens
+      autoSaveTimersRef.current.forEach((timerId) => window.clearTimeout(timerId))
+      autoSaveTimersRef.current.clear()
+    } else if (wasOpen && !dialog.isOpen) {
+      // Dialog just closed - restart auto-save for all modified files
+      modifiedFiles.forEach((fileKey) => {
+        const openedFile = openedFiles.find((f) => `${f.datapackDir}|${f.relativePath}` === fileKey)
+        if (openedFile) {
+          scheduleAutoSave(fileKey, openedFile.content)
+        }
+      })
+    }
+  }, [dialog.isOpen, modifiedFiles, openedFiles])
 
   useEffect(() => {
     if (!editorRef.current) return
