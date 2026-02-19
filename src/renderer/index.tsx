@@ -15,6 +15,7 @@ import { DropdownMenu, type MenuItem } from './dropdownmenu'
 import { useWorkspace } from './use-workspace'
 import iconPath from '../../assets/icon.png'
 import { DatapackTree } from './datapacktree'
+import { Dialog, useDialog } from './dialog'
 
 const isLoadingContent = Annotation.define<boolean>()
 
@@ -50,14 +51,46 @@ function CodeEditor() {
   const [activeFile, setActiveFile] = useState<string | null>(null)
   const [modifiedFiles, setModifiedFiles] = useState<Set<string>>(new Set())
   const tabsRef = useRef<HTMLDivElement>(null)
+  const [isAutoSaveEnabled, setIsAutoSaveEnabled] = useState(false)
+  const isAutoSaveEnabledRef = useRef(isAutoSaveEnabled)
+  const autoSaveTimersRef = useRef<Map<string, number>>(new Map())
+  const dialog = useDialog()
   const {
     workspaceInfo,
     handleOpenWorkspace,
     handleSaveWorkspace,
     handleSaveWorkspaceAs,
     handleNewWorkspace,
+    handleOpenDefaultWorkspace,
     handleGetDatapacks,
   } = useWorkspace()
+
+  // Load auto-save preference from workspace
+  useEffect(() => {
+    const loadAutoSavePreference = async () => {
+      try {
+        const savedValue = await (window as any).electron.workspaceGetPreference('autoSave')
+        if (typeof savedValue === 'boolean') {
+          setIsAutoSaveEnabled(savedValue)
+        }
+      } catch (error) {
+        console.error('Failed to load auto-save preference:', error)
+      }
+    }
+
+    loadAutoSavePreference()
+  }, [workspaceInfo.dir])
+
+  // Save auto-save preference when it changes
+  const toggleAutoSave = async (enabled: boolean) => {
+    setIsAutoSaveEnabled(enabled)
+    try {
+      await (window as any).electron.workspaceUpdatePreference('autoSave', enabled)
+    } catch (error) {
+      console.error('Failed to save auto-save preference:', error)
+    }
+  }
+
 
   const getDirFromPath = (filePath: string) => {
     const lastSlash = Math.max(filePath.lastIndexOf('\\'), filePath.lastIndexOf('/'))
@@ -123,6 +156,77 @@ function CodeEditor() {
     setDatapacks(entries.filter((entry): entry is DatapackEntry => !!entry))
   }
 
+  const handleWorkspaceChangeWithConfirm = async (workspaceChangeAction: () => Promise<void>) => {
+    // If no unsaved files, just proceed
+    if (modifiedFiles.size === 0) {
+      await workspaceChangeAction()
+      return
+    }
+
+    // Show dialog with three options
+    await new Promise<void>((resolve) => {
+      dialog.openDialog({
+        title: 'Unsaved Changes',
+        message: `You have ${modifiedFiles.size} unsaved file(s). What would you like to do?`,
+        buttons: [
+          {
+            label: 'Save',
+            onClick: async () => {
+              await saveAllFiles()
+              await workspaceChangeAction()
+              resolve()
+            },
+          },
+          {
+            label: 'Discard',
+            onClick: async () => {
+              await workspaceChangeAction()
+              resolve()
+            },
+          },
+          {
+            label: 'Cancel',
+            onClick: () => {
+              resolve()
+            },
+          },
+        ],
+      })
+    })
+  }
+
+  const handleOpenWorkspaceWithConfirm = async () => {
+    await handleWorkspaceChangeWithConfirm(async () => {
+      // Clear all files and modified set before changing workspace
+      setOpenedFiles([])
+      setActiveFile(null)
+      setModifiedFiles(new Set())
+      await handleOpenWorkspace()
+    })
+  }
+
+  const handleNewWorkspaceWithConfirm = async () => {
+    await handleWorkspaceChangeWithConfirm(async () => {
+      // Clear all files and modified set before changing workspace
+      setOpenedFiles([])
+      setActiveFile(null)
+      setModifiedFiles(new Set())
+      await handleNewWorkspace()
+    })
+  }
+
+  const handleOpenDefaultWorkspaceWithConfirm = async () => {
+    await handleWorkspaceChangeWithConfirm(async () => {
+      // Clear all files and modified set before changing workspace
+      setOpenedFiles([])
+      setActiveFile(null)
+      setModifiedFiles(new Set())
+      await handleOpenDefaultWorkspace()
+    })
+  }
+
+
+
   const handleRefreshExplorer = async () => {
     if (!datapacks.length) return
     await refreshDatapacks(datapacks.map((datapack) => datapack.dir))
@@ -138,7 +242,7 @@ function CodeEditor() {
       await refreshDatapacks([...existingDirs, folder])
     } catch (error) {
       console.error('Failed to add datapack:', error)
-      alert(`Failed to add datapack: ${error instanceof Error ? error.message : 'Unknown error'}`)
+      await dialog.showAlert('Error', `Failed to add datapack: ${error instanceof Error ? error.message : 'Unknown error'}`)
     }
   }
 
@@ -155,7 +259,7 @@ function CodeEditor() {
       await refreshDatapacks(updatedDirs)
     } catch (error) {
       console.error('Failed to remove datapack:', error)
-      alert(`Failed to remove datapack: ${error instanceof Error ? error.message : 'Unknown error'}`)
+      await dialog.showAlert('Error', `Failed to remove datapack: ${error instanceof Error ? error.message : 'Unknown error'}`)
     }
   }
 
@@ -229,11 +333,16 @@ function CodeEditor() {
     await openFile(fileKey)
   }
 
-  const saveCurrentFile = async () => {
-    if (!activeFile || !viewRef.current) return
+  const clearAutoSaveTimer = (fileKey: string) => {
+    const timerId = autoSaveTimersRef.current.get(fileKey)
+    if (timerId !== undefined) {
+      window.clearTimeout(timerId)
+      autoSaveTimersRef.current.delete(fileKey)
+    }
+  }
 
-    const [datapackDir, relativePath] = activeFile.split('|')
-    const contents = viewRef.current.state.doc.toString()
+  const saveFile = async (fileKey: string, contents: string) => {
+    const [datapackDir, relativePath] = fileKey.split('|')
 
     try {
       await (window as any).electron.saveFile(datapackDir, relativePath, contents)
@@ -241,7 +350,7 @@ function CodeEditor() {
       // Update cached content
       setOpenedFiles((prev) => 
         prev.map((f) => 
-          `${f.datapackDir}|${f.relativePath}` === activeFile
+          `${f.datapackDir}|${f.relativePath}` === fileKey
             ? { ...f, content: contents }
             : f
         )
@@ -250,17 +359,40 @@ function CodeEditor() {
       // Clear modified state for this file
       setModifiedFiles((prev) => {
         const next = new Set(prev)
-        next.delete(activeFile)
+        next.delete(fileKey)
         return next
       })
+
+      // Clear any pending autosave
+      clearAutoSaveTimer(fileKey)
     } catch (error) {
       console.error('Failed to save file:', error)
-      alert(`Failed to save file: ${error instanceof Error ? error.message : 'Unknown error'}`)
+      await dialog.showAlert('Error', `Failed to save file: ${error instanceof Error ? error.message : 'Unknown error'}`)
     }
   }
 
+  const saveCurrentFile = async () => {
+    if (!activeFile || !viewRef.current) return
+    const contents = viewRef.current.state.doc.toString()
+    await saveFile(activeFile, contents)
+  }
+
+  const scheduleAutoSave = (fileKey: string, contents: string) => {
+    if (!isAutoSaveEnabledRef.current) return
+
+    // Clear existing timer for this file
+    clearAutoSaveTimer(fileKey)
+
+    // Schedule new autosave after 1000ms
+    const timerId = window.setTimeout(() => {
+      saveFile(fileKey, contents)
+    }, 1000)
+
+    autoSaveTimersRef.current.set(fileKey, timerId)
+  }
+
   const saveAllFiles = async () => {
-    const filesToSave: Array<{ fileKey: string; datapackDir: string; relativePath: string; contents: string }> = []
+    const filesToSave: Array<{ fileKey: string; contents: string }> = []
 
     // Collect all modified files with their cached content
     for (const fileKey of modifiedFiles) {
@@ -268,25 +400,21 @@ function CodeEditor() {
       if (openedFile) {
         filesToSave.push({ 
           fileKey, 
-          datapackDir: openedFile.datapackDir, 
-          relativePath: openedFile.relativePath, 
           contents: openedFile.content 
         })
       }
     }
 
-    // Save all files
-    const savePromises = filesToSave.map(({ datapackDir, relativePath, contents }) =>
-      (window as any).electron.saveFile(datapackDir, relativePath, contents)
+    // Save all files using the shared saveFile function
+    const savePromises = filesToSave.map(({ fileKey, contents }) =>
+      saveFile(fileKey, contents)
     )
 
     try {
       await Promise.all(savePromises)
-      // Clear all modified states
-      setModifiedFiles(new Set())
     } catch (error) {
       console.error('Failed to save all files:', error)
-      alert(`Failed to save all files: ${error instanceof Error ? error.message : 'Unknown error'}`)
+      await dialog.showAlert('Error', `Failed to save all files: ${error instanceof Error ? error.message : 'Unknown error'}`)
     }
   }
 
@@ -294,11 +422,14 @@ function CodeEditor() {
     // Check if file is modified and confirm close
     if (modifiedFiles.has(fileKey)) {
       const fileName = openedFiles.find((f) => `${f.datapackDir}|${f.relativePath}` === fileKey)?.fileName || 'this file'
-      const confirmed = confirm(`${fileName} has unsaved changes. Do you want to close it without saving?`)
+      const confirmed = await dialog.showConfirm('Close File?', `${fileName} has unsaved changes. Do you want to close it without saving?`)
       if (!confirmed) {
         return // User cancelled, don't close
       }
     }
+
+    // Clear any pending autosave timer
+    clearAutoSaveTimer(fileKey)
 
     // Find the index of the file being closed
     const closingIndex = openedFiles.findIndex((f) => `${f.datapackDir}|${f.relativePath}` === fileKey)
@@ -331,6 +462,10 @@ function CodeEditor() {
   }, [activeFile])
 
   useEffect(() => {
+    isAutoSaveEnabledRef.current = isAutoSaveEnabled
+  }, [isAutoSaveEnabled])
+
+  useEffect(() => {
     if (!editorRef.current) return
 
     const state = EditorState.create({
@@ -346,18 +481,23 @@ function CodeEditor() {
             // Skip marking as modified if this is a programmatic content load
             const isLoading = update.transactions.some(tr => tr.annotation(isLoadingContent))
             if (!isLoading) {
+              const fileKey = activeFileRef.current
+              const newContent = update.state.doc.toString()
+
               // Mark as modified
-              setModifiedFiles((prev) => new Set(prev).add(activeFileRef.current!))
+              setModifiedFiles((prev) => new Set(prev).add(fileKey))
               
               // Update cached content
-              const newContent = update.state.doc.toString()
               setOpenedFiles((prev) => 
                 prev.map((f) => 
-                  `${f.datapackDir}|${f.relativePath}` === activeFileRef.current
+                  `${f.datapackDir}|${f.relativePath}` === fileKey
                     ? { ...f, content: newContent }
                     : f
                 )
               )
+
+              // Schedule autosave after delay
+              scheduleAutoSave(fileKey, newContent)
             }
           }
         }),
@@ -374,6 +514,9 @@ function CodeEditor() {
 
     return () => {
       view.destroy()
+      // Clear all autosave timers on unmount
+      autoSaveTimersRef.current.forEach((timerId) => window.clearTimeout(timerId))
+      autoSaveTimersRef.current.clear()
     }
   }, [])
 
@@ -393,7 +536,7 @@ function CodeEditor() {
           ;(window as any).electron.quit()
           break
         case 'open':
-          handleOpenWorkspace()
+          handleOpenWorkspaceWithConfirm()
           break
         case 'save':
           if (activeFile && modifiedFiles.has(activeFile)) saveCurrentFile()
@@ -413,7 +556,7 @@ function CodeEditor() {
         unsubscribe()
       }
     }
-  }, [activeFile, modifiedFiles, handleOpenWorkspace, saveCurrentFile, saveAllFiles, closeTab])
+  }, [activeFile, modifiedFiles, handleOpenWorkspaceWithConfirm, saveCurrentFile, saveAllFiles, closeTab])
 
   useEffect(() => {
     const loadWorkspaceDatapacks = async () => {
@@ -434,7 +577,7 @@ function CodeEditor() {
     <div className="w-full h-full flex flex-col select-none">
 
       {/* Title Bar */}
-      <div className="flex flex-row bg-codemirror-700 text-sm text-codemirror-100 border-b border-codemirror-600" style={{ WebkitAppRegion: 'drag' } as any}>
+      <div className="flex flex-row h-[36px] bg-codemirror-700 text-sm text-codemirror-100 border-b border-codemirror-600" style={{ WebkitAppRegion: 'drag' } as any}>
 
         {/* App Icon */}
         <div className="px-4 py-2 font-bold">
@@ -464,8 +607,9 @@ function CodeEditor() {
           <DropdownMenu 
             label="Workspace"
             items={[
-              { label: 'New Workspace', onClick: handleNewWorkspace },
-              { label: 'Open Workspace', shortcut: 'Ctrl+O', onClick: handleOpenWorkspace },
+              { label: 'New Workspace', onClick: handleNewWorkspaceWithConfirm },
+              { label: 'Open Workspace', shortcut: 'Ctrl+O', onClick: handleOpenWorkspaceWithConfirm },
+              { label: 'Open Default Workspace', onClick: handleOpenDefaultWorkspaceWithConfirm },
               { label: 'Save Workspace', onClick: handleSaveWorkspace },
               { label: 'Save Workspace As', onClick: handleSaveWorkspaceAs },
               {},
@@ -491,7 +635,7 @@ function CodeEditor() {
               { label: 'Save', shortcut: 'Ctrl+S', onClick: saveCurrentFile, disabled: !activeFile || !modifiedFiles.has(activeFile) },
               { label: 'Save All', shortcut: 'Ctrl+Shift+S', onClick: saveAllFiles, disabled: modifiedFiles.size === 0 },
               {},
-              { label: 'Auto-Save', onClick: undefined, disabled: true },
+              { label: 'Auto-Save', toggleable: true, toggled: isAutoSaveEnabled, onToggle: toggleAutoSave },
               { label: 'Word Wrap', onClick: undefined, disabled: true }
             ] as MenuItem[]}
             isOpen={isHeaderMenuThreeOpen}
@@ -657,9 +801,18 @@ function CodeEditor() {
       </div>
 
       {/* Footer */}
-      <div className="flex flex-row bg-codemirror-700 text-codemirror-100 px-2 py-1 border-t border-codemirror-600">
+      <div className="flex flex-row items-center h-[30px] bg-codemirror-700 text-codemirror-100 px-2 py-1 border-t border-codemirror-600">
         <div className="text-sm">Made by touchportyl</div>
       </div>
+
+      {/* Dialog */}
+      {dialog.dialogConfig && (
+        <Dialog
+          {...dialog.dialogConfig}
+          isOpen={dialog.isOpen}
+          onClose={dialog.closeDialog}
+        />
+      )}
     </div>
   )
 }

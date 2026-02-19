@@ -4,9 +4,12 @@ export interface MenuItem {
   label?: string
   shortcut?: string
   onClick?: () => void
+  onToggle?: (nextState: boolean) => void
   children?: MenuItem[]
   disabled?: boolean
   existingFolder?: boolean
+  toggleable?: boolean
+  toggled?: boolean
 }
 
 interface MenuItemsProps {
@@ -34,6 +37,24 @@ export function MenuItems({ items, onItemClick, maxItems = 5 }: MenuItemsProps) 
 
   const shouldScroll = items.length > maxItems
   const containerHeight = shouldScroll ? `calc(${maxItems} * 36px)` : 'auto'
+
+  const handleMenuItemClick = (item: MenuItem, hasChildren: boolean, isDisabled: boolean) => {
+    if (hasChildren || isDisabled) return
+
+    const didToggle = !!(item.toggleable && item.onToggle)
+    if (didToggle) {
+      item.onToggle?.(!item.toggled)
+    }
+
+    const didClick = !!item.onClick
+    if (didClick) {
+      item.onClick?.()
+    }
+
+    if (!didToggle && didClick) {
+      onItemClick?.()
+    }
+  }
 
   return (
     <div 
@@ -72,30 +93,42 @@ export function MenuItems({ items, onItemClick, maxItems = 5 }: MenuItemsProps) 
               }}
             >
               <div 
-                onClick={() => {
-                  if (hasChildren || isDisabled || !item.onClick) return
-                  item.onClick?.()
-                  onItemClick?.()
-                }}
-                className={`p-2 text-sm whitespace-nowrap flex items-center justify-between gap-3 ${
-                  item.existingFolder
+                onClick={() => handleMenuItemClick(item, hasChildren, isDisabled)}
+                className={`flex items-center gap-4 p-2 rounded text-sm whitespace-nowrap
+                  ${
+                    item.existingFolder
                     ? 'text-emerald-400 cursor-not-allowed'
-                    : isDisabled
-                    ? 'text-codemirror-400 cursor-not-allowed'
-                    : 'text-codemirror-100 hover:bg-codemirror-500 cursor-pointer'
-                }`}
+                    : (
+                      isDisabled
+                      ? 'text-codemirror-400 cursor-not-allowed'
+                      : 'text-codemirror-100 hover:bg-codemirror-highlight cursor-pointer'
+                    )
+                  }
+                `}
               >
-                <span>{item.label}</span>
 
-                {item.shortcut && (
-                  <span className="pillbox ml-2 px-2 py-0.5 font-mono text-xs text-codemirror-300">
-                    {item.shortcut}
+                {/* Left: Check indicator + Label */}
+                <span className="flex items-center gap-2 min-w-0 flex-1">
+                  <span className="w-4 mt-0.5 flex-shrink-0 flex items-center justify-center">
+                    {item.toggleable && item.toggled && (
+                      <i className="codicon codicon-check text-codemirror-100" />
+                    )}
                   </span>
-                )}
+                  <span>{item.label}</span>
+                </span>
 
-                {hasChildren && (
-                  <i className="codicon codicon-chevron-right text-codemirror-300" />
-                )}
+                {/* Right: Shortcut or Submenu indicator */}
+                <span className="min-w-4 flex-shrink-0 flex items-center justify-end">
+                  {item.shortcut && (
+                    <span className="pillbox px-2 py-0.5 font-mono text-xs text-codemirror-300">
+                      {item.shortcut}
+                    </span>
+                  )}
+                  {!item.shortcut && hasChildren && (
+                    <i className="codicon codicon-chevron-right text-codemirror-300" />
+                  )}
+                </span>
+                
               </div>
               {hasChildren && isSubmenuOpen && (
                 <div className="absolute left-full top-0 ml-4 menu-layer">

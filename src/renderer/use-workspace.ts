@@ -106,6 +106,16 @@ export function useWorkspace() {
     }
   }
 
+  const handleOpenDefaultWorkspace = async () => {
+    try {
+      const result = await (window as any).electron.workspaceGetOrCreateDefault()
+      await (window as any).electron.workspaceLoad(result.dir, result.name)
+      setWorkspaceInfo({ dir: result.dir, name: result.name })
+    } catch (error) {
+      console.error('Failed to load default workspace:', error)
+    }
+  }
+
   return {
     workspaceInfo,
     setWorkspaceInfo,
@@ -113,6 +123,7 @@ export function useWorkspace() {
     handleSaveWorkspace,
     handleSaveWorkspaceAs,
     handleNewWorkspace,
+    handleOpenDefaultWorkspace,
     handleAddDatapack,
     handleRemoveDatapack,
     handleGetDatapacks
