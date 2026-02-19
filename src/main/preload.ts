@@ -23,6 +23,9 @@ contextBridge.exposeInMainWorld('electron', {
   writeFile: (directory: string, filename: string, contents: string) => {
     return ipcRenderer.invoke('write-file', { directory, filename, contents })
   },
+  saveFile: (directory: string, relativePath: string, contents: string) => {
+    return ipcRenderer.invoke('save-file', { directory, relativePath, contents })
+  },
   readFile: (directory: string, filePath: string) => {
     return ipcRenderer.invoke('read-file', { directory, filePath })
   },

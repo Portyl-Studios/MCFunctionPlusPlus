@@ -45,6 +45,11 @@ ipcMain.handle('write-file', async (_event, { directory, filename, contents }) =
   return await writeFile(directory, filename, contents)
 })
 
+// IPC handler to save a file (similar to write-file but for existing files)
+ipcMain.handle('save-file', async (_event, { directory, relativePath, contents }) => {
+  return await writeFile(directory, relativePath, contents)
+})
+
 // IPC handler to read a file
 ipcMain.handle('read-file', async (_event, { directory, filePath }) => {
   return await readFileFromDirectory(directory, filePath)

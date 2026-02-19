@@ -31,6 +31,7 @@ type OpenedFile = {
   datapackDir: string
   relativePath: string
   fileName: string
+  content: string
   isModified?: boolean
 }
 
@@ -158,6 +159,40 @@ function CodeEditor() {
     }
   }
 
+  const openFile = async (fileKey: string | null) => {
+    setActiveFile(fileKey)
+    
+    if (!fileKey) return
+    
+    // Parse file key to get datapack dir and relative path
+    const [datapackDir, relativePath] = fileKey.split('|')
+    
+    // Find the opened file to get cached content
+    const openedFile = openedFiles.find((f) => `${f.datapackDir}|${f.relativePath}` === fileKey)
+    
+    let contents = ''
+    
+    // Use cached content if available, otherwise read from disk
+    if (openedFile?.content !== undefined) {
+      contents = openedFile.content
+    } else {
+      try {
+        contents = await (window as any).electron.readFile(datapackDir, relativePath)
+      } catch (error) {
+        console.error('Failed to read file:', error)
+        return
+      }
+    }
+    
+    const view = viewRef.current
+    if (!view) return
+    view.dispatch({
+      changes: { from: 0, to: view.state.doc.length, insert: contents },
+      annotations: [isLoadingContent.of(true)],
+    })
+    view.focus()
+  }
+
   const handleExplorerSelect = async (datapackDir: string, pathKey: string, isFile: boolean) => {
     if (!isFile) return
 
@@ -180,26 +215,93 @@ function CodeEditor() {
     // Check if file is already open
     const existingFile = openedFiles.find((f) => `${f.datapackDir}|${f.relativePath}` === fileKey)
     if (!existingFile) {
-      setOpenedFiles([...openedFiles, { datapackDir, relativePath: trimmedRelative, fileName }])
+      // Load content from disk for new files
+      try {
+        const content = await (window as any).electron.readFile(datapackDir, trimmedRelative)
+        setOpenedFiles([...openedFiles, { datapackDir, relativePath: trimmedRelative, fileName, content }])
+      } catch (error) {
+        console.error('Failed to read file:', error)
+        return
+      }
     }
     
     // Set as active and load content
-    setActiveFile(fileKey)
+    await openFile(fileKey)
+  }
+
+  const saveCurrentFile = async () => {
+    if (!activeFile || !viewRef.current) return
+
+    const [datapackDir, relativePath] = activeFile.split('|')
+    const contents = viewRef.current.state.doc.toString()
 
     try {
-      const contents = await (window as any).electron.readFile(datapackDir, trimmedRelative)
-      const view = viewRef.current
-      if (!view) return
-      view.dispatch({
-        changes: { from: 0, to: view.state.doc.length, insert: contents },
-        annotations: [isLoadingContent.of(true)],
+      await (window as any).electron.saveFile(datapackDir, relativePath, contents)
+      
+      // Update cached content
+      setOpenedFiles((prev) => 
+        prev.map((f) => 
+          `${f.datapackDir}|${f.relativePath}` === activeFile
+            ? { ...f, content: contents }
+            : f
+        )
+      )
+      
+      // Clear modified state for this file
+      setModifiedFiles((prev) => {
+        const next = new Set(prev)
+        next.delete(activeFile)
+        return next
       })
     } catch (error) {
-      console.error('Failed to read file:', error)
+      console.error('Failed to save file:', error)
+      alert(`Failed to save file: ${error instanceof Error ? error.message : 'Unknown error'}`)
     }
   }
 
-  const closeTab = (fileKey: string) => {
+  const saveAllFiles = async () => {
+    const filesToSave: Array<{ fileKey: string; datapackDir: string; relativePath: string; contents: string }> = []
+
+    // Collect all modified files with their cached content
+    for (const fileKey of modifiedFiles) {
+      const openedFile = openedFiles.find((f) => `${f.datapackDir}|${f.relativePath}` === fileKey)
+      if (openedFile) {
+        filesToSave.push({ 
+          fileKey, 
+          datapackDir: openedFile.datapackDir, 
+          relativePath: openedFile.relativePath, 
+          contents: openedFile.content 
+        })
+      }
+    }
+
+    // Save all files
+    const savePromises = filesToSave.map(({ datapackDir, relativePath, contents }) =>
+      (window as any).electron.saveFile(datapackDir, relativePath, contents)
+    )
+
+    try {
+      await Promise.all(savePromises)
+      // Clear all modified states
+      setModifiedFiles(new Set())
+    } catch (error) {
+      console.error('Failed to save all files:', error)
+      alert(`Failed to save all files: ${error instanceof Error ? error.message : 'Unknown error'}`)
+    }
+  }
+
+  const closeTab = async (fileKey: string) => {
+    // Check if file is modified and confirm close
+    if (modifiedFiles.has(fileKey)) {
+      const fileName = openedFiles.find((f) => `${f.datapackDir}|${f.relativePath}` === fileKey)?.fileName || 'this file'
+      const confirmed = confirm(`${fileName} has unsaved changes. Do you want to close it without saving?`)
+      if (!confirmed) {
+        return // User cancelled, don't close
+      }
+    }
+
+    // Find the index of the file being closed
+    const closingIndex = openedFiles.findIndex((f) => `${f.datapackDir}|${f.relativePath}` === fileKey)
     const updatedFiles = openedFiles.filter((f) => `${f.datapackDir}|${f.relativePath}` !== fileKey)
     setOpenedFiles(updatedFiles)
     
@@ -212,10 +314,13 @@ function CodeEditor() {
     
     if (activeFile === fileKey) {
       if (updatedFiles.length > 0) {
-        const newActive = `${updatedFiles[updatedFiles.length - 1].datapackDir}|${updatedFiles[updatedFiles.length - 1].relativePath}`
-        setActiveFile(newActive)
+        // Try to open the next tab (same index), or previous tab if no next tab exists
+        const nextIndex = closingIndex < updatedFiles.length ? closingIndex : updatedFiles.length - 1
+        const nextFile = updatedFiles[nextIndex]
+        const newActive = `${nextFile.datapackDir}|${nextFile.relativePath}`
+        await openFile(newActive)
       } else {
-        setActiveFile(null)
+        await openFile(null)
       }
     }
   }
@@ -241,7 +346,18 @@ function CodeEditor() {
             // Skip marking as modified if this is a programmatic content load
             const isLoading = update.transactions.some(tr => tr.annotation(isLoadingContent))
             if (!isLoading) {
+              // Mark as modified
               setModifiedFiles((prev) => new Set(prev).add(activeFileRef.current!))
+              
+              // Update cached content
+              const newContent = update.state.doc.toString()
+              setOpenedFiles((prev) => 
+                prev.map((f) => 
+                  `${f.datapackDir}|${f.relativePath}` === activeFileRef.current
+                    ? { ...f, content: newContent }
+                    : f
+                )
+              )
             }
           }
         }),
@@ -435,8 +551,7 @@ function CodeEditor() {
                   <div
                     key={fileKey}
                     onClick={() => {
-                      setActiveFile(fileKey)
-                      handleExplorerSelect(file.datapackDir, file.relativePath, true)
+                      openFile(fileKey)
                     }}
                     className={`
                       flex items-center gap-2 px-2 py-1
