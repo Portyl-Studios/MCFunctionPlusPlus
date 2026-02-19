@@ -385,6 +385,36 @@ function CodeEditor() {
     })
   }, [])
 
+  // Keyboard shortcuts
+  useEffect(() => {
+    const handler = (_: any, action: string) => {
+      switch (action) {
+        case 'quit':
+          ;(window as any).electron.quit()
+          break
+        case 'open':
+          handleOpenWorkspace()
+          break
+        case 'save':
+          if (activeFile && modifiedFiles.has(activeFile)) saveCurrentFile()
+          break
+        case 'saveAll':
+          if (modifiedFiles.size > 0) saveAllFiles()
+          break
+        case 'close':
+          if (activeFile) closeTab(activeFile)
+          break
+      }
+    }
+
+    const unsubscribe = (window as any).electron.onShortcut(handler)
+    return () => {
+      if (typeof unsubscribe === 'function') {
+        unsubscribe()
+      }
+    }
+  }, [activeFile, modifiedFiles, handleOpenWorkspace, saveCurrentFile, saveAllFiles, closeTab])
+
   useEffect(() => {
     const loadWorkspaceDatapacks = async () => {
       if (!workspaceInfo.dir) return
@@ -425,7 +455,7 @@ function CodeEditor() {
               { label: 'Help', onClick: undefined, disabled: true },
               { label: 'Credits', onClick: undefined, disabled: true },
               {},
-              { label: 'Exit', onClick: () => (window as any).electron.quit() }
+              { label: 'Exit', shortcut: 'Ctrl+Q', onClick: () => (window as any).electron.quit() }
             ] as MenuItem[]}
             isOpen={isHeaderMenuOneOpen}
             setIsOpen={setIsHeaderMenuOneOpen}
@@ -435,7 +465,7 @@ function CodeEditor() {
             label="Workspace"
             items={[
               { label: 'New Workspace', onClick: handleNewWorkspace },
-              { label: 'Open Workspace', onClick: handleOpenWorkspace },
+              { label: 'Open Workspace', shortcut: 'Ctrl+O', onClick: handleOpenWorkspace },
               { label: 'Save Workspace', onClick: handleSaveWorkspace },
               { label: 'Save Workspace As', onClick: handleSaveWorkspaceAs },
               {},
@@ -457,6 +487,11 @@ function CodeEditor() {
           <DropdownMenu 
             label="Editor"
             items={[
+              { label: 'Close', shortcut: 'Ctrl+W', onClick: () => activeFile && closeTab(activeFile) },
+              { label: 'Save', shortcut: 'Ctrl+S', onClick: saveCurrentFile, disabled: !activeFile || !modifiedFiles.has(activeFile) },
+              { label: 'Save All', shortcut: 'Ctrl+Shift+S', onClick: saveAllFiles, disabled: modifiedFiles.size === 0 },
+              {},
+              { label: 'Auto-Save', onClick: undefined, disabled: true },
               { label: 'Word Wrap', onClick: undefined, disabled: true }
             ] as MenuItem[]}
             isOpen={isHeaderMenuThreeOpen}
@@ -534,7 +569,8 @@ function CodeEditor() {
         <ResizeHandle onMouseDown={leftPanel.handleMouseDown} />
 
         {/* Main Center Panel */}
-        <div className="flex-1 min-w-0 bg-codemirror-default flex flex-col min-h-0 relative">
+        <div className="flex-1 min-w-0 bg-codemirror-default flex flex-col min-h-0 relative"
+          onClick={() => viewRef.current?.focus()}>
 
           {/* Editor */}
           <div className="flex-1 flex flex-col min-h-0">

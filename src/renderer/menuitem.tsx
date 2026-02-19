@@ -2,6 +2,7 @@ import React from 'react'
 
 export interface MenuItem {
   label?: string
+  shortcut?: string
   onClick?: () => void
   children?: MenuItem[]
   disabled?: boolean
@@ -85,6 +86,13 @@ export function MenuItems({ items, onItemClick, maxItems = 5 }: MenuItemsProps) 
                 }`}
               >
                 <span>{item.label}</span>
+
+                {item.shortcut && (
+                  <span className="pillbox ml-2 px-2 py-0.5 font-mono text-xs text-codemirror-300">
+                    {item.shortcut}
+                  </span>
+                )}
+
                 {hasChildren && (
                   <i className="codicon codicon-chevron-right text-codemirror-300" />
                 )}

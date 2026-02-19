@@ -18,6 +18,45 @@ const __userDataPath = app.getPath('userData')
 
 let mainWindow: BrowserWindow | null = null
 
+const setupWindowShortcuts = (window: BrowserWindow): void => {
+  window.webContents.on('before-input-event', (event, input) => {
+    if (input.type !== 'keyDown') return
+
+    const hasModifier = input.control || input.meta
+    if (!hasModifier) return
+
+    const key = input.key.toLowerCase()
+    const sendShortcut = (action: string) => {
+      event.preventDefault()
+      window.webContents.send('shortcut', action)
+    }
+
+    if (key === 'q') {
+      sendShortcut('quit')
+      return
+    }
+
+    if (key === 'o') {
+      sendShortcut('open')
+      return
+    }
+
+    if (key === 's' && input.shift) {
+      sendShortcut('saveAll')
+      return
+    }
+
+    if (key === 's') {
+      sendShortcut('save')
+      return
+    }
+
+    if (key === 'w') {
+      sendShortcut('close')
+    }
+  })
+}
+
 registerPickFolderHandler(() => mainWindow)
 registerWindowControlHandlers(() => mainWindow)
 registerWorkspaceHandlers(() => mainWindow)
@@ -119,6 +158,9 @@ app.on('ready', () => {
   }
 
   mainWindow.on('closed', () => (mainWindow = null))
+
+  // Register focused-window shortcuts
+  setupWindowShortcuts(mainWindow)
 })
 
 app.on('window-all-closed', () => {

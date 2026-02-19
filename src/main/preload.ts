@@ -94,5 +94,11 @@ contextBridge.exposeInMainWorld('electron', {
   },
   datapackClear: () => {
     return ipcRenderer.invoke('datapack-clear')
+  },
+  onShortcut: (callback: any) => {
+    ipcRenderer.on('shortcut', callback)
+    return () => {
+      ipcRenderer.removeListener('shortcut', callback)
+    }
   }
 })
