@@ -232,6 +232,46 @@ function CodeEditor() {
     })
   }
 
+  const handleQuitWithConfirm = async () => {
+    // If no unsaved files, just quit
+    if (modifiedFiles.size === 0) {
+      ;(window as any).electron.quit()
+      return
+    }
+
+    // Use Promise wrapper to make async dialog behave synchronously
+    // This ensures quit only happens after user makes a choice
+    await new Promise<void>((resolve) => {
+      dialog.openDialog({
+        title: 'Unsaved Changes',
+        message: `You have ${modifiedFiles.size} unsaved file(s). Do you want to save before quitting?`,
+        buttons: [
+          {
+            label: 'Save',
+            onClick: async () => {
+              await saveAllFiles()
+              ;(window as any).electron.quit()
+              resolve()
+            },
+          },
+          {
+            label: 'Discard',
+            onClick: () => {
+              ;(window as any).electron.quit()
+              resolve()
+            },
+          },
+          {
+            label: 'Cancel',
+            onClick: () => {
+              resolve()
+            },
+          },
+        ],
+      })
+    })
+  }
+
 
 
   const handleRefreshExplorer = async () => {
@@ -565,7 +605,7 @@ function CodeEditor() {
     const handler = (_: any, action: string) => {
       switch (action) {
         case 'quit':
-          ;(window as any).electron.quit()
+          handleQuitWithConfirm()
           break
         case 'open':
           handleOpenWorkspaceWithConfirm()
@@ -588,7 +628,7 @@ function CodeEditor() {
         unsubscribe()
       }
     }
-  }, [activeFile, modifiedFiles, handleOpenWorkspaceWithConfirm, saveCurrentFile, saveAllFiles, closeTab])
+  }, [activeFile, modifiedFiles, handleOpenWorkspaceWithConfirm, handleQuitWithConfirm, saveCurrentFile, saveAllFiles, closeTab])
 
   useEffect(() => {
     const loadWorkspaceDatapacks = async () => {
@@ -630,7 +670,7 @@ function CodeEditor() {
               { label: 'Help', onClick: undefined, disabled: true },
               { label: 'Credits', onClick: undefined, disabled: true },
               {},
-              { label: 'Exit', shortcut: 'Ctrl+Q', onClick: () => (window as any).electron.quit() }
+              { label: 'Exit', shortcut: 'Ctrl+Q', onClick: handleQuitWithConfirm }
             ] as MenuItem[]}
             isOpen={isHeaderMenuOneOpen}
             setIsOpen={setIsHeaderMenuOneOpen}
@@ -700,7 +740,7 @@ function CodeEditor() {
             className={`header-button-right pt-2.5 pb-2 codicon ${isFullScreen ? 'codicon-chrome-restore' : 'codicon-chrome-maximize'}`}
           />
           <div
-            onClick={() => (window as any).electron.quit()}
+            onClick={handleQuitWithConfirm}
             className="header-button-right hover:bg-rose-600 pt-2.5 pb-2 codicon codicon-chrome-close"
           />
 
