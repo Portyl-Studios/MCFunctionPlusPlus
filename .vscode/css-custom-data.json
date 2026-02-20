@@ -1,0 +1,13 @@
+{
+  "version": 1.1,
+  "atDirectives": [
+    {
+      "name": "@theme",
+      "description": "Tailwind CSS theme configuration at-rule."
+    },
+    {
+      "name": "@apply",
+      "description": "Tailwind CSS utility composition at-rule."
+    }
+  ]
+}
