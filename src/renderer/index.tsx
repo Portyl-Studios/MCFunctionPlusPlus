@@ -1505,7 +1505,7 @@ function CodeEditor() {
           <DropdownMenu 
             label="Editor"
             items={[
-              { label: "Close", shortcut: "Ctrl+W", onClick: () => activeFile && closeTab(activeFile) },
+              { label: "Close", shortcut: "Ctrl+W", onClick: () => activeFile && closeTab(activeFile), disabled: !activeFile },
               { label: "Save", shortcut: "Ctrl+S", onClick: saveCurrentFile, disabled: !activeFile || !modifiedFiles.has(activeFile) },
               { label: "Save All", shortcut: "Ctrl+Shift+S", onClick: saveAllFiles, disabled: modifiedFiles.size === 0 },
               {},
