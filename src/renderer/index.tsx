@@ -768,6 +768,23 @@ function CodeEditor() {
     loadWorkspaceDatapacks()
   }, [workspaceInfo.dir])
 
+  const fileNameCounts = openedFiles.reduce((counts, file) => {
+    counts.set(file.fileName, (counts.get(file.fileName) ?? 0) + 1)
+    return counts
+  }, new Map<string, number>())
+
+  const getDuplicateTabFolderLabel = (file: OpenedFile): string | null => {
+    if ((fileNameCounts.get(file.fileName) ?? 0) < 2) return null
+
+    const pathSegments = file.relativePath.split('/').filter(Boolean)
+    const parentFolder = pathSegments.length > 1
+      ? pathSegments[pathSegments.length - 2]
+      : file.datapackDir.split(/[\\/]/).filter(Boolean).pop() || ''
+
+    if (!parentFolder) return null
+    return `../${parentFolder}`
+  }
+
   return (
     <div className="w-full h-full flex flex-col select-none">
 
@@ -926,6 +943,7 @@ function CodeEditor() {
               {openedFiles.map((file, idx) => {
                 const fileKey = createFileKey(file.datapackDir, file.relativePath)
                 const isActive = activeFile === fileKey
+                const duplicateFolderLabel = getDuplicateTabFolderLabel(file)
                 return (
                   <div
                     key={fileKey}
@@ -944,6 +962,11 @@ function CodeEditor() {
                     `}
                   >
                     <span className="text-sm">{file.fileName}</span>
+
+                    {/* Duplicate Disambiguation Label */}
+                    {duplicateFolderLabel && (
+                      <span className="text-xs text-codemirror-300 italic">{duplicateFolderLabel}</span>
+                    )}
 
                     {/* Indicators */}
                     {modifiedFiles.has(fileKey) &&
