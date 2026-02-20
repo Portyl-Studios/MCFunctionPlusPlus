@@ -1,12 +1,23 @@
 import React, { useEffect, useRef, useState } from 'react'
 import ReactDOM from 'react-dom/client'
 
-// Importing basic setup for CodeMirror
-// todo: replace with custom setup later
-import { basicSetup } from 'codemirror'
-import { EditorState, Annotation } from '@codemirror/state'
-import { EditorView, keymap } from '@codemirror/view'
-import { defaultKeymap, indentWithTab } from '@codemirror/commands'
+import { EditorState } from '@codemirror/state'
+import {
+  EditorView,
+  keymap,
+  highlightActiveLine,
+  highlightSpecialChars,
+  drawSelection,
+  dropCursor,
+  rectangularSelection,
+  lineNumbers,
+  highlightActiveLineGutter,
+} from '@codemirror/view'
+import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands'
+import { foldGutter, foldKeymap, indentOnInput, syntaxHighlighting, defaultHighlightStyle, bracketMatching } from '@codemirror/language'
+import { autocompletion, closeBrackets, closeBracketsKeymap, completionKeymap } from '@codemirror/autocomplete'
+import { searchKeymap, highlightSelectionMatches } from '@codemirror/search'
+import { lintKeymap } from '@codemirror/lint'
 import { json } from '@codemirror/lang-json'
 import { oneDark } from '@codemirror/theme-one-dark'
 import './index.css'
@@ -18,10 +29,6 @@ import { DatapackTree } from './datapacktree'
 import { Dialog, useDialog } from './dialog'
 import { ContextMenu, useContextMenu } from './contextmenu'
 import { getDirFromPath, toRelativePaths, createFileKey, parseFileKey } from './utils'
-
-// Annotation to mark editor transactions that are programmatic content loads
-// This prevents marking files as modified when we're just loading content from disk
-const isLoadingContent = Annotation.define<boolean>()
 
 type DatapackEntry = {
   dir: string
@@ -52,6 +59,35 @@ type WorkspaceTabSession = {
 
 const OPEN_TABS_PREFERENCE_KEY = 'openTabs'
 
+const codeMirrorSetupExtensions = [
+  lineNumbers(),
+  highlightActiveLineGutter(),
+  highlightSpecialChars(),
+  history(),
+  foldGutter(),
+  drawSelection(),
+  dropCursor(),
+  EditorState.allowMultipleSelections.of(true),
+  indentOnInput(),
+  syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
+  bracketMatching(),
+  closeBrackets(),
+  autocompletion(),
+  rectangularSelection(),
+  highlightActiveLine(),
+  highlightSelectionMatches(),
+  keymap.of([
+    ...closeBracketsKeymap,
+    ...defaultKeymap,
+    ...searchKeymap,
+    ...historyKeymap,
+    ...foldKeymap,
+    ...completionKeymap,
+    ...lintKeymap,
+    indentWithTab,
+  ]),
+]
+
 function CodeEditor() {
   const editorRef = useRef<HTMLDivElement>(null)
   const viewRef = useRef<EditorView | null>(null)
@@ -71,6 +107,7 @@ function CodeEditor() {
   const [isAutoSaveEnabled, setIsAutoSaveEnabled] = useState(false)
   const isRestoringTabsRef = useRef(false)
   const lastSavedTabSessionSignatureRef = useRef('')
+  const fileEditorStatesRef = useRef<Map<string, EditorState>>(new Map())
   const tabContextMenu = useContextMenu()
   const [tabContextFileKey, setTabContextFileKey] = useState<string | null>(null)
   // Refs are used to access current state values inside closures (e.g., editor listeners)
@@ -376,6 +413,11 @@ function CodeEditor() {
     const newFileKey = createFileKey(datapackDir, newRelativePath)
     const wasActive = activeFile === oldFileKey
 
+    const cachedState = fileEditorStatesRef.current.get(oldFileKey)
+    if (cachedState) {
+      fileEditorStatesRef.current.set(newFileKey, cachedState)
+    }
+
     clearAutoSaveTimer(oldFileKey)
     
     try {
@@ -405,6 +447,8 @@ function CodeEditor() {
       if (wasActive) {
         await openFile(newFileKey)
       }
+
+      fileEditorStatesRef.current.delete(oldFileKey)
       
     } catch (error) {
       console.error('Failed to read renamed file:', error)
@@ -436,6 +480,7 @@ function CodeEditor() {
 
     // Close the file
     clearAutoSaveTimer(fileKey)
+    fileEditorStatesRef.current.delete(fileKey)
     
     // Remove from opened files and modified files
     const updatedFiles = openedFiles.filter((f) => createFileKey(f.datapackDir, f.relativePath) !== fileKey)
@@ -458,9 +503,21 @@ function CodeEditor() {
   }
 
   const openFile = async (fileKey: string | null) => {
+    const view = viewRef.current
+    if (!view) {
+      setActiveFile(fileKey)
+      activeFileRef.current = fileKey
+      return
+    }
+
+    persistActiveEditorState()
     setActiveFile(fileKey)
+    activeFileRef.current = fileKey
     
-    if (!fileKey) return
+    if (!fileKey) {
+      view.setState(createEditorState(''))
+      return
+    }
     
     // Parse file key to get datapack dir and relative path
     const { datapackDir, relativePath } = parseFileKey(fileKey)
@@ -483,14 +540,16 @@ function CodeEditor() {
       }
     }
     
-    const view = viewRef.current
-    if (!view) return
-    // Mark this change with isLoadingContent annotation to prevent the update listener
-    // from treating this programmatic change as a user edit
-    view.dispatch({
-      changes: { from: 0, to: view.state.doc.length, insert: contents },
-      annotations: [isLoadingContent.of(true)],
-    })
+    const cachedState = fileEditorStatesRef.current.get(fileKey)
+    if (cachedState) {
+      view.setState(cachedState)
+      view.focus()
+      return
+    }
+
+    const newState = createEditorState(contents)
+    fileEditorStatesRef.current.set(fileKey, newState)
+    view.setState(newState)
     view.focus()
   }
 
@@ -638,6 +697,7 @@ function CodeEditor() {
 
     // Clear any pending autosave timer
     clearAutoSaveTimer(fileKey)
+    fileEditorStatesRef.current.delete(fileKey)
 
     // Find the index of the file being closed
     const closingIndex = openedFiles.findIndex((f) => createFileKey(f.datapackDir, f.relativePath) === fileKey)
@@ -662,6 +722,48 @@ function CodeEditor() {
   useEffect(() => {
     activeFileRef.current = activeFile
   }, [activeFile])
+
+  const createEditorState = (doc: string) => EditorState.create({
+    doc,
+    extensions: [
+      oneDark,
+      ...codeMirrorSetupExtensions,
+      EditorView.lineWrapping,
+      EditorView.updateListener.of((update) => {
+        if (update.docChanged && activeFileRef.current) {
+          const fileKey = activeFileRef.current
+          const newContent = update.state.doc.toString()
+
+          setModifiedFiles((prev) => new Set(prev).add(fileKey))
+
+          setOpenedFiles((prev) =>
+            prev.map((f) =>
+              createFileKey(f.datapackDir, f.relativePath) === fileKey
+                ? { ...f, content: newContent }
+                : f
+            )
+          )
+
+          scheduleAutoSave(fileKey, newContent)
+        }
+      }),
+      EditorView.domEventHandlers({
+        focus: () => {
+          window.requestAnimationFrame(() => {
+            scrollTabIntoView(activeFileRef.current, 'smooth')
+          })
+        },
+      }),
+      json(),
+    ],
+  })
+
+  const persistActiveEditorState = () => {
+    const currentFileKey = activeFileRef.current
+    const view = viewRef.current
+    if (!currentFileKey || !view) return
+    fileEditorStatesRef.current.set(currentFileKey, view.state)
+  }
 
   const scrollTabIntoView = (fileKey: string | null, behavior: ScrollBehavior = 'smooth') => {
     if (!fileKey) return
@@ -803,49 +905,7 @@ function CodeEditor() {
   useEffect(() => {
     if (!editorRef.current) return
 
-    const state = EditorState.create({
-      doc: "",
-      extensions: [
-        oneDark,
-        basicSetup,
-        keymap.of(defaultKeymap),
-        keymap.of([indentWithTab]),
-        EditorView.lineWrapping,
-        EditorView.updateListener.of((update) => {
-          if (update.docChanged && activeFileRef.current) {
-            // Skip marking as modified if this is a programmatic content load
-            const isLoading = update.transactions.some(tr => tr.annotation(isLoadingContent))
-            if (!isLoading) {
-              const fileKey = activeFileRef.current
-              const newContent = update.state.doc.toString()
-
-              // Mark as modified
-              setModifiedFiles((prev) => new Set(prev).add(fileKey))
-              
-              // Update cached content
-              setOpenedFiles((prev) => 
-                prev.map((f) => 
-                  createFileKey(f.datapackDir, f.relativePath) === fileKey
-                    ? { ...f, content: newContent }
-                    : f
-                )
-              )
-
-              // Schedule autosave after delay
-              scheduleAutoSave(fileKey, newContent)
-            }
-          }
-        }),
-        EditorView.domEventHandlers({
-          focus: () => {
-            window.requestAnimationFrame(() => {
-              scrollTabIntoView(activeFileRef.current, 'smooth')
-            })
-          },
-        }),
-        json()
-      ],
-    })
+    const state = createEditorState('')
 
     const view = new EditorView({
       state,
@@ -859,6 +919,7 @@ function CodeEditor() {
       // Clear all autosave timers on unmount
       autoSaveTimersRef.current.forEach((timerId) => window.clearTimeout(timerId))
       autoSaveTimersRef.current.clear()
+      fileEditorStatesRef.current.clear()
     }
   }, [])
 
