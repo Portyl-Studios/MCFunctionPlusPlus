@@ -1,7 +1,7 @@
-import React, { useEffect, useRef, useState } from 'react'
-import ReactDOM from 'react-dom/client'
+import React, { useEffect, useRef, useState } from "react"
+import ReactDOM from "react-dom/client"
 
-import { EditorState } from '@codemirror/state'
+import { EditorState } from "@codemirror/state"
 import {
   EditorView,
   keymap,
@@ -12,23 +12,24 @@ import {
   rectangularSelection,
   lineNumbers,
   highlightActiveLineGutter,
-} from '@codemirror/view'
-import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands'
-import { foldGutter, foldKeymap, indentOnInput, syntaxHighlighting, defaultHighlightStyle, bracketMatching } from '@codemirror/language'
-import { autocompletion, closeBrackets, closeBracketsKeymap, completionKeymap } from '@codemirror/autocomplete'
-import { searchKeymap, highlightSelectionMatches } from '@codemirror/search'
-import { lintKeymap } from '@codemirror/lint'
-import { json } from '@codemirror/lang-json'
-import { oneDark } from '@codemirror/theme-one-dark'
-import './index.css'
-import { Panel, ResizeHandle, useResizablePanel } from './panel'
-import { DropdownMenu, type MenuItem } from './dropdownmenu'
-import { useWorkspace } from './use-workspace'
-import iconPath from '../../assets/icon.png'
-import { DatapackTree } from './datapacktree'
-import { Dialog, useDialog } from './dialog'
-import { ContextMenu, useContextMenu } from './contextmenu'
-import { getDirFromPath, toRelativePaths, createFileKey, parseFileKey } from './utils'
+} from "@codemirror/view"
+import { defaultKeymap, history, historyKeymap, indentWithTab } from "@codemirror/commands"
+import { foldGutter, foldKeymap, indentOnInput, syntaxHighlighting, defaultHighlightStyle, bracketMatching } from "@codemirror/language"
+import { autocompletion, closeBrackets, closeBracketsKeymap, completionKeymap } from "@codemirror/autocomplete"
+import { searchKeymap, highlightSelectionMatches } from "@codemirror/search"
+import { lintKeymap } from "@codemirror/lint"
+import { json } from "@codemirror/lang-json"
+import { oneDark } from "@codemirror/theme-one-dark"
+import "./index.css"
+import { Section, ResizeHandle, useResizableSection } from "./section"
+import { Panel, type PanelTab } from "./panel"
+import { DropdownMenu, type MenuItem } from "./dropdownmenu"
+import { useWorkspace } from "./use-workspace"
+import iconPath from "../../assets/icon.png"
+import { DatapackTree } from "./datapacktree"
+import { Dialog, useDialog } from "./dialog"
+import { ContextMenu, useContextMenu } from "./contextmenu"
+import { getDirFromPath, toRelativePaths, createFileKey, parseFileKey } from "./utils"
 
 type DatapackEntry = {
   dir: string
@@ -57,7 +58,7 @@ type WorkspaceTabSession = {
   activeFile: string | null
 }
 
-const OPEN_TABS_PREFERENCE_KEY = 'openTabs'
+const OPEN_TABS_PREFERENCE_KEY = "openTabs"
 
 const codeMirrorSetupExtensions = [
   lineNumbers(),
@@ -91,8 +92,202 @@ const codeMirrorSetupExtensions = [
 function CodeEditor() {
   const editorRef = useRef<HTMLDivElement>(null)
   const viewRef = useRef<EditorView | null>(null)
-  const leftPanel = useResizablePanel({ initialWidth: 350, position: 'left' })
-  const rightPanel = useResizablePanel({ initialWidth: 350, position: 'right' })
+  
+  // Section dimensions state (controlled by preferences)
+  const [leftPanelWidth, setLeftPanelWidth] = useState(350)
+  const [rightPanelWidth, setRightPanelWidth] = useState(350)
+  const [bottomPanelHeight, setBottomPanelHeight] = useState(250)
+  
+  const leftSection = useResizableSection({ 
+    position: "left",
+    width: leftPanelWidth,
+    onWidthChange: setLeftPanelWidth
+  })
+  const rightSection = useResizableSection({ 
+    position: "right",
+    width: rightPanelWidth,
+    onWidthChange: setRightPanelWidth
+  })
+  const bottomSection = useResizableSection({ 
+    position: "bottom",
+    height: bottomPanelHeight,
+    onHeightChange: setBottomPanelHeight
+  })
+  
+  const [activeLeftTabId, setActiveLeftTabId] = useState("explorer")
+  const [activeRightTabId, setActiveRightTabId] = useState("preferences")
+  const [activeBottomTabId, setActiveBottomTabId] = useState("debug")
+  
+  // Panel tab visibility state
+  const [visibleLeftPanelTabs, setVisibleLeftPanelTabs] = useState<Set<string>>(new Set(["explorer"]))
+  const [visibleRightPanelTabs, setVisibleRightPanelTabs] = useState<Set<string>>(new Set(["preferences", "settings"]))
+  const [visibleBottomPanelTabs, setVisibleBottomPanelTabs] = useState<Set<string>>(new Set(["debug"]))
+
+  // Panel tab order state
+  const [leftPanelTabOrder, setLeftPanelTabOrder] = useState<string[]>(["explorer"])
+  const [rightPanelTabOrder, setRightPanelTabOrder] = useState<string[]>(["preferences", "settings"])
+  const [bottomPanelTabOrder, setBottomPanelTabOrder] = useState<string[]>(["debug"])
+  
+  // Toggle handlers for each panel
+  const handleToggleLeftTab = (tabId: string, nextState?: boolean) => {
+    setVisibleLeftPanelTabs(prev => {
+      const newSet = new Set(prev)
+      const shouldShow = typeof nextState === "boolean" ? nextState : !newSet.has(tabId)
+      if (shouldShow) {
+        newSet.add(tabId)
+      } else {
+        newSet.delete(tabId)
+      }
+      return newSet
+    })
+  }
+  
+  const handleToggleRightTab = (tabId: string, nextState?: boolean) => {
+    setVisibleRightPanelTabs(prev => {
+      const newSet = new Set(prev)
+      const shouldShow = typeof nextState === "boolean" ? nextState : !newSet.has(tabId)
+      if (shouldShow) {
+        newSet.add(tabId)
+      } else {
+        newSet.delete(tabId)
+      }
+      return newSet
+    })
+  }
+  
+  const handleToggleBottomTab = (tabId: string, nextState?: boolean) => {
+    setVisibleBottomPanelTabs(prev => {
+      const newSet = new Set(prev)
+      const shouldShow = typeof nextState === "boolean" ? nextState : !newSet.has(tabId)
+      if (shouldShow) {
+        newSet.add(tabId)
+      } else {
+        newSet.delete(tabId)
+      }
+      return newSet
+    })
+  }
+
+  const reorderTabList = (order: string[], draggedId: string, targetId: string, position: "before" | "after" | "end") => {
+    if (draggedId === targetId && position !== "end") return order
+    const next = order.filter(id => id !== draggedId)
+    if (position === "end") {
+      next.push(draggedId)
+      return next
+    }
+    const targetIndex = next.indexOf(targetId)
+    if (targetIndex === -1) {
+      next.push(draggedId)
+    } else {
+      const insertIndex = position === "after" ? targetIndex + 1 : targetIndex
+      next.splice(insertIndex, 0, draggedId)
+    }
+    return next
+  }
+
+  const orderTabsByList = (tabs: PanelTab[], order: string[]) => {
+    const indexMap = new Map(order.map((id, index) => [id, index]))
+    return [...tabs].sort((a, b) => {
+      const aIndex = indexMap.has(a.id) ? indexMap.get(a.id)! : Number.MAX_SAFE_INTEGER
+      const bIndex = indexMap.has(b.id) ? indexMap.get(b.id)! : Number.MAX_SAFE_INTEGER
+      return aIndex - bIndex
+    })
+  }
+
+  const handleReorderLeftTab = (draggedId: string, targetId: string, position: "before" | "after" | "end") => {
+    setLeftPanelTabOrder(prev => reorderTabList(prev, draggedId, targetId, position))
+  }
+
+  const handleReorderRightTab = (draggedId: string, targetId: string, position: "before" | "after" | "end") => {
+    setRightPanelTabOrder(prev => reorderTabList(prev, draggedId, targetId, position))
+  }
+
+  const handleReorderBottomTab = (draggedId: string, targetId: string, position: "before" | "after" | "end") => {
+    setBottomPanelTabOrder(prev => reorderTabList(prev, draggedId, targetId, position))
+  }
+
+  // Load panel preferences on mount
+  useEffect(() => {
+    const loadPanelPreferences = async () => {
+      try {
+        const panelPrefs = await (window as any).electron.preferencesGet('panels')
+        if (panelPrefs) {
+          if (panelPrefs.leftPanelTabOrder) setLeftPanelTabOrder(panelPrefs.leftPanelTabOrder)
+          if (panelPrefs.rightPanelTabOrder) setRightPanelTabOrder(panelPrefs.rightPanelTabOrder)
+          if (panelPrefs.bottomPanelTabOrder) setBottomPanelTabOrder(panelPrefs.bottomPanelTabOrder)
+          if (panelPrefs.visibleLeftPanelTabs) setVisibleLeftPanelTabs(new Set(panelPrefs.visibleLeftPanelTabs))
+          if (panelPrefs.visibleRightPanelTabs) setVisibleRightPanelTabs(new Set(panelPrefs.visibleRightPanelTabs))
+          if (panelPrefs.visibleBottomPanelTabs) setVisibleBottomPanelTabs(new Set(panelPrefs.visibleBottomPanelTabs))
+          if (panelPrefs.activeLeftTabId) setActiveLeftTabId(panelPrefs.activeLeftTabId)
+          if (panelPrefs.activeRightTabId) setActiveRightTabId(panelPrefs.activeRightTabId)
+          if (panelPrefs.activeBottomTabId) setActiveBottomTabId(panelPrefs.activeBottomTabId)
+          if (panelPrefs.leftPanelWidth) setLeftPanelWidth(panelPrefs.leftPanelWidth)
+          if (panelPrefs.rightPanelWidth) setRightPanelWidth(panelPrefs.rightPanelWidth)
+          if (panelPrefs.bottomPanelHeight) setBottomPanelHeight(panelPrefs.bottomPanelHeight)
+        }
+      } catch (error) {
+        console.error('Failed to load panel preferences:', error)
+        await dialog.showAlert('Error', `Failed to load panel preferences: ${error instanceof Error ? error.message : 'Unknown error'}`)
+      }
+    }
+
+    loadPanelPreferences()
+  }, [])
+
+  // Save panel preferences when they change
+  useEffect(() => {
+    const savePanelPreferences = async () => {
+      try {
+        await (window as any).electron.preferencesSet('panels', {
+          leftPanelTabOrder,
+          rightPanelTabOrder,
+          bottomPanelTabOrder,
+          visibleLeftPanelTabs: Array.from(visibleLeftPanelTabs),
+          visibleRightPanelTabs: Array.from(visibleRightPanelTabs),
+          visibleBottomPanelTabs: Array.from(visibleBottomPanelTabs),
+          activeLeftTabId,
+          activeRightTabId,
+          activeBottomTabId,
+          leftPanelWidth,
+          rightPanelWidth,
+          bottomPanelHeight,
+        })
+      } catch (error) {
+        console.error('Failed to save panel preferences:', error)
+        await dialog.showAlert('Error', `Failed to save panel preferences: ${error instanceof Error ? error.message : 'Unknown error'}`)
+      }
+    }
+
+    savePanelPreferences()
+  }, [
+    leftPanelTabOrder,
+    rightPanelTabOrder,
+    bottomPanelTabOrder,
+    visibleLeftPanelTabs,
+    visibleRightPanelTabs,
+    visibleBottomPanelTabs,
+    activeLeftTabId,
+    activeRightTabId,
+    activeBottomTabId,
+    leftPanelWidth,
+    rightPanelWidth,
+    bottomPanelHeight,
+  ])
+  
+  // Right section menu items based on active tab
+  const getRightMenuItems = (): MenuItem[] => {
+    if (activeRightTabId === "preferences") {
+      return [
+        { label: "Preferences Option", onClick: undefined }
+      ]
+    } else if (activeRightTabId === "settings") {
+      return [
+        { label: "Settings Option", onClick: undefined }
+      ]
+    }
+    return []
+  }
+  
   const [datapacks, setDatapacks] = useState<DatapackEntry[]>([])
   const [isHeaderMenuOneOpen, setIsHeaderMenuOneOpen] = useState(false)
   const [isHeaderMenuTwoOpen, setIsHeaderMenuTwoOpen] = useState(false)
@@ -106,7 +301,7 @@ function CodeEditor() {
   const tabElementRefs = useRef<Map<string, HTMLDivElement>>(new Map())
   const [isAutoSaveEnabled, setIsAutoSaveEnabled] = useState(false)
   const isRestoringTabsRef = useRef(false)
-  const lastSavedTabSessionSignatureRef = useRef('')
+  const lastSavedTabSessionSignatureRef = useRef("")
   const fileEditorStatesRef = useRef<Map<string, EditorState>>(new Map())
   const tabContextMenu = useContextMenu()
   const [tabContextFileKey, setTabContextFileKey] = useState<string | null>(null)
@@ -131,13 +326,13 @@ function CodeEditor() {
   useEffect(() => {
     const loadAutoSavePreference = async () => {
       try {
-        const savedValue = await (window as any).electron.workspaceGetPreference('autoSave')
-        if (typeof savedValue === 'boolean') {
+        const savedValue = await (window as any).electron.workspaceGetPreference("autoSave")
+        if (typeof savedValue === "boolean") {
           setIsAutoSaveEnabled(savedValue)
         }
       } catch (error) {
-        console.error('Failed to load auto-save preference:', error)
-        await dialog.showAlert('Error', `Failed to load auto-save preference: ${error instanceof Error ? error.message : 'Unknown error'}`)
+        console.error("Failed to load auto-save preference:", error)
+        await dialog.showAlert("Error", `Failed to load auto-save preference: ${error instanceof Error ? error.message : "Unknown error"}`)
       }
     }
 
@@ -148,24 +343,24 @@ function CodeEditor() {
   const toggleAutoSave = async (enabled: boolean) => {
     setIsAutoSaveEnabled(enabled)
     try {
-      await (window as any).electron.workspaceUpdatePreference('autoSave', enabled)
+      await (window as any).electron.workspaceUpdatePreference("autoSave", enabled)
     } catch (error) {
-      console.error('Failed to save auto-save preference:', error)
-      await dialog.showAlert('Error', `Failed to save auto-save preference: ${error instanceof Error ? error.message : 'Unknown error'}`)
+      console.error("Failed to save auto-save preference:", error)
+      await dialog.showAlert("Error", `Failed to save auto-save preference: ${error instanceof Error ? error.message : "Unknown error"}`)
     }
   }
 
   const parseWorkspaceTabSession = (value: unknown): WorkspaceTabSession | null => {
-    if (!value || typeof value !== 'object') return null
+    if (!value || typeof value !== "object") return null
 
     const maybeSession = value as { openedFiles?: unknown; activeFile?: unknown }
     if (!Array.isArray(maybeSession.openedFiles)) return null
 
     const openedFiles = maybeSession.openedFiles
       .map((entry) => {
-        if (!entry || typeof entry !== 'object') return null
+        if (!entry || typeof entry !== "object") return null
         const maybeFile = entry as { datapackDir?: unknown; relativePath?: unknown }
-        if (typeof maybeFile.datapackDir !== 'string' || typeof maybeFile.relativePath !== 'string') {
+        if (typeof maybeFile.datapackDir !== "string" || typeof maybeFile.relativePath !== "string") {
           return null
         }
         return {
@@ -175,7 +370,7 @@ function CodeEditor() {
       })
       .filter((entry): entry is WorkspaceTabSessionFile => !!entry)
 
-    const activeFile = typeof maybeSession.activeFile === 'string'
+    const activeFile = typeof maybeSession.activeFile === "string"
       ? maybeSession.activeFile
       : null
 
@@ -189,20 +384,20 @@ function CodeEditor() {
     try {
       const files = await (window as any).electron.listFiles(datapackDir)
       const paths = Array.isArray(files) ? files : []
-      const name = datapackDir.split(/[\\/]/).pop() || 'datapack'
+      const name = datapackDir.split(/[\\/]/).pop() || "datapack"
       let id: string | undefined
       let displayName: string | undefined
       let packVersion: string | undefined
       try {
-        const metadataRaw = await (window as any).electron.readFile(datapackDir, '.mpp-datapack')
+        const metadataRaw = await (window as any).electron.readFile(datapackDir, ".mpp-datapack")
         const parsed = JSON.parse(metadataRaw)
-        if (parsed && typeof parsed.id === 'string') {
+        if (parsed && typeof parsed.id === "string") {
           id = parsed.id
         }
-        if (parsed && typeof parsed.name === 'string') {
+        if (parsed && typeof parsed.name === "string") {
           displayName = parsed.name
         }
-        if (parsed && typeof parsed.packVersion === 'string') {
+        if (parsed && typeof parsed.packVersion === "string") {
           packVersion = parsed.packVersion
         }
       } catch {
@@ -240,11 +435,11 @@ function CodeEditor() {
     // This ensures workspace change only happens after user makes a choice
     await new Promise<void>((resolve) => {
       dialog.openDialog({
-        title: 'Unsaved Changes',
+        title: "Unsaved Changes",
         message: `You have ${modifiedFiles.size} unsaved file(s). What would you like to do?`,
         buttons: [
           {
-            label: 'Save',
+            label: "Save",
             onClick: async () => {
               await saveAllFiles()
               await workspaceChangeAction()
@@ -252,14 +447,14 @@ function CodeEditor() {
             },
           },
           {
-            label: 'Discard',
+            label: "Discard",
             onClick: async () => {
               await workspaceChangeAction()
               resolve()
             },
           },
           {
-            label: 'Cancel',
+            label: "Cancel",
             onClick: () => {
               resolve()
             },
@@ -293,7 +488,7 @@ function CodeEditor() {
   const handleQuitWithConfirm = async () => {
     // If no unsaved files, double confirm quit to prevent accidental exits
     if (modifiedFiles.size === 0) {
-      const confirmed = await dialog.showConfirm('Quit', 'Are you sure you want to quit?')
+      const confirmed = await dialog.showConfirm("Quit", "Are you sure you want to quit?")
       if (confirmed) {
         ;(window as any).electron.quit()
       }
@@ -304,11 +499,11 @@ function CodeEditor() {
     // This ensures quit only happens after user makes a choice
     await new Promise<void>((resolve) => {
       dialog.openDialog({
-        title: 'Unsaved Changes',
+        title: "Unsaved Changes",
         message: `You have ${modifiedFiles.size} unsaved file(s). Do you want to save before quitting?`,
         buttons: [
           {
-            label: 'Save',
+            label: "Save",
             onClick: async () => {
               await saveAllFiles()
               ;(window as any).electron.quit()
@@ -316,14 +511,14 @@ function CodeEditor() {
             },
           },
           {
-            label: 'Discard',
+            label: "Discard",
             onClick: () => {
               ;(window as any).electron.quit()
               resolve()
             },
           },
           {
-            label: 'Cancel',
+            label: "Cancel",
             onClick: () => {
               resolve()
             },
@@ -349,8 +544,8 @@ function CodeEditor() {
       const existingDirs = datapacks.map((datapack) => datapack.dir)
       await refreshDatapacks([...existingDirs, folder])
     } catch (error) {
-      console.error('Failed to add datapack:', error)
-      await dialog.showAlert('Error', `Failed to add datapack: ${error instanceof Error ? error.message : 'Unknown error'}`)
+      console.error("Failed to add datapack:", error)
+      await dialog.showAlert("Error", `Failed to add datapack: ${error instanceof Error ? error.message : "Unknown error"}`)
     }
   }
 
@@ -366,8 +561,8 @@ function CodeEditor() {
       const updatedDirs = datapacks.filter((dp) => dp.dir !== datapackDir).map((dp) => dp.dir)
       await refreshDatapacks(updatedDirs)
     } catch (error) {
-      console.error('Failed to remove datapack:', error)
-      await dialog.showAlert('Error', `Failed to remove datapack: ${error instanceof Error ? error.message : 'Unknown error'}`)
+      console.error("Failed to remove datapack:", error)
+      await dialog.showAlert("Error", `Failed to remove datapack: ${error instanceof Error ? error.message : "Unknown error"}`)
     }
   }
 
@@ -396,12 +591,12 @@ function CodeEditor() {
       if (!modifiedFiles.has(oldFileKey)) return true
       
       const openedFile = openedFiles.find((f) => createFileKey(f.datapackDir, f.relativePath) === oldFileKey)
-      const fileName = openedFile?.fileName || 'this file'
+      const fileName = openedFile?.fileName || "this file"
       
-      const choice = await dialog.showUnsavedConfirm('Rename File?', `${fileName} has unsaved changes. What would you like to do?`)
-      if (choice === 'cancel') return false
-      if (choice === 'save') await saveFileInternal(oldFileKey)
-      if (choice === 'discard') {
+      const choice = await dialog.showUnsavedConfirm("Rename File?", `${fileName} has unsaved changes. What would you like to do?`)
+      if (choice === "cancel") return false
+      if (choice === "save") await saveFileInternal(oldFileKey)
+      if (choice === "discard") {
         removeFileFromModifiedFiles(oldFileKey)
       }
       return true
@@ -409,10 +604,10 @@ function CodeEditor() {
 
     // Post-rename: update the open file
     const openedFileIndex = openedFiles.findIndex((f) => createFileKey(f.datapackDir, f.relativePath) === oldFileKey)
-    if (openedFileIndex === -1) return true // File wasn't open
+    if (openedFileIndex === -1) return true // File wasn"t open
     
     // Calculate new relative path
-    const newRelativePath = oldRelativePath.split('/').slice(0, -1).concat(newName).join('/')
+    const newRelativePath = oldRelativePath.split("/").slice(0, -1).concat(newName).join("/")
     const newFileKey = createFileKey(datapackDir, newRelativePath)
     const wasActive = activeFile === oldFileKey
 
@@ -454,8 +649,8 @@ function CodeEditor() {
       fileEditorStatesRef.current.delete(oldFileKey)
       
     } catch (error) {
-      console.error('Failed to read renamed file:', error)
-      await dialog.showAlert('Error', `Failed to read renamed file: ${error instanceof Error ? error.message : 'Unknown error'}`)
+      console.error("Failed to read renamed file:", error)
+      await dialog.showAlert("Error", `Failed to read renamed file: ${error instanceof Error ? error.message : "Unknown error"}`)
     }
 
     return true
@@ -466,17 +661,17 @@ function CodeEditor() {
     const openedFileIndex = openedFiles.findIndex((f) => createFileKey(f.datapackDir, f.relativePath) === fileKey)
     
     if (openedFileIndex === -1) {
-      // File wasn't open, nothing to do
+      // File wasn"t open, nothing to do
       return true
     }
 
     // Check if the file is modified
     if (modifiedFiles.has(fileKey)) {
-      const fileName = openedFiles.find((f) => createFileKey(f.datapackDir, f.relativePath) === fileKey)?.fileName || 'this file'
-      const choice = await dialog.showUnsavedConfirm('Delete File?', `${fileName} has unsaved changes. What would you like to do?`)
-      if (choice === 'cancel') return false
-      if (choice === 'save') await saveFileInternal(fileKey)
-      if (choice === 'discard') {
+      const fileName = openedFiles.find((f) => createFileKey(f.datapackDir, f.relativePath) === fileKey)?.fileName || "this file"
+      const choice = await dialog.showUnsavedConfirm("Delete File?", `${fileName} has unsaved changes. What would you like to do?`)
+      if (choice === "cancel") return false
+      if (choice === "save") await saveFileInternal(fileKey)
+      if (choice === "discard") {
         removeFileFromModifiedFiles(fileKey)
       }
     }
@@ -518,7 +713,7 @@ function CodeEditor() {
     activeFileRef.current = fileKey
     
     if (!fileKey) {
-      view.setState(createEditorState(''))
+      view.setState(createEditorState(""))
       return
     }
     
@@ -528,7 +723,7 @@ function CodeEditor() {
     // Find the opened file to get cached content
     const openedFile = openedFiles.find((f) => createFileKey(f.datapackDir, f.relativePath) === fileKey)
     
-    let contents = ''
+    let contents = ""
     
     // Use cached content if available, otherwise read from disk
     if (openedFile?.content !== undefined) {
@@ -537,8 +732,8 @@ function CodeEditor() {
       try {
         contents = await (window as any).electron.readFile(datapackDir, relativePath)
       } catch (error) {
-        console.error('Failed to read file:', error)
-        await dialog.showAlert('Error', `Failed to read file: ${error instanceof Error ? error.message : 'Unknown error'}`)
+        console.error("Failed to read file:", error)
+        await dialog.showAlert("Error", `Failed to read file: ${error instanceof Error ? error.message : "Unknown error"}`)
         return
       }
     }
@@ -559,18 +754,18 @@ function CodeEditor() {
   const handleExplorerSelect = async (datapackDir: string, pathKey: string, isFile: boolean) => {
     if (!isFile) return
 
-    const rootName = datapackDir.split(/[\\/]/).pop() || ''
-    const normalizedKey = pathKey.replace(/\\/g, '/')
-    const rootPrefix = rootName ? `${rootName}/` : ''
+    const rootName = datapackDir.split(/[\\/]/).pop() || ""
+    const normalizedKey = pathKey.replace(/\\/g, "/")
+    const rootPrefix = rootName ? `${rootName}/` : ""
     const relativePath = normalizedKey === rootName
-      ? ''
+      ? ""
       : normalizedKey.startsWith(rootPrefix)
         ? normalizedKey.slice(rootPrefix.length)
         : normalizedKey
 
-    const trimmedRelative = relativePath.replace(/^\/+/, '')
-    const fileName = trimmedRelative.split('/').pop() || ''
-    if (!trimmedRelative || !fileName.includes('.')) return
+    const trimmedRelative = relativePath.replace(/^\/+/, "")
+    const fileName = trimmedRelative.split("/").pop() || ""
+    if (!trimmedRelative || !fileName.includes(".")) return
 
     // Create file key for tracking
     const fileKey = createFileKey(datapackDir, trimmedRelative)
@@ -587,8 +782,8 @@ function CodeEditor() {
           return [...prev, { datapackDir, relativePath: trimmedRelative, fileName, content }]
         })
       } catch (error) {
-        console.error('Failed to read file:', error)
-        await dialog.showAlert('Error', `Failed to read file: ${error instanceof Error ? error.message : 'Unknown error'}`)
+        console.error("Failed to read file:", error)
+        await dialog.showAlert("Error", `Failed to read file: ${error instanceof Error ? error.message : "Unknown error"}`)
         return
       }
     }
@@ -626,8 +821,8 @@ function CodeEditor() {
       // Clear any pending autosave
       clearAutoSaveTimer(fileKey)
     } catch (error) {
-      console.error('Failed to save file:', error)
-      await dialog.showAlert('Error', `Failed to save file: ${error instanceof Error ? error.message : 'Unknown error'}`)
+      console.error("Failed to save file:", error)
+      await dialog.showAlert("Error", `Failed to save file: ${error instanceof Error ? error.message : "Unknown error"}`)
     }
   }
 
@@ -681,19 +876,19 @@ function CodeEditor() {
     try {
       await Promise.all(savePromises)
     } catch (error) {
-      console.error('Failed to save all files:', error)
-      await dialog.showAlert('Error', `Failed to save all files: ${error instanceof Error ? error.message : 'Unknown error'}`)
+      console.error("Failed to save all files:", error)
+      await dialog.showAlert("Error", `Failed to save all files: ${error instanceof Error ? error.message : "Unknown error"}`)
     }
   }
 
   const closeTab = async (fileKey: string) => {
     // Check if file is modified and confirm close
     if (modifiedFiles.has(fileKey)) {
-      const fileName = openedFiles.find((f) => createFileKey(f.datapackDir, f.relativePath) === fileKey)?.fileName || 'this file'
-      const choice = await dialog.showUnsavedConfirm('Close File?', `${fileName} has unsaved changes. What would you like to do?`)
-      if (choice === 'cancel') return
-      if (choice === 'save') await saveFileInternal(fileKey)
-      if (choice === 'discard') {
+      const fileName = openedFiles.find((f) => createFileKey(f.datapackDir, f.relativePath) === fileKey)?.fileName || "this file"
+      const choice = await dialog.showUnsavedConfirm("Close File?", `${fileName} has unsaved changes. What would you like to do?`)
+      if (choice === "cancel") return
+      if (choice === "save") await saveFileInternal(fileKey)
+      if (choice === "discard") {
         removeFileFromModifiedFiles(fileKey)
       }
     }
@@ -753,7 +948,7 @@ function CodeEditor() {
       EditorView.domEventHandlers({
         focus: () => {
           window.requestAnimationFrame(() => {
-            scrollTabIntoView(activeFileRef.current, 'smooth')
+            scrollTabIntoView(activeFileRef.current, "smooth")
           })
         },
       }),
@@ -768,7 +963,7 @@ function CodeEditor() {
     fileEditorStatesRef.current.set(currentFileKey, view.state)
   }
 
-  const scrollTabIntoView = (fileKey: string | null, behavior: ScrollBehavior = 'smooth') => {
+  const scrollTabIntoView = (fileKey: string | null, behavior: ScrollBehavior = "smooth") => {
     if (!fileKey) return
 
     const activeTabElement = tabElementRefs.current.get(fileKey)
@@ -776,8 +971,8 @@ function CodeEditor() {
 
     activeTabElement.scrollIntoView({
       behavior,
-      block: 'nearest',
-      inline: 'nearest',
+      block: "nearest",
+      inline: "nearest",
     })
   }
 
@@ -809,7 +1004,7 @@ function CodeEditor() {
             restoredOpenedFiles.push({
               datapackDir: file.datapackDir,
               relativePath: file.relativePath,
-              fileName: file.relativePath.split('/').pop() || file.relativePath,
+              fileName: file.relativePath.split("/").pop() || file.relativePath,
               content,
             })
           } catch {
@@ -844,8 +1039,8 @@ function CodeEditor() {
           activeFile: nextActiveFile,
         })
       } catch (error) {
-        console.error('Failed to restore workspace tabs:', error)
-        await dialog.showAlert('Error', `Failed to restore workspace tabs: ${error instanceof Error ? error.message : 'Unknown error'}`)
+        console.error("Failed to restore workspace tabs:", error)
+        await dialog.showAlert("Error", `Failed to restore workspace tabs: ${error instanceof Error ? error.message : "Unknown error"}`)
         setOpenedFiles([])
         await openFile(null)
       } finally {
@@ -876,8 +1071,8 @@ function CodeEditor() {
       try {
         await (window as any).electron.workspaceUpdatePreference(OPEN_TABS_PREFERENCE_KEY, session)
       } catch (error) {
-        console.error('Failed to save workspace tab session:', error)
-        await dialog.showAlert('Error', `Failed to save workspace tab session: ${error instanceof Error ? error.message : 'Unknown error'}`)
+        console.error("Failed to save workspace tab session:", error)
+        await dialog.showAlert("Error", `Failed to save workspace tab session: ${error instanceof Error ? error.message : "Unknown error"}`)
       }
     }
 
@@ -908,7 +1103,7 @@ function CodeEditor() {
   useEffect(() => {
     if (!editorRef.current) return
 
-    const state = createEditorState('')
+    const state = createEditorState("")
 
     const view = new EditorView({
       state,
@@ -938,19 +1133,19 @@ function CodeEditor() {
   useEffect(() => {
     const handler = (_: any, action: string) => {
       switch (action) {
-        case 'quit':
+        case "quit":
           handleQuitWithConfirm()
           break
-        case 'open':
+        case "open":
           handleOpenWorkspaceWithConfirm()
           break
-        case 'save':
+        case "save":
           if (activeFile && modifiedFiles.has(activeFile)) saveCurrentFile()
           break
-        case 'saveAll':
+        case "saveAll":
           if (modifiedFiles.size > 0) saveAllFiles()
           break
-        case 'close':
+        case "close":
           if (activeFile) closeTab(activeFile)
           break
       }
@@ -958,7 +1153,7 @@ function CodeEditor() {
 
     const unsubscribe = (window as any).electron.onShortcut(handler)
     return () => {
-      if (typeof unsubscribe === 'function') {
+      if (typeof unsubscribe === "function") {
         unsubscribe()
       }
     }
@@ -972,8 +1167,8 @@ function CodeEditor() {
         const datapackDirs = metadataPaths.map((metadataPath: string) => getDirFromPath(metadataPath))
         await refreshDatapacks(datapackDirs)
       } catch (error) {
-        console.error('Failed to load workspace datapacks:', error)
-        await dialog.showAlert('Error', `Failed to load workspace datapacks: ${error instanceof Error ? error.message : 'Unknown error'}`)
+        console.error("Failed to load workspace datapacks:", error)
+        await dialog.showAlert("Error", `Failed to load workspace datapacks: ${error instanceof Error ? error.message : "Unknown error"}`)
       }
     }
 
@@ -988,10 +1183,10 @@ function CodeEditor() {
   const getDuplicateTabFolderLabel = (file: OpenedFile): string | null => {
     if ((fileNameCounts.get(file.fileName) ?? 0) < 2) return null
 
-    const pathSegments = file.relativePath.split('/').filter(Boolean)
+    const pathSegments = file.relativePath.split("/").filter(Boolean)
     const parentFolder = pathSegments.length > 1
       ? pathSegments[pathSegments.length - 2]
-      : file.datapackDir.split(/[\\/]/).filter(Boolean).pop() || ''
+      : file.datapackDir.split(/[\\/]/).filter(Boolean).pop() || ""
 
     if (!parentFolder) return null
     return `../${parentFolder}`
@@ -1058,12 +1253,12 @@ function CodeEditor() {
 
   const copyTabPath = async (fileKey: string) => {
     const { datapackDir, relativePath } = parseFileKey(fileKey)
-    const fullPath = `${datapackDir}/${relativePath}`.replace(/\//g, '\\')
+    const fullPath = `${datapackDir}/${relativePath}`.replace(/\//g, "\\")
     try {
       await navigator.clipboard.writeText(fullPath)
     } catch (error) {
-      console.error('Failed to copy path:', error)
-      await dialog.showAlert('Error', `Failed to copy path: ${error instanceof Error ? error.message : 'Unknown error'}`)
+      console.error("Failed to copy path:", error)
+      await dialog.showAlert("Error", `Failed to copy path: ${error instanceof Error ? error.message : "Unknown error"}`)
     }
   }
 
@@ -1072,19 +1267,19 @@ function CodeEditor() {
     try {
       await navigator.clipboard.writeText(relativePath)
     } catch (error) {
-      console.error('Failed to copy relative path:', error)
-      await dialog.showAlert('Error', `Failed to copy relative path: ${error instanceof Error ? error.message : 'Unknown error'}`)
+      console.error("Failed to copy relative path:", error)
+      await dialog.showAlert("Error", `Failed to copy relative path: ${error instanceof Error ? error.message : "Unknown error"}`)
     }
   }
 
   const revealInFileExplorer = async (fileKey: string) => {
     const { datapackDir, relativePath } = parseFileKey(fileKey)
-    const fullPath = `${datapackDir}/${relativePath}`.replace(/\//g, '\\')
+    const fullPath = `${datapackDir}/${relativePath}`.replace(/\//g, "\\")
     try {
       await (window as any).electron.revealInFileExplorer(fullPath)
     } catch (error) {
-      console.error('Failed to reveal in file explorer:', error)
-      await dialog.showAlert('Error', `Failed to reveal file in explorer: ${error instanceof Error ? error.message : 'Unknown error'}`)
+      console.error("Failed to reveal in file explorer:", error)
+      await dialog.showAlert("Error", `Failed to reveal file in explorer: ${error instanceof Error ? error.message : "Unknown error"}`)
     }
   }
 
@@ -1097,16 +1292,16 @@ function CodeEditor() {
 
   const tabContextItems: MenuItem[] = [
     {
-      label: 'Close',
+      label: "Close",
       disabled: !tabContextFileKey,
       onClick: () => {
         if (!tabContextFileKey) return
         void closeTab(tabContextFileKey)
       },
-      shortcut: 'Ctrl+W',
+      shortcut: "Ctrl+W",
     },
     {
-      label: 'Close Others',
+      label: "Close Others",
       disabled: !hasOtherTabs,
       onClick: () => {
         if (!tabContextFileKey) return
@@ -1114,7 +1309,7 @@ function CodeEditor() {
       },
     },
     {
-      label: 'Close to the Right',
+      label: "Close to the Right",
       disabled: !hasTabsToRight,
       onClick: () => {
         if (!tabContextFileKey) return
@@ -1122,14 +1317,14 @@ function CodeEditor() {
       },
     },
     {
-      label: 'Close Saved',
+      label: "Close Saved",
       disabled: !hasSavedTabs,
       onClick: () => {
         void closeSavedTabs()
       },
     },
     {
-      label: 'Close All',
+      label: "Close All",
       disabled: !hasAnyOpenTabs,
       onClick: () => {
         void closeAllTabs()
@@ -1137,7 +1332,7 @@ function CodeEditor() {
     },
     {},
     {
-      label: 'Copy Path',
+      label: "Copy Path",
       disabled: !tabContextFileKey,
       onClick: () => {
         if (!tabContextFileKey) return
@@ -1145,7 +1340,7 @@ function CodeEditor() {
       },
     },
     {
-      label: 'Copy Relative Path',
+      label: "Copy Relative Path",
       disabled: !tabContextFileKey,
       onClick: () => {
         if (!tabContextFileKey) return
@@ -1154,7 +1349,7 @@ function CodeEditor() {
     },
     {},
     {
-      label: 'Reveal in File Explorer',
+      label: "Reveal in File Explorer",
       disabled: !tabContextFileKey,
       onClick: () => {
         if (!tabContextFileKey) return
@@ -1167,7 +1362,7 @@ function CodeEditor() {
     if (!activeFile) return
 
     const animationFrameId = window.requestAnimationFrame(() => {
-      scrollTabIntoView(activeFile, 'smooth')
+      scrollTabIntoView(activeFile, "smooth")
     })
 
     return () => {
@@ -1175,32 +1370,107 @@ function CodeEditor() {
     }
   }, [activeFile, openedFiles])
 
+  const leftPanelTabs: PanelTab[] = [
+    {
+      id: "explorer",
+      title: "Explorer",
+      icon: "codicon-file-directory",
+      visible: visibleLeftPanelTabs.has("explorer"),
+      content: datapacks.length ? (
+        <div className="space-y-4">
+          {datapacks.map((datapack) => (
+            <DatapackTree
+              key={datapack.dir}
+              paths={datapack.paths}
+              folderName={datapack.name}
+              rootId={datapack.id}
+              rootName={datapack.displayName}
+              rootPackVersion={datapack.packVersion}
+              basePath={datapack.dir}
+              className="mt-2"
+              onFolderCreated={handleRefreshExplorer}
+              onSelect={(pathKey, isFile) => handleExplorerSelect(datapack.dir, pathKey, isFile)}
+              onFileRenamed={(oldRelativePath, newName) => handleFileRenamed(datapack.dir, oldRelativePath, newName)}
+              onFileDeleted={(relativePath) => handleFileDeleted(datapack.dir, relativePath)}
+            />
+          ))}
+        </div>
+      ) : (
+        <>
+          <div className="text-sm text-codemirror-300">No datapacks added</div>
+          <div className="flex flex-col items-center m-4 button" onClick={handleAddDatapack}>
+            <div className="text-sm text-codemirror-100">Add Existing Datapack</div>
+          </div>
+        </>
+      )
+    }
+  ]
+
+  const rightPanelTabs: PanelTab[] = [
+    {
+      id: "preferences",
+      title: "Preferences",
+      icon: "codicon-settings",
+      visible: visibleRightPanelTabs.has("preferences"),
+      content: workspaceInfo.dir ? (
+        <div className="text-sm text-codemirror-300">
+          <div className="font-mono break-words">{workspaceInfo.dir}</div>
+        </div>
+      ) : (
+        <div className="text-sm text-codemirror-300">No folder selected</div>
+      )
+    },
+    {
+      id: "settings",
+      title: "Settings",
+      icon: "codicon-gear",
+      visible: visibleRightPanelTabs.has("settings"),
+      content: (
+        <div className="text-sm text-codemirror-300">Application settings will appear here</div>
+      )
+    }
+  ]
+
+  const bottomPanelTabs: PanelTab[] = [
+    {
+      id: "debug",
+      title: "Debug Output",
+      icon: "codicon-bug",
+      visible: visibleBottomPanelTabs.has("debug"),
+      content: <div className="text-sm text-codemirror-300">Debug output will appear here</div>
+    }
+  ]
+
+  const orderedLeftPanelTabs = orderTabsByList(leftPanelTabs, leftPanelTabOrder)
+  const orderedRightPanelTabs = orderTabsByList(rightPanelTabs, rightPanelTabOrder)
+  const orderedBottomPanelTabs = orderTabsByList(bottomPanelTabs, bottomPanelTabOrder)
+
   return (
     <div className="w-full h-full flex flex-col select-none">
 
       {/* Title Bar */}
-      <div className="flex flex-row h-[36px] bg-codemirror-700 text-sm text-codemirror-100 border-b border-codemirror-600" style={{ WebkitAppRegion: 'drag' } as any}>
+      <div className="flex flex-row h-[36px] bg-codemirror-700 text-sm text-codemirror-100 border-b border-codemirror-600" style={{ WebkitAppRegion: "drag" } as any}>
 
         {/* App Icon */}
         <div className="px-4 py-2 font-bold">
-          <img src={iconPath} alt="MCFunction++" style={{ height: '20px', width: '20px' }} />
+          <img src={iconPath} alt="MCFunction++" style={{ height: "20px", width: "20px" }} />
         </div>
         
         {/* Title Bar Buttons */}
-        <div className="flex flex-row flex-1" style={{ WebkitAppRegion: 'no-drag' } as any}>
+        <div className="flex flex-row flex-1" style={{ WebkitAppRegion: "no-drag" } as any}>
 
           <DropdownMenu 
             label="App"
             items={[
-              { label: 'Preferences', onClick: undefined, disabled: true },
+              { label: "Preferences", onClick: undefined, disabled: true },
               {},
-              { label: 'Report Bug', onClick: undefined, disabled: true },
+              { label: "Report Bug", onClick: undefined, disabled: true },
               {},
-              { label: 'Website', onClick: undefined, disabled: true },
-              { label: 'Help', onClick: undefined, disabled: true },
-              { label: 'Credits', onClick: undefined, disabled: true },
+              { label: "Website", onClick: undefined, disabled: true },
+              { label: "Help", onClick: undefined, disabled: true },
+              { label: "Credits", onClick: undefined, disabled: true },
               {},
-              { label: 'Exit', shortcut: 'Ctrl+Q', onClick: handleQuitWithConfirm }
+              { label: "Exit", shortcut: "Ctrl+Q", onClick: handleQuitWithConfirm }
             ] as MenuItem[]}
             isOpen={isHeaderMenuOneOpen}
             setIsOpen={setIsHeaderMenuOneOpen}
@@ -1210,21 +1480,21 @@ function CodeEditor() {
           <DropdownMenu 
             label="Workspace"
             items={[
-              { label: 'New Workspace', onClick: handleNewWorkspaceWithConfirm },
-              { label: 'Open Workspace', shortcut: 'Ctrl+O', onClick: handleOpenWorkspaceWithConfirm },
-              { label: 'Open Default Workspace', onClick: handleOpenDefaultWorkspaceWithConfirm },
-              { label: 'Save Workspace', onClick: handleSaveWorkspace },
-              { label: 'Save Workspace As', onClick: handleSaveWorkspaceAs },
+              { label: "New Workspace", onClick: handleNewWorkspaceWithConfirm },
+              { label: "Open Workspace", shortcut: "Ctrl+O", onClick: handleOpenWorkspaceWithConfirm },
+              { label: "Open Default Workspace", onClick: handleOpenDefaultWorkspaceWithConfirm },
+              { label: "Save Workspace", onClick: handleSaveWorkspace },
+              { label: "Save Workspace As", onClick: handleSaveWorkspaceAs },
               {},
-              { label: 'Add Existing Datapack', onClick: handleAddDatapack },
+              { label: "Add Existing Datapack", onClick: handleAddDatapack },
               {
-                label: 'Remove Datapack',
+                label: "Remove Datapack",
                 children: datapacks.length > 0
                   ? datapacks.map((datapack) => ({
-                      label: `${datapack.displayName}${datapack.packVersion ? ` (v${datapack.packVersion})` : ''}`,
+                      label: `${datapack.displayName}${datapack.packVersion ? ` (v${datapack.packVersion})` : ""}`,
                       onClick: () => handleRemoveDatapack(datapack.dir)
                     }))
-                  : [{ label: 'No datapacks loaded', disabled: true }]
+                  : [{ label: "No datapacks loaded", disabled: true }]
               }
             ] as MenuItem[]}
             isOpen={isHeaderMenuTwoOpen}
@@ -1235,12 +1505,12 @@ function CodeEditor() {
           <DropdownMenu 
             label="Editor"
             items={[
-              { label: 'Close', shortcut: 'Ctrl+W', onClick: () => activeFile && closeTab(activeFile) },
-              { label: 'Save', shortcut: 'Ctrl+S', onClick: saveCurrentFile, disabled: !activeFile || !modifiedFiles.has(activeFile) },
-              { label: 'Save All', shortcut: 'Ctrl+Shift+S', onClick: saveAllFiles, disabled: modifiedFiles.size === 0 },
+              { label: "Close", shortcut: "Ctrl+W", onClick: () => activeFile && closeTab(activeFile) },
+              { label: "Save", shortcut: "Ctrl+S", onClick: saveCurrentFile, disabled: !activeFile || !modifiedFiles.has(activeFile) },
+              { label: "Save All", shortcut: "Ctrl+Shift+S", onClick: saveAllFiles, disabled: modifiedFiles.size === 0 },
               {},
-              { label: 'Auto-Save', toggleable: true, toggled: isAutoSaveEnabled, onToggle: toggleAutoSave },
-              { label: 'Word Wrap', onClick: undefined, disabled: true }
+              { label: "Auto-Save", toggleable: true, toggled: isAutoSaveEnabled, onToggle: toggleAutoSave },
+              { label: "Word Wrap", onClick: undefined, disabled: true }
             ] as MenuItem[]}
             isOpen={isHeaderMenuThreeOpen}
             setIsOpen={setIsHeaderMenuThreeOpen}
@@ -1250,15 +1520,37 @@ function CodeEditor() {
           <DropdownMenu 
             label="Panels"
             items={[
-              { label: 'Explorer', onClick: undefined, disabled: true },
-              { label: 'Preferences', onClick: undefined, disabled: true }
+              { 
+                label: "Explorer",
+                toggleable: true,
+                toggled: visibleLeftPanelTabs.has("explorer"),
+                onToggle: (nextState) => handleToggleLeftTab("explorer", nextState)
+              },
+              { 
+                label: "Preferences",
+                toggleable: true,
+                toggled: visibleRightPanelTabs.has("preferences"),
+                onToggle: (nextState) => handleToggleRightTab("preferences", nextState)
+              },
+              { 
+                label: "Debug Output",
+                toggleable: true,
+                toggled: visibleBottomPanelTabs.has("debug"),
+                onToggle: (nextState) => handleToggleBottomTab("debug", nextState)
+              },
+              { 
+                label: "Settings",
+                toggleable: true,
+                toggled: visibleRightPanelTabs.has("settings"),
+                onToggle: (nextState) => handleToggleRightTab("settings", nextState)
+              }
             ] as MenuItem[]}
             isOpen={isHeaderMenuFourOpen}
             setIsOpen={setIsHeaderMenuFourOpen}
             disabled={dialog.isOpen}
           />
 
-          <div className="flex-1" style={{ WebkitAppRegion: 'drag' } as any}></div>
+          <div className="flex-1" style={{ WebkitAppRegion: "drag" } as any}></div>
           
           {/* Window Control Buttons */}
           <div
@@ -1267,7 +1559,7 @@ function CodeEditor() {
           />
           <div
             onClick={() => (window as any).electron.toggleFullscreen()}
-            className={`header-button-right pt-2.5 pb-2 codicon ${isFullScreen ? 'codicon-chrome-restore' : 'codicon-chrome-maximize'}`}
+            className={`header-button-right pt-2.5 pb-2 codicon ${isFullScreen ? "codicon-chrome-restore" : "codicon-chrome-maximize"}`}
           />
           <div
             onClick={handleQuitWithConfirm}
@@ -1281,48 +1573,31 @@ function CodeEditor() {
       <div className="flex flex-row flex-1 overflow-hidden flex-nowrap">
 
         {/* Left Panel */}
-        <Panel
-          width={leftPanel.width} position="left"
-          title="Explorer"
-          menuItems={[
-            {label: 'Refresh', onClick: handleRefreshExplorer}
-          ] as MenuItem[]}
-        >
-          {datapacks.length ? (
-            <div className="space-y-4">
-              {datapacks.map((datapack) => (
-                <DatapackTree
-                  key={datapack.dir}
-                  paths={datapack.paths}
-                  folderName={datapack.name}
-                  rootId={datapack.id}
-                  rootName={datapack.displayName}
-                  rootPackVersion={datapack.packVersion}
-                  basePath={datapack.dir}
-                  className="mt-2"
-                  onFolderCreated={handleRefreshExplorer}
-                  onSelect={(pathKey, isFile) => handleExplorerSelect(datapack.dir, pathKey, isFile)}
-                  onFileRenamed={(oldRelativePath, newName) => handleFileRenamed(datapack.dir, oldRelativePath, newName)}
-                  onFileDeleted={(relativePath) => handleFileDeleted(datapack.dir, relativePath)}
-                />
-              ))}
-            </div>
-          ) : (
-            <>
-              <div className="text-sm text-codemirror-300">No datapacks added</div>
-              <div className="flex flex-col items-center m-4 button" onClick={handleAddDatapack}>
-                <div className="text-sm text-codemirror-100">Add Existing Datapack</div>
-              </div>
-            </>
-          )}
-        </Panel>
+        {visibleLeftPanelTabs.size > 0 && (
+          <>
+            <Panel
+              width={leftSection.width}
+              position="left"
+              activeTabId={activeLeftTabId}
+              onTabChange={setActiveLeftTabId}
+              onTabReorder={handleReorderLeftTab}
+              menuItems={[
+                {label: "Refresh", onClick: handleRefreshExplorer}
+              ] as MenuItem[]}
+              tabs={orderedLeftPanelTabs}
+            />
 
-        {/* Left Panel Resize Handle */}
-        <ResizeHandle onMouseDown={leftPanel.handleMouseDown} />
+            {/* Left Panel Resize Handle */}
+            <ResizeHandle onMouseDown={leftSection.handleMouseDown} orientation="horizontal" />
+          </>
+        )}
 
-        {/* Main Center Panel */}
-        <div className="flex-1 min-w-0 bg-codemirror-default flex flex-col min-h-0 relative"
-          onClick={() => viewRef.current?.focus()}>
+        {/* Center Section: Main Editor + Bottom Panel */}
+        <div className="flex-1 min-w-0 flex flex-col min-h-0">
+
+          {/* Main Center Panel */}
+          <div className="flex-1 min-w-0 bg-codemirror-default flex flex-col min-h-0 relative"
+            onClick={() => viewRef.current?.focus()}>
 
           {/* Editor */}
           <div className="flex-1 flex flex-col min-h-0">
@@ -1351,8 +1626,8 @@ function CodeEditor() {
                       whitespace-nowrap
                       cursor-pointer
                       ${isActive
-                        ? 'bg-codemirror-default text-codemirror-100'
-                        : 'hover:bg-codemirror-highlight text-codemirror-300'
+                        ? "bg-codemirror-default text-codemirror-100"
+                        : "hover:bg-codemirror-highlight text-codemirror-300"
                       }
                     `}
                   >
@@ -1393,31 +1668,50 @@ function CodeEditor() {
             <div className="absolute inset-0 flex-1 bg-codemirror-default" />
             <div className="absolute inset-0 flex items-center justify-center select-none pointer-events-none">
               <img src={iconPath} alt="MCFunction++"
-                style={{ height: '150px', width: '150px', opacity: 0.05 }} />
+                style={{ height: "150px", width: "150px", opacity: 0.05 }} />
             </div>
           </>)}
+
+          </div>
+
+        {/* Bottom Panel Resize Handle */}
+        {visibleBottomPanelTabs.size > 0 && (
+          <ResizeHandle onMouseDown={bottomSection.handleMouseDown} orientation="vertical" />
+        )}
+
+        {/* Bottom Panel */}
+        {visibleBottomPanelTabs.size > 0 && (
+          <Panel 
+            height={bottomSection.height}
+            position="bottom"
+            activeTabId={activeBottomTabId}
+            onTabChange={setActiveBottomTabId}
+            onTabReorder={handleReorderBottomTab}
+            tabs={orderedBottomPanelTabs}
+          />
+        )}
 
         </div>
 
         {/* Right Panel Resize Handle */}
-        <ResizeHandle onMouseDown={rightPanel.handleMouseDown} />
+        {visibleRightPanelTabs.size > 0 && (
+          <ResizeHandle onMouseDown={rightSection.handleMouseDown} orientation="horizontal" />
+        )}
         
         {/* Right Panel */}
-        <Panel width={rightPanel.width} position="right" title="Preferences">
-          {
-            workspaceInfo.dir ? (
-              <div className="text-sm text-codemirror-300">
-                <div className="font-mono break-words">{workspaceInfo.dir}</div>
-              </div>
-            ) : (<>
-              <div className="text-sm text-codemirror-300">No folder selected</div>
-            </>)
-          }
-        </Panel>
+        {visibleRightPanelTabs.size > 0 && (
+          <Panel 
+            width={rightSection.width} 
+            position="right" 
+            activeTabId={activeRightTabId}
+            onTabChange={setActiveRightTabId}
+            onTabReorder={handleReorderRightTab}
+            menuItems={getRightMenuItems()}
+            tabs={orderedRightPanelTabs}
+          />
+        )}
 
-      </div>
-
-      {/* Footer */}
+      </div>      {/* Footer */}
       <div className="flex flex-row items-center h-[30px] bg-codemirror-700 text-codemirror-100 px-2 py-1 border-t border-codemirror-600">
         <div className="text-sm">Made by touchportyl</div>
       </div>
@@ -1451,7 +1745,7 @@ function App() {
   )
 }
 
-const rootElement = document.getElementById('root') as HTMLElement
+const rootElement = document.getElementById("root") as HTMLElement
 const root = ReactDOM.createRoot(rootElement)
 
 root.render(<App />)

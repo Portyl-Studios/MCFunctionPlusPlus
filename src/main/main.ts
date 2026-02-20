@@ -6,6 +6,7 @@ import { readFile, writeFile, writeFileFromDirectory, readFileFromDirectory, cre
 import { registerWorkspaceHandlers } from './workspace'
 import workspaceManager from './workspace'
 import { registerDatapackHandlers, datapackManager } from './datapack'
+import { preferencesManager } from './preferences'
 
 // Replicating __dirname using ES Modules
 const __filename = fileURLToPath(import.meta.url)
@@ -152,7 +153,23 @@ ipcMain.handle('delete-file-or-folder', async (_event, { targetPath }) => {
   return await deleteFileOrFolder(targetPath)
 })
 
-app.on('ready', () => {
+// IPC handlers for preferences
+ipcMain.handle('preferences-get', async (_event, { key }) => {
+  return await preferencesManager.get(key)
+})
+
+ipcMain.handle('preferences-set', async (_event, { key, value }) => {
+  return await preferencesManager.set(key, value)
+})
+
+ipcMain.handle('preferences-update', async (_event, { updates }) => {
+  return await preferencesManager.update(updates)
+})
+
+app.on('ready', async () => {
+  // Load preferences on startup
+  await preferencesManager.load()
+
   const iconPath = path.resolve(__dirname, '../../assets/icon.ico')
   mainWindow = new BrowserWindow({
     width: 1600,

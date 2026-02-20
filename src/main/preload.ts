@@ -109,5 +109,14 @@ contextBridge.exposeInMainWorld('electron', {
   },
   deleteFileOrFolder: (targetPath: string) => {
     return ipcRenderer.invoke('delete-file-or-folder', { targetPath })
+  },
+  preferencesGet: (key: string) => {
+    return ipcRenderer.invoke('preferences-get', { key })
+  },
+  preferencesSet: (key: string, value: unknown) => {
+    return ipcRenderer.invoke('preferences-set', { key, value })
+  },
+  preferencesUpdate: (updates: Record<string, unknown>) => {
+    return ipcRenderer.invoke('preferences-update', { updates })
   }
 })
