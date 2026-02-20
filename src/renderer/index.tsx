@@ -331,6 +331,132 @@ function CodeEditor() {
     }
   }
 
+  const removeFileFromOpenedFiles = (fileKey: string) => {
+    setOpenedFiles((prev) => prev.filter((f) => createFileKey(f.datapackDir, f.relativePath) !== fileKey))
+  }
+
+  const removeFileFromModifiedFiles = (fileKey: string) => {
+    setModifiedFiles((prev) => {
+      const next = new Set(prev)
+      next.delete(fileKey)
+      return next
+    })
+  }
+
+  const removeFileFromOpenAndModified = (fileKey: string) => {
+    removeFileFromOpenedFiles(fileKey)
+    removeFileFromModifiedFiles(fileKey)
+  }
+
+  const handleFileRenamed = async (datapackDir: string, oldRelativePath: string, newName: string): Promise<boolean> => {
+    const oldFileKey = createFileKey(datapackDir, oldRelativePath)
+    
+    // Pre-rename check: if newName is empty, just validate unsaved changes
+    if (!newName) {
+      if (!modifiedFiles.has(oldFileKey)) return true
+      
+      const openedFile = openedFiles.find((f) => createFileKey(f.datapackDir, f.relativePath) === oldFileKey)
+      const fileName = openedFile?.fileName || 'this file'
+      
+      const choice = await dialog.showUnsavedConfirm('Rename File?', `${fileName} has unsaved changes. What would you like to do?`)
+      if (choice === 'cancel') return false
+      if (choice === 'save') await saveFileInternal(oldFileKey)
+      if (choice === 'discard') {
+        removeFileFromModifiedFiles(oldFileKey)
+      }
+      return true
+    }
+
+    // Post-rename: update the open file
+    const openedFileIndex = openedFiles.findIndex((f) => createFileKey(f.datapackDir, f.relativePath) === oldFileKey)
+    if (openedFileIndex === -1) return true // File wasn't open
+    
+    // Calculate new relative path
+    const newRelativePath = oldRelativePath.split('/').slice(0, -1).concat(newName).join('/')
+    const newFileKey = createFileKey(datapackDir, newRelativePath)
+    const wasActive = activeFile === oldFileKey
+
+    clearAutoSaveTimer(oldFileKey)
+    
+    try {
+      const freshContents = await (window as any).electron.readFile(datapackDir, newRelativePath)
+      
+      setOpenedFiles((prev) => {
+        const filtered = prev.filter((f) => createFileKey(f.datapackDir, f.relativePath) !== oldFileKey)
+        const newFile: OpenedFile = {
+          datapackDir,
+          relativePath: newRelativePath,
+          fileName: newName,
+          content: freshContents,
+        }
+        filtered.splice(openedFileIndex, 0, newFile)
+        return filtered
+      })
+
+      setModifiedFiles((prev) => {
+        const next = new Set(prev)
+        const wasModified = next.delete(oldFileKey)
+        if (wasModified) {
+          next.add(newFileKey)
+        }
+        return next
+      })
+
+      if (wasActive) {
+        await openFile(newFileKey)
+      }
+      
+    } catch (error) {
+      console.error('Failed to read renamed file:', error)
+      await dialog.showAlert('Error', `Failed to read renamed file: ${error instanceof Error ? error.message : 'Unknown error'}`)
+    }
+
+    return true
+  }
+
+  const handleFileDeleted = async (datapackDir: string, relativePath: string): Promise<boolean> => {
+    const fileKey = createFileKey(datapackDir, relativePath)
+    const openedFileIndex = openedFiles.findIndex((f) => createFileKey(f.datapackDir, f.relativePath) === fileKey)
+    
+    if (openedFileIndex === -1) {
+      // File wasn't open, nothing to do
+      return true
+    }
+
+    // Check if the file is modified
+    if (modifiedFiles.has(fileKey)) {
+      const fileName = openedFiles.find((f) => createFileKey(f.datapackDir, f.relativePath) === fileKey)?.fileName || 'this file'
+      const choice = await dialog.showUnsavedConfirm('Delete File?', `${fileName} has unsaved changes. What would you like to do?`)
+      if (choice === 'cancel') return false
+      if (choice === 'save') await saveFileInternal(fileKey)
+      if (choice === 'discard') {
+        removeFileFromModifiedFiles(fileKey)
+      }
+    }
+
+    // Close the file
+    clearAutoSaveTimer(fileKey)
+    
+    // Remove from opened files and modified files
+    const updatedFiles = openedFiles.filter((f) => createFileKey(f.datapackDir, f.relativePath) !== fileKey)
+    removeFileFromOpenAndModified(fileKey)
+
+    // If the deleted file was active, switch to another file
+    if (activeFile === fileKey) {
+      if (updatedFiles.length > 0) {
+        // Try to open the next tab (same index), or previous tab if no next tab exists
+        const nextIndex = openedFileIndex < updatedFiles.length ? openedFileIndex : updatedFiles.length - 1
+        const nextFile = updatedFiles[nextIndex]
+        const newActive = createFileKey(nextFile.datapackDir, nextFile.relativePath)
+        await openFile(newActive)
+      } else {
+        await openFile(null)
+      }
+    }
+
+    return true
+  }
+
   const openFile = async (fileKey: string | null) => {
     setActiveFile(fileKey)
     
@@ -433,11 +559,7 @@ function CodeEditor() {
       )
       
       // Clear modified state for this file
-      setModifiedFiles((prev) => {
-        const next = new Set(prev)
-        next.delete(fileKey)
-        return next
-      })
+      removeFileFromModifiedFiles(fileKey)
 
       // Clear any pending autosave
       clearAutoSaveTimer(fileKey)
@@ -451,6 +573,13 @@ function CodeEditor() {
     if (!activeFile || !viewRef.current) return
     const contents = viewRef.current.state.doc.toString()
     await saveFile(activeFile, contents)
+  }
+
+  const saveFileInternal = async (fileKey: string) => {
+    const openedFile = openedFiles.find((f) => createFileKey(f.datapackDir, f.relativePath) === fileKey)
+    if (openedFile) {
+      await saveFile(fileKey, openedFile.content)
+    }
   }
 
   const scheduleAutoSave = (fileKey: string, contents: string) => {
@@ -499,9 +628,11 @@ function CodeEditor() {
     // Check if file is modified and confirm close
     if (modifiedFiles.has(fileKey)) {
       const fileName = openedFiles.find((f) => createFileKey(f.datapackDir, f.relativePath) === fileKey)?.fileName || 'this file'
-      const confirmed = await dialog.showConfirm('Close File?', `${fileName} has unsaved changes. Do you want to close it without saving?`)
-      if (!confirmed) {
-        return // User cancelled, don't close
+      const choice = await dialog.showUnsavedConfirm('Close File?', `${fileName} has unsaved changes. What would you like to do?`)
+      if (choice === 'cancel') return
+      if (choice === 'save') await saveFileInternal(fileKey)
+      if (choice === 'discard') {
+        removeFileFromModifiedFiles(fileKey)
       }
     }
 
@@ -511,14 +642,7 @@ function CodeEditor() {
     // Find the index of the file being closed
     const closingIndex = openedFiles.findIndex((f) => createFileKey(f.datapackDir, f.relativePath) === fileKey)
     const updatedFiles = openedFiles.filter((f) => createFileKey(f.datapackDir, f.relativePath) !== fileKey)
-    setOpenedFiles((prev) => prev.filter((f) => createFileKey(f.datapackDir, f.relativePath) !== fileKey))
-    
-    // Clear modified state for this file
-    setModifiedFiles((prev) => {
-      const next = new Set(prev)
-      next.delete(fileKey)
-      return next
-    })
+    removeFileFromOpenAndModified(fileKey)
     
     if (activeFile === fileKey) {
       if (updatedFiles.length > 0) {
@@ -1114,6 +1238,8 @@ function CodeEditor() {
                   className="mt-2"
                   onFolderCreated={handleRefreshExplorer}
                   onSelect={(pathKey, isFile) => handleExplorerSelect(datapack.dir, pathKey, isFile)}
+                  onFileRenamed={(oldRelativePath, newName) => handleFileRenamed(datapack.dir, oldRelativePath, newName)}
+                  onFileDeleted={(relativePath) => handleFileDeleted(datapack.dir, relativePath)}
                 />
               ))}
             </div>

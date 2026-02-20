@@ -103,5 +103,11 @@ contextBridge.exposeInMainWorld('electron', {
   },
   revealInFileExplorer: (filePath: string) => {
     return ipcRenderer.invoke('reveal-in-file-explorer', { filePath })
+  },
+  renameFileOrFolder: (oldPath: string, newName: string) => {
+    return ipcRenderer.invoke('rename-file-or-folder', { oldPath, newName })
+  },
+  deleteFileOrFolder: (targetPath: string) => {
+    return ipcRenderer.invoke('delete-file-or-folder', { targetPath })
   }
 })

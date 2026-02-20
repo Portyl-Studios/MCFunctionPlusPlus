@@ -14,10 +14,25 @@ interface DialogProps {
   buttons: DialogButton[]
   autoCloseMs?: number
   onClose: () => void
+  inputValue?: string
+  onInputChange?: (value: string) => void
 }
 
-export function Dialog({ isOpen, title, message, buttons, autoCloseMs, onClose }: DialogProps) {
+export function Dialog({ isOpen, title, message, buttons, autoCloseMs, onClose, inputValue, onInputChange }: DialogProps) {
   const [elapsedMs, setElapsedMs] = useState(0)
+  const [localInputValue, setLocalInputValue] = useState(inputValue || '')
+
+  // Reset local input value when dialog opens with new inputValue
+  useEffect(() => {
+    if (isOpen) {
+      setLocalInputValue(inputValue || '')
+    }
+  }, [isOpen, inputValue])
+
+  const handleInputChange = (value: string) => {
+    setLocalInputValue(value)
+    onInputChange?.(value)
+  }
 
   // Auto-close timer: closes dialog after specified duration
   useEffect(() => {
@@ -94,6 +109,21 @@ export function Dialog({ isOpen, title, message, buttons, autoCloseMs, onClose }
         {/* Content Panel */}
         <div className="flex-1 p-2 text-sm text-codemirror-100 text-wrap overflow-y-auto">
           {message}
+          {onInputChange !== undefined && (
+            <input
+              type="text"
+              value={localInputValue}
+              onChange={(e) => handleInputChange(e.target.value)}
+              className="w-full mt-2 px-2 py-1 bg-codemirror-default border border-codemirror-400 rounded text-codemirror-100 focus:outline-none focus:border-codemirror-200"
+              autoFocus
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && buttons[0]) {
+                  buttons[0].onClick()
+                  onClose()
+                }
+              }}
+            />
+          )}
         </div>
 
         <div className="h-px m-2 bg-codemirror-600" />
@@ -140,6 +170,8 @@ interface UseDialogResult {
   dialogConfig: Omit<DialogProps, 'isOpen' | 'onClose'> | null
   showAlert: (title: string, message: string) => Promise<void>
   showConfirm: (title: string, message: string) => Promise<boolean>
+  showPrompt: (title: string, message: string, defaultValue?: string) => Promise<string | null>
+  showUnsavedConfirm: (title: string, message: string) => Promise<'save' | 'discard' | 'cancel'>
 }
 
 export function useDialog(): UseDialogResult {
@@ -192,6 +224,53 @@ export function useDialog(): UseDialogResult {
     })
   }
 
+  const showPrompt = (title: string, message: string, defaultValue: string = ''): Promise<string | null> => {
+    return new Promise((resolve) => {
+      let inputValue = defaultValue
+      openDialog({
+        title,
+        message,
+        inputValue: defaultValue,
+        onInputChange: (value) => {
+          inputValue = value
+        },
+        buttons: [
+          {
+            label: 'OK',
+            onClick: () => resolve(inputValue),
+          },
+          {
+            label: 'Cancel',
+            onClick: () => resolve(null),
+          },
+        ],
+      })
+    })
+  }
+
+  const showUnsavedConfirm = (title: string, message: string): Promise<'save' | 'discard' | 'cancel'> => {
+    return new Promise((resolve) => {
+      openDialog({
+        title,
+        message,
+        buttons: [
+          {
+            label: 'Save',
+            onClick: () => resolve('save'),
+          },
+          {
+            label: 'Discard',
+            onClick: () => resolve('discard'),
+          },
+          {
+            label: 'Cancel',
+            onClick: () => resolve('cancel'),
+          },
+        ],
+      })
+    })
+  }
+
   return {
     isOpen,
     openDialog,
@@ -199,5 +278,7 @@ export function useDialog(): UseDialogResult {
     dialogConfig,
     showAlert,
     showConfirm,
+    showPrompt,
+    showUnsavedConfirm,
   }
 }

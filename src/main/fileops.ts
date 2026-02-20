@@ -278,3 +278,85 @@ export async function validateDatapackFolder(folderPath: string): Promise<boolea
     return false
   }
 }
+
+export async function renameFileOrFolder(oldPath: string, newName: string): Promise<string> {
+  // Validate inputs
+  if (!oldPath || typeof oldPath !== 'string') {
+    throw new Error('Invalid path')
+  }
+
+  if (!newName || typeof newName !== 'string') {
+    throw new Error('Invalid new name')
+  }
+
+  if (isInvalidDirectory(oldPath)) {
+    throw new Error('Invalid path')
+  }
+
+  // Validate the new name doesn't contain path separators
+  if (newName.includes('/') || newName.includes('\\')) {
+    throw new Error('New name cannot contain path separators')
+  }
+
+  // Validate the new name as a filename
+  if (isInvalidFilename(newName)) {
+    throw new Error('Invalid new name')
+  }
+
+  try {
+    // Check if source exists
+    const stats = await fs.stat(oldPath)
+    
+    // Construct new path in the same directory
+    const directory = path.dirname(oldPath)
+    const newPath = path.join(directory, newName)
+
+    // Check if target already exists
+    try {
+      await fs.stat(newPath)
+      throw new Error('A file or folder with that name already exists')
+    } catch (error) {
+      // ENOENT is expected - target should not exist
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
+        throw error
+      }
+    }
+
+    // Rename the file or folder
+    await fs.rename(oldPath, newPath)
+    return newPath
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+      throw new Error('File or folder not found')
+    }
+    throw error
+  }
+}
+
+export async function deleteFileOrFolder(targetPath: string): Promise<void> {
+  // Validate inputs
+  if (!targetPath || typeof targetPath !== 'string') {
+    throw new Error('Invalid path')
+  }
+
+  if (isInvalidDirectory(targetPath)) {
+    throw new Error('Invalid path')
+  }
+
+  try {
+    const stats = await fs.stat(targetPath)
+    
+    if (stats.isDirectory()) {
+      // Remove directory and all contents recursively
+      await fs.rm(targetPath, { recursive: true, force: true })
+    } else {
+      // Remove file
+      await fs.unlink(targetPath)
+    }
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+      throw new Error('File or folder not found')
+    }
+    throw error
+  }
+}

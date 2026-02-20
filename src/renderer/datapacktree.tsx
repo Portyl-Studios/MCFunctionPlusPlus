@@ -2,6 +2,7 @@ import React from 'react'
 import datapackSchema from '../../resources/datapackschema/94.1.json'
 import { ContextMenu, useContextMenu } from './contextmenu'
 import type { MenuItem } from './menuitem'
+import { Dialog, useDialog } from './dialog'
 
 interface DataPackTreeProps {
   paths: string[]
@@ -13,6 +14,8 @@ interface DataPackTreeProps {
   basePath?: string
   onSelect?: (path: string, isFile: boolean) => void
   onFolderCreated?: () => void
+  onFileRenamed?: (oldRelativePath: string, newName: string) => Promise<boolean>
+  onFileDeleted?: (relativePath: string) => Promise<boolean>
 }
 
 type TreeNode = {
@@ -134,7 +137,7 @@ const collectDirectoryPaths = (node: TreeNode, pathKey: string, output: string[]
   }
 }
 
-export function DatapackTree({ paths, className, folderName, rootId, rootName, rootPackVersion, basePath, onSelect, onFolderCreated }: DataPackTreeProps) {
+export function DatapackTree({ paths, className, folderName, rootId, rootName, rootPackVersion, basePath, onSelect, onFolderCreated, onFileRenamed, onFileDeleted }: DataPackTreeProps) {
   const tree = React.useMemo(() => {
     const builtTree = buildTree(paths, folderName)
     // Enrich with schema starting from the root schema node
@@ -144,6 +147,7 @@ export function DatapackTree({ paths, className, folderName, rootId, rootName, r
   const [selectedPath, setSelectedPath] = React.useState<string | null>(null)
   const [contextItems, setContextItems] = React.useState<MenuItem[]>([])
   const contextMenu = useContextMenu()
+  const dialog = useDialog()
   const [expandedPaths, setExpandedPaths] = React.useState<Set<string>>(() => {
     const dirs: string[] = []
     // Expand root by default
@@ -211,6 +215,116 @@ export function DatapackTree({ paths, className, folderName, rootId, rootName, r
     return parts.join('/')
   }
 
+  const getActualPath = (pathKey: string): string | null => {
+    if (!basePath) return null
+    
+    const normalizedBase = normalizePath(basePath)
+    const normalizedKey = pathKey.replace(/\\/g, '/')
+    const rootPrefix = `${tree.name}/`
+    
+    // Root node
+    if (normalizedKey === tree.name) {
+      return normalizedBase
+    }
+    
+    // Child nodes
+    if (normalizedKey.startsWith(rootPrefix)) {
+      const relative = normalizedKey.slice(rootPrefix.length)
+      return `${normalizedBase}/${relative}`
+    }
+    
+    return null
+  }
+
+  const handleRename = async (pathKey: string, currentName: string) => {
+    const actualPath = getActualPath(pathKey)
+    if (!actualPath) {
+      console.error('Cannot determine actual path')
+      await dialog.showAlert('Error', 'Cannot determine actual path')
+      return
+    }
+
+    // Get relative path for the file being renamed
+    const normalizedKey = pathKey.replace(/\\/g, '/')
+    const rootPrefix = `${tree.name}/`
+    const relativePath = normalizedKey === tree.name
+      ? ''
+      : normalizedKey.startsWith(rootPrefix)
+        ? normalizedKey.slice(rootPrefix.length)
+        : normalizedKey
+
+    // If there's a callback to check if the file is open and modified, ask for confirmation
+    if (onFileRenamed && relativePath) {
+      const canProceed = await onFileRenamed(relativePath, '')
+      if (!canProceed) {
+        return // User cancelled
+      }
+    }
+
+    const newName = await dialog.showPrompt('Rename', 'Enter new name:', currentName)
+    if (!newName || newName === currentName) {
+      return
+    }
+
+    try {
+      await (window as any).electron.renameFileOrFolder(actualPath, newName)
+      
+      // Notify parent about the rename so it can update open files
+      if (onFileRenamed && relativePath) {
+        await onFileRenamed(relativePath, newName)
+      }
+      
+      if (onFolderCreated) {
+        onFolderCreated() // Trigger refresh
+      }
+    } catch (error) {
+      console.error('Failed to rename:', error)
+      await dialog.showAlert('Error', `Failed to rename: ${error instanceof Error ? error.message : 'Unknown error'}`)
+    }
+  }
+
+  const handleDelete = async (pathKey: string, itemName: string, isFile: boolean) => {
+    const actualPath = getActualPath(pathKey)
+    if (!actualPath) {
+      console.error('Cannot determine actual path')
+      await dialog.showAlert('Error', 'Cannot determine actual path')
+      return
+    }
+
+    // Get relative path for the file being deleted
+    const normalizedKey = pathKey.replace(/\\/g, '/')
+    const rootPrefix = `${tree.name}/`
+    const relativePath = normalizedKey === tree.name
+      ? ''
+      : normalizedKey.startsWith(rootPrefix)
+        ? normalizedKey.slice(rootPrefix.length)
+        : normalizedKey
+
+    // If there's a callback to check if the file is open and modified, ask for confirmation
+    if (onFileDeleted && relativePath && isFile) {
+      const canProceed = await onFileDeleted(relativePath)
+      if (!canProceed) {
+        return // User cancelled
+      }
+    }
+
+    const itemType = isFile ? 'file' : 'folder'
+    const confirmed = await dialog.showConfirm('Delete', `Are you sure you want to delete the ${itemType} "${itemName}"?${isFile ? '' : ' This will delete all contents.'}`)
+    if (!confirmed) {
+      return
+    }
+
+    try {
+      await (window as any).electron.deleteFileOrFolder(actualPath)
+      if (onFolderCreated) {
+        onFolderCreated() // Trigger refresh
+      }
+    } catch (error) {
+      console.error('Failed to delete:', error)
+      await dialog.showAlert('Error', `Failed to delete: ${error instanceof Error ? error.message : 'Unknown error'}`)
+    }
+  }
+
   const handleRightClick = (e: React.MouseEvent, node: TreeNode, pathKey: string) => {
     const allowedChildren = node.allowedChildren ?? []
     const submenuItems: MenuItem[] = allowedChildren.map((child) => {
@@ -231,6 +345,7 @@ export function DatapackTree({ paths, className, folderName, rootId, rootName, r
               }
             } catch (error) {
               console.error('Failed to create folder:', error)
+              await dialog.showAlert('Error', `Failed to create folder: ${error instanceof Error ? error.message : 'Unknown error'}`)
             }
           }
         },
@@ -239,13 +354,24 @@ export function DatapackTree({ paths, className, folderName, rootId, rootName, r
       }
     })
 
+    const isRootNode = pathKey === tree.name
+    const canRenameOrDelete = !isRootNode && basePath !== undefined
+
     setContextItems([
       {label: 'Cut', onClick: undefined, disabled: true},
       {label: 'Copy', onClick: undefined, disabled: true},
       {label: 'Paste', onClick: undefined, disabled: true},
       {},
-      {label: 'Rename', onClick: undefined, disabled: true},
-      {label: 'Delete', onClick: undefined, disabled: true},
+      {
+        label: 'Rename',
+        onClick: () => handleRename(pathKey, node.name),
+        disabled: !canRenameOrDelete
+      },
+      {
+        label: 'Delete',
+        onClick: () => handleDelete(pathKey, node.name, !!node.isFile),
+        disabled: !canRenameOrDelete
+      },
       {},
       {
         label: 'Create Datapack Directory',
@@ -343,17 +469,31 @@ export function DatapackTree({ paths, className, folderName, rootId, rootName, r
   }
 
   return (
-    <div className={`${className} overflow-x-hidden`}>
-      <ul className="space-y-1">
-        {renderNode(tree, 0, tree.name)}
-      </ul>
-      <ContextMenu
-        items={contextItems}
-        x={contextMenu.position.x}
-        y={contextMenu.position.y}
-        isOpen={contextMenu.isOpen}
-        onClose={contextMenu.closeContextMenu}
-      />
-    </div>
+    <>
+      <div className={`${className} overflow-x-hidden`}>
+        <ul className="space-y-1">
+          {renderNode(tree, 0, tree.name)}
+        </ul>
+        <ContextMenu
+          items={contextItems}
+          x={contextMenu.position.x}
+          y={contextMenu.position.y}
+          isOpen={contextMenu.isOpen}
+          onClose={contextMenu.closeContextMenu}
+        />
+      </div>
+      {dialog.dialogConfig && (
+        <Dialog
+          isOpen={dialog.isOpen}
+          title={dialog.dialogConfig.title}
+          message={dialog.dialogConfig.message}
+          buttons={dialog.dialogConfig.buttons}
+          autoCloseMs={dialog.dialogConfig.autoCloseMs}
+          inputValue={dialog.dialogConfig.inputValue}
+          onInputChange={dialog.dialogConfig.onInputChange}
+          onClose={dialog.closeDialog}
+        />
+      )}
+    </>
   )
 }

@@ -2,7 +2,7 @@ import { app, BrowserWindow, ipcMain, shell } from 'electron'
 import path from 'path'
 import { fileURLToPath } from 'url'
 import { registerWindowControlHandlers } from './window'
-import { readFile, writeFile, readFileFromDirectory, createFolder, getAllFiles, registerPickFolderHandler, validateDatapackFolder } from './fileops'
+import { readFile, writeFile, readFileFromDirectory, createFolder, getAllFiles, registerPickFolderHandler, validateDatapackFolder, renameFileOrFolder, deleteFileOrFolder } from './fileops'
 import { registerWorkspaceHandlers } from './workspace'
 import workspaceManager from './workspace'
 import { registerDatapackHandlers, datapackManager } from './datapack'
@@ -140,6 +140,16 @@ ipcMain.handle('reveal-in-file-explorer', async (_event, { filePath }) => {
     throw new Error('Invalid file path')
   }
   shell.showItemInFolder(filePath)
+})
+
+// IPC handler to rename file or folder
+ipcMain.handle('rename-file-or-folder', async (_event, { oldPath, newName }) => {
+  return await renameFileOrFolder(oldPath, newName)
+})
+
+// IPC handler to delete file or folder
+ipcMain.handle('delete-file-or-folder', async (_event, { targetPath }) => {
+  return await deleteFileOrFolder(targetPath)
 })
 
 app.on('ready', () => {
