@@ -16,6 +16,7 @@ import { useWorkspace } from './use-workspace'
 import iconPath from '../../assets/icon.png'
 import { DatapackTree } from './datapacktree'
 import { Dialog, useDialog } from './dialog'
+import { ContextMenu, useContextMenu } from './contextmenu'
 import { getDirFromPath, toRelativePaths, createFileKey, parseFileKey } from './utils'
 
 // Annotation to mark editor transactions that are programmatic content loads
@@ -70,6 +71,8 @@ function CodeEditor() {
   const [isAutoSaveEnabled, setIsAutoSaveEnabled] = useState(false)
   const isRestoringTabsRef = useRef(false)
   const lastSavedTabSessionSignatureRef = useRef('')
+  const tabContextMenu = useContextMenu()
+  const [tabContextFileKey, setTabContextFileKey] = useState<string | null>(null)
   // Refs are used to access current state values inside closures (e.g., editor listeners)
   // without triggering re-renders or stale closure issues
   const isAutoSaveEnabledRef = useRef(isAutoSaveEnabled)
@@ -827,6 +830,151 @@ function CodeEditor() {
     tabElementRefs.current.delete(fileKey)
   }
 
+  const handleTabRightClick = (event: React.MouseEvent, fileKey: string) => {
+    setTabContextFileKey(fileKey)
+    tabContextMenu.openContextMenu(event)
+  }
+
+  const getOpenedFileKeys = () =>
+    openedFiles.map((file) => createFileKey(file.datapackDir, file.relativePath))
+
+  const closeTabsSequentially = async (fileKeys: string[]) => {
+    for (const fileKey of fileKeys) {
+      await closeTab(fileKey)
+    }
+  }
+
+  const closeOtherTabs = async (targetFileKey: string) => {
+    const fileKeysToClose = getOpenedFileKeys().filter((fileKey) => fileKey !== targetFileKey)
+    await closeTabsSequentially(fileKeysToClose)
+  }
+
+  const closeTabsToTheRight = async (targetFileKey: string) => {
+    const openedFileKeys = getOpenedFileKeys()
+    const targetIndex = openedFileKeys.indexOf(targetFileKey)
+    if (targetIndex === -1) return
+
+    const fileKeysToClose = openedFileKeys.slice(targetIndex + 1)
+    await closeTabsSequentially(fileKeysToClose)
+  }
+
+  const closeSavedTabs = async () => {
+    const fileKeysToClose = getOpenedFileKeys().filter((fileKey) => !modifiedFiles.has(fileKey))
+    await closeTabsSequentially(fileKeysToClose)
+  }
+
+  const closeAllTabs = async () => {
+    const fileKeysToClose = getOpenedFileKeys()
+    await closeTabsSequentially(fileKeysToClose)
+  }
+
+  const copyTabPath = async (fileKey: string) => {
+    const { datapackDir, relativePath } = parseFileKey(fileKey)
+    const fullPath = `${datapackDir}/${relativePath}`.replace(/\//g, '\\')
+    try {
+      await navigator.clipboard.writeText(fullPath)
+    } catch (error) {
+      console.error('Failed to copy path:', error)
+      await dialog.showAlert('Error', `Failed to copy path: ${error instanceof Error ? error.message : 'Unknown error'}`)
+    }
+  }
+
+  const copyTabRelativePath = async (fileKey: string) => {
+    const { relativePath } = parseFileKey(fileKey)
+    try {
+      await navigator.clipboard.writeText(relativePath)
+    } catch (error) {
+      console.error('Failed to copy relative path:', error)
+      await dialog.showAlert('Error', `Failed to copy relative path: ${error instanceof Error ? error.message : 'Unknown error'}`)
+    }
+  }
+
+  const revealInFileExplorer = async (fileKey: string) => {
+    const { datapackDir, relativePath } = parseFileKey(fileKey)
+    const fullPath = `${datapackDir}/${relativePath}`.replace(/\//g, '\\')
+    try {
+      await (window as any).electron.revealInFileExplorer(fullPath)
+    } catch (error) {
+      console.error('Failed to reveal in file explorer:', error)
+      await dialog.showAlert('Error', `Failed to reveal file in explorer: ${error instanceof Error ? error.message : 'Unknown error'}`)
+    }
+  }
+
+  const openedFileKeys = getOpenedFileKeys()
+  const contextTabIndex = tabContextFileKey ? openedFileKeys.indexOf(tabContextFileKey) : -1
+  const hasTabsToRight = contextTabIndex >= 0 && contextTabIndex < openedFileKeys.length - 1
+  const hasOtherTabs = contextTabIndex >= 0 && openedFileKeys.length > 1
+  const hasSavedTabs = openedFileKeys.some((fileKey) => !modifiedFiles.has(fileKey))
+  const hasAnyOpenTabs = openedFileKeys.length > 0
+
+  const tabContextItems: MenuItem[] = [
+    {
+      label: 'Close',
+      disabled: !tabContextFileKey,
+      onClick: () => {
+        if (!tabContextFileKey) return
+        void closeTab(tabContextFileKey)
+      },
+      shortcut: 'Ctrl+W',
+    },
+    {
+      label: 'Close Others',
+      disabled: !hasOtherTabs,
+      onClick: () => {
+        if (!tabContextFileKey) return
+        void closeOtherTabs(tabContextFileKey)
+      },
+    },
+    {
+      label: 'Close to the Right',
+      disabled: !hasTabsToRight,
+      onClick: () => {
+        if (!tabContextFileKey) return
+        void closeTabsToTheRight(tabContextFileKey)
+      },
+    },
+    {
+      label: 'Close Saved',
+      disabled: !hasSavedTabs,
+      onClick: () => {
+        void closeSavedTabs()
+      },
+    },
+    {
+      label: 'Close All',
+      disabled: !hasAnyOpenTabs,
+      onClick: () => {
+        void closeAllTabs()
+      },
+    },
+    {},
+    {
+      label: 'Copy Path',
+      disabled: !tabContextFileKey,
+      onClick: () => {
+        if (!tabContextFileKey) return
+        void copyTabPath(tabContextFileKey)
+      },
+    },
+    {
+      label: 'Copy Relative Path',
+      disabled: !tabContextFileKey,
+      onClick: () => {
+        if (!tabContextFileKey) return
+        void copyTabRelativePath(tabContextFileKey)
+      },
+    },
+    {},
+    {
+      label: 'Reveal in File Explorer',
+      disabled: !tabContextFileKey,
+      onClick: () => {
+        if (!tabContextFileKey) return
+        void revealInFileExplorer(tabContextFileKey)
+      },
+    }
+  ]
+
   useEffect(() => {
     if (!activeFile) return
 
@@ -1003,6 +1151,7 @@ function CodeEditor() {
                   <div
                     key={fileKey}
                     ref={(element) => registerTabElement(fileKey, element)}
+                    onContextMenu={(event) => handleTabRightClick(event, fileKey)}
                     onClick={() => {
                       openFile(fileKey)
                     }}
@@ -1082,6 +1231,15 @@ function CodeEditor() {
       <div className="flex flex-row items-center h-[30px] bg-codemirror-700 text-codemirror-100 px-2 py-1 border-t border-codemirror-600">
         <div className="text-sm">Made by touchportyl</div>
       </div>
+
+      {/* File Tab Floating Context Menu */}
+      <ContextMenu
+        items={tabContextItems}
+        x={tabContextMenu.position.x}
+        y={tabContextMenu.position.y}
+        isOpen={tabContextMenu.isOpen}
+        onClose={tabContextMenu.closeContextMenu}
+      />
 
       {/* Dialog */}
       {dialog.dialogConfig && (

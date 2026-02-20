@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain } from 'electron'
+import { app, BrowserWindow, ipcMain, shell } from 'electron'
 import path from 'path'
 import { fileURLToPath } from 'url'
 import { registerWindowControlHandlers } from './window'
@@ -132,6 +132,14 @@ ipcMain.handle('add-datapack-existing', async (_event, { datapackDir }) => {
     metadataPath,
     metadata
   }
+})
+
+// IPC handler to reveal file in OS file explorer
+ipcMain.handle('reveal-in-file-explorer', async (_event, { filePath }) => {
+  if (!filePath || typeof filePath !== 'string') {
+    throw new Error('Invalid file path')
+  }
+  shell.showItemInFolder(filePath)
 })
 
 app.on('ready', () => {

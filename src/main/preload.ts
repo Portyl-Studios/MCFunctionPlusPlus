@@ -100,5 +100,8 @@ contextBridge.exposeInMainWorld('electron', {
     return () => {
       ipcRenderer.removeListener('shortcut', callback)
     }
+  },
+  revealInFileExplorer: (filePath: string) => {
+    return ipcRenderer.invoke('reveal-in-file-explorer', { filePath })
   }
 })
