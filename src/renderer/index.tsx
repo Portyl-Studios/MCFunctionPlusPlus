@@ -39,6 +39,18 @@ type OpenedFile = {
   isModified?: boolean
 }
 
+type WorkspaceTabSessionFile = {
+  datapackDir: string
+  relativePath: string
+}
+
+type WorkspaceTabSession = {
+  openedFiles: WorkspaceTabSessionFile[]
+  activeFile: string | null
+}
+
+const OPEN_TABS_PREFERENCE_KEY = 'openTabs'
+
 function CodeEditor() {
   const editorRef = useRef<HTMLDivElement>(null)
   const viewRef = useRef<EditorView | null>(null)
@@ -55,6 +67,8 @@ function CodeEditor() {
   const [modifiedFiles, setModifiedFiles] = useState<Set<string>>(new Set())
   const tabsRef = useRef<HTMLDivElement>(null)
   const [isAutoSaveEnabled, setIsAutoSaveEnabled] = useState(false)
+  const isRestoringTabsRef = useRef(false)
+  const lastSavedTabSessionSignatureRef = useRef('')
   // Refs are used to access current state values inside closures (e.g., editor listeners)
   // without triggering re-renders or stale closure issues
   const isAutoSaveEnabledRef = useRef(isAutoSaveEnabled)
@@ -82,6 +96,7 @@ function CodeEditor() {
         }
       } catch (error) {
         console.error('Failed to load auto-save preference:', error)
+        await dialog.showAlert('Error', `Failed to load auto-save preference: ${error instanceof Error ? error.message : 'Unknown error'}`)
       }
     }
 
@@ -95,16 +110,38 @@ function CodeEditor() {
       await (window as any).electron.workspaceUpdatePreference('autoSave', enabled)
     } catch (error) {
       console.error('Failed to save auto-save preference:', error)
+      await dialog.showAlert('Error', `Failed to save auto-save preference: ${error instanceof Error ? error.message : 'Unknown error'}`)
     }
   }
 
-  /**
-   * Helper to clear all workspace state when changing workspaces
-   */
-  const clearWorkspaceState = () => {
-    setOpenedFiles([])
-    setActiveFile(null)
-    setModifiedFiles(new Set())
+  const parseWorkspaceTabSession = (value: unknown): WorkspaceTabSession | null => {
+    if (!value || typeof value !== 'object') return null
+
+    const maybeSession = value as { openedFiles?: unknown; activeFile?: unknown }
+    if (!Array.isArray(maybeSession.openedFiles)) return null
+
+    const openedFiles = maybeSession.openedFiles
+      .map((entry) => {
+        if (!entry || typeof entry !== 'object') return null
+        const maybeFile = entry as { datapackDir?: unknown; relativePath?: unknown }
+        if (typeof maybeFile.datapackDir !== 'string' || typeof maybeFile.relativePath !== 'string') {
+          return null
+        }
+        return {
+          datapackDir: maybeFile.datapackDir,
+          relativePath: maybeFile.relativePath,
+        }
+      })
+      .filter((entry): entry is WorkspaceTabSessionFile => !!entry)
+
+    const activeFile = typeof maybeSession.activeFile === 'string'
+      ? maybeSession.activeFile
+      : null
+
+    return {
+      openedFiles,
+      activeFile,
+    }
   }
 
   const loadDatapackEntry = async (datapackDir: string): Promise<DatapackEntry | null> => {
@@ -193,25 +230,22 @@ function CodeEditor() {
 
   const handleOpenWorkspaceWithConfirm = async () => {
     await handleWorkspaceChangeWithConfirm(async () => {
-      // Clear all files and modified set before changing workspace
-      clearWorkspaceState()
-      await handleOpenWorkspace()
+      const didOpenWorkspace = await handleOpenWorkspace()
+      if (!didOpenWorkspace) return
     })
   }
 
   const handleNewWorkspaceWithConfirm = async () => {
     await handleWorkspaceChangeWithConfirm(async () => {
-      // Clear all files and modified set before changing workspace
-      clearWorkspaceState()
-      await handleNewWorkspace()
+      const didCreateWorkspace = await handleNewWorkspace()
+      if (!didCreateWorkspace) return
     })
   }
 
   const handleOpenDefaultWorkspaceWithConfirm = async () => {
     await handleWorkspaceChangeWithConfirm(async () => {
-      // Clear all files and modified set before changing workspace
-      clearWorkspaceState()
-      await handleOpenDefaultWorkspace()
+      const didOpenDefaultWorkspace = await handleOpenDefaultWorkspace()
+      if (!didOpenDefaultWorkspace) return
     })
   }
 
@@ -314,6 +348,7 @@ function CodeEditor() {
         contents = await (window as any).electron.readFile(datapackDir, relativePath)
       } catch (error) {
         console.error('Failed to read file:', error)
+        await dialog.showAlert('Error', `Failed to read file: ${error instanceof Error ? error.message : 'Unknown error'}`)
         return
       }
     }
@@ -354,9 +389,14 @@ function CodeEditor() {
       // Load content from disk for new files
       try {
         const content = await (window as any).electron.readFile(datapackDir, trimmedRelative)
-        setOpenedFiles([...openedFiles, { datapackDir, relativePath: trimmedRelative, fileName, content }])
+        setOpenedFiles((prev) => {
+          const alreadyOpen = prev.some((f) => createFileKey(f.datapackDir, f.relativePath) === fileKey)
+          if (alreadyOpen) return prev
+          return [...prev, { datapackDir, relativePath: trimmedRelative, fileName, content }]
+        })
       } catch (error) {
         console.error('Failed to read file:', error)
+        await dialog.showAlert('Error', `Failed to read file: ${error instanceof Error ? error.message : 'Unknown error'}`)
         return
       }
     }
@@ -467,7 +507,7 @@ function CodeEditor() {
     // Find the index of the file being closed
     const closingIndex = openedFiles.findIndex((f) => createFileKey(f.datapackDir, f.relativePath) === fileKey)
     const updatedFiles = openedFiles.filter((f) => createFileKey(f.datapackDir, f.relativePath) !== fileKey)
-    setOpenedFiles(updatedFiles)
+    setOpenedFiles((prev) => prev.filter((f) => createFileKey(f.datapackDir, f.relativePath) !== fileKey))
     
     // Clear modified state for this file
     setModifiedFiles((prev) => {
@@ -498,6 +538,105 @@ function CodeEditor() {
   useEffect(() => {
     isAutoSaveEnabledRef.current = isAutoSaveEnabled
   }, [isAutoSaveEnabled])
+
+  // Handle workspace tab restoration on workspace load
+  useEffect(() => {
+    const restoreWorkspaceTabs = async () => {
+      if (!workspaceInfo.dir) return
+
+      isRestoringTabsRef.current = true
+      try {
+        const savedValue = await (window as any).electron.workspaceGetPreference(OPEN_TABS_PREFERENCE_KEY)
+        const session = parseWorkspaceTabSession(savedValue)
+
+        if (!session || session.openedFiles.length === 0) {
+          setOpenedFiles([])
+          await openFile(null)
+          lastSavedTabSessionSignatureRef.current = JSON.stringify({ openedFiles: [], activeFile: null })
+          return
+        }
+
+        const restoredOpenedFiles: OpenedFile[] = []
+        for (const file of session.openedFiles) {
+          try {
+            const content = await (window as any).electron.readFile(file.datapackDir, file.relativePath)
+            restoredOpenedFiles.push({
+              datapackDir: file.datapackDir,
+              relativePath: file.relativePath,
+              fileName: file.relativePath.split('/').pop() || file.relativePath,
+              content,
+            })
+          } catch {
+            // Skip files that no longer exist or cannot be read
+          }
+        }
+
+        if (restoredOpenedFiles.length === 0) {
+          setOpenedFiles([])
+          await openFile(null)
+          lastSavedTabSessionSignatureRef.current = JSON.stringify({ openedFiles: [], activeFile: null })
+          return
+        }
+
+        setOpenedFiles(restoredOpenedFiles)
+        setModifiedFiles(new Set())
+
+        const availableKeys = new Set(
+          restoredOpenedFiles.map((file) => createFileKey(file.datapackDir, file.relativePath))
+        )
+        const nextActiveFile = session.activeFile && availableKeys.has(session.activeFile)
+          ? session.activeFile
+          : createFileKey(restoredOpenedFiles[0].datapackDir, restoredOpenedFiles[0].relativePath)
+
+        await openFile(nextActiveFile)
+
+        lastSavedTabSessionSignatureRef.current = JSON.stringify({
+          openedFiles: restoredOpenedFiles.map((file) => ({
+            datapackDir: file.datapackDir,
+            relativePath: file.relativePath,
+          })),
+          activeFile: nextActiveFile,
+        })
+      } catch (error) {
+        console.error('Failed to restore workspace tabs:', error)
+        await dialog.showAlert('Error', `Failed to restore workspace tabs: ${error instanceof Error ? error.message : 'Unknown error'}`)
+        setOpenedFiles([])
+        await openFile(null)
+      } finally {
+        isRestoringTabsRef.current = false
+      }
+    }
+
+    restoreWorkspaceTabs()
+  }, [workspaceInfo.dir])
+
+  useEffect(() => {
+    const persistWorkspaceTabs = async () => {
+      if (!workspaceInfo.dir) return
+      if (isRestoringTabsRef.current) return
+
+      const session: WorkspaceTabSession = {
+        openedFiles: openedFiles.map((file) => ({
+          datapackDir: file.datapackDir,
+          relativePath: file.relativePath,
+        })),
+        activeFile,
+      }
+
+      const signature = JSON.stringify(session)
+      if (signature === lastSavedTabSessionSignatureRef.current) return
+
+      lastSavedTabSessionSignatureRef.current = signature
+      try {
+        await (window as any).electron.workspaceUpdatePreference(OPEN_TABS_PREFERENCE_KEY, session)
+      } catch (error) {
+        console.error('Failed to save workspace tab session:', error)
+        await dialog.showAlert('Error', `Failed to save workspace tab session: ${error instanceof Error ? error.message : 'Unknown error'}`)
+      }
+    }
+
+    persistWorkspaceTabs()
+  }, [workspaceInfo.dir, openedFiles, activeFile])
 
   // Pause auto-save while dialogs are open to prevent saves during user confirmation prompts
   // Resume auto-save when dialog closes to continue saving modified files
@@ -622,6 +761,7 @@ function CodeEditor() {
         await refreshDatapacks(datapackDirs)
       } catch (error) {
         console.error('Failed to load workspace datapacks:', error)
+        await dialog.showAlert('Error', `Failed to load workspace datapacks: ${error instanceof Error ? error.message : 'Unknown error'}`)
       }
     }
 

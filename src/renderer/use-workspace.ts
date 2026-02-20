@@ -26,15 +26,19 @@ export function useWorkspace() {
     loadDefaultWorkspace()
   }, [])
 
-  const handleOpenWorkspace = async () => {
+  const handleOpenWorkspace = async (): Promise<boolean> => {
     const result = await (window as any).electron.workspaceOpenDialog()
-    if (result) {
-      try {
-        await (window as any).electron.workspaceLoad(result.dir, result.name)
-        setWorkspaceInfo({ dir: result.dir, name: result.name })
-      } catch (error) {
-        console.error('Failed to load workspace:', error)
-      }
+    if (!result) {
+      return false
+    }
+
+    try {
+      await (window as any).electron.workspaceLoad(result.dir, result.name)
+      setWorkspaceInfo({ dir: result.dir, name: result.name })
+      return true
+    } catch (error) {
+      console.error('Failed to load workspace:', error)
+      return false
     }
   }
 
@@ -53,7 +57,7 @@ export function useWorkspace() {
     }
   }
 
-  const handleSaveWorkspaceAs = async () => {
+  const handleSaveWorkspaceAs = async (): Promise<boolean> => {
     const defaultName = workspaceInfo.name || 'workspace'
     const filePath = await (window as any).electron.workspaceSaveDialog(defaultName)
     if (filePath) {
@@ -65,10 +69,14 @@ export function useWorkspace() {
         const name = filename.replace(/\.mpp-workspace$/, '')
         const result = await (window as any).electron.workspaceSaveAs(dir, name)
         setWorkspaceInfo({ dir: result.dir, name: result.name })
+        return true
       } catch (error) {
         console.error('Failed to save workspace as:', error)
+        return false
       }
     }
+
+    return false
   }
 
   const handleAddDatapack = async (metadataPath: string) => {
@@ -96,23 +104,37 @@ export function useWorkspace() {
     }
   }
 
-  const handleNewWorkspace = async () => {
+  const handleNewWorkspace = async (): Promise<boolean> => {
+    const previousWorkspace = workspaceInfo
+
     try {
       await (window as any).electron.workspaceNew()
       // Automatically trigger Save As dialog
-      await handleSaveWorkspaceAs()
+      const didSave = await handleSaveWorkspaceAs()
+      if (!didSave) {
+        if (previousWorkspace.dir && previousWorkspace.name) {
+          await (window as any).electron.workspaceLoad(previousWorkspace.dir, previousWorkspace.name)
+          setWorkspaceInfo(previousWorkspace)
+        }
+        return false
+      }
+
+      return true
     } catch (error) {
       console.error('Failed to create new workspace:', error)
+      return false
     }
   }
 
-  const handleOpenDefaultWorkspace = async () => {
+  const handleOpenDefaultWorkspace = async (): Promise<boolean> => {
     try {
       const result = await (window as any).electron.workspaceGetOrCreateDefault()
       await (window as any).electron.workspaceLoad(result.dir, result.name)
       setWorkspaceInfo({ dir: result.dir, name: result.name })
+      return true
     } catch (error) {
       console.error('Failed to load default workspace:', error)
+      return false
     }
   }
 
