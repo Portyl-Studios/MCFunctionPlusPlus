@@ -66,6 +66,7 @@ function CodeEditor() {
   const [activeFile, setActiveFile] = useState<string | null>(null)
   const [modifiedFiles, setModifiedFiles] = useState<Set<string>>(new Set())
   const tabsRef = useRef<HTMLDivElement>(null)
+  const tabElementRefs = useRef<Map<string, HTMLDivElement>>(new Map())
   const [isAutoSaveEnabled, setIsAutoSaveEnabled] = useState(false)
   const isRestoringTabsRef = useRef(false)
   const lastSavedTabSessionSignatureRef = useRef('')
@@ -535,6 +536,19 @@ function CodeEditor() {
     activeFileRef.current = activeFile
   }, [activeFile])
 
+  const scrollTabIntoView = (fileKey: string | null, behavior: ScrollBehavior = 'smooth') => {
+    if (!fileKey) return
+
+    const activeTabElement = tabElementRefs.current.get(fileKey)
+    if (!activeTabElement) return
+
+    activeTabElement.scrollIntoView({
+      behavior,
+      block: 'nearest',
+      inline: 'nearest',
+    })
+  }
+
   useEffect(() => {
     isAutoSaveEnabledRef.current = isAutoSaveEnabled
   }, [isAutoSaveEnabled])
@@ -695,6 +709,13 @@ function CodeEditor() {
             }
           }
         }),
+        EditorView.domEventHandlers({
+          focus: () => {
+            window.requestAnimationFrame(() => {
+              scrollTabIntoView(activeFileRef.current, 'smooth')
+            })
+          },
+        }),
         json()
       ],
     })
@@ -784,6 +805,39 @@ function CodeEditor() {
     if (!parentFolder) return null
     return `../${parentFolder}`
   }
+
+  const handleTabsWheel = (event: React.WheelEvent<HTMLDivElement>) => {
+    const tabs = tabsRef.current
+    if (!tabs) return
+
+    const horizontalDelta = event.deltaX !== 0 ? event.deltaX : event.deltaY
+    if (horizontalDelta === 0) return
+
+    const scrollFactor = 0.5
+    tabs.scrollLeft += horizontalDelta * scrollFactor
+    event.preventDefault()
+  }
+
+  const registerTabElement = (fileKey: string, element: HTMLDivElement | null) => {
+    if (element) {
+      tabElementRefs.current.set(fileKey, element)
+      return
+    }
+
+    tabElementRefs.current.delete(fileKey)
+  }
+
+  useEffect(() => {
+    if (!activeFile) return
+
+    const animationFrameId = window.requestAnimationFrame(() => {
+      scrollTabIntoView(activeFile, 'smooth')
+    })
+
+    return () => {
+      window.cancelAnimationFrame(animationFrameId)
+    }
+  }, [activeFile, openedFiles])
 
   return (
     <div className="w-full h-full flex flex-col select-none">
@@ -938,7 +992,8 @@ function CodeEditor() {
             {/* Tabs Bar */}
             <div 
               ref={tabsRef}
-              className="flex overflow-x-auto overflow-y-hidden bg-codemirror-700 border-b border-codemirror-600 scroll-smooth select-none"
+              onWheel={handleTabsWheel}
+              className="flex overflow-x-auto overflow-y-hidden bg-codemirror-700 border-b border-codemirror-600 select-none"
             >
               {openedFiles.map((file, idx) => {
                 const fileKey = createFileKey(file.datapackDir, file.relativePath)
@@ -947,6 +1002,7 @@ function CodeEditor() {
                 return (
                   <div
                     key={fileKey}
+                    ref={(element) => registerTabElement(fileKey, element)}
                     onClick={() => {
                       openFile(fileKey)
                     }}
