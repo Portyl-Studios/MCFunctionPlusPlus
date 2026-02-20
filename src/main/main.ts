@@ -2,7 +2,7 @@ import { app, BrowserWindow, ipcMain, shell } from 'electron'
 import path from 'path'
 import { fileURLToPath } from 'url'
 import { registerWindowControlHandlers } from './window'
-import { readFile, writeFile, readFileFromDirectory, createFolder, getAllFiles, registerPickFolderHandler, validateDatapackFolder, renameFileOrFolder, deleteFileOrFolder } from './fileops'
+import { readFile, writeFile, writeFileFromDirectory, readFileFromDirectory, createFolder, getAllFiles, registerPickFolderHandler, validateDatapackFolder, renameFileOrFolder, deleteFileOrFolder } from './fileops'
 import { registerWorkspaceHandlers } from './workspace'
 import workspaceManager from './workspace'
 import { registerDatapackHandlers, datapackManager } from './datapack'
@@ -86,7 +86,7 @@ ipcMain.handle('write-file', async (_event, { directory, filename, contents }) =
 
 // IPC handler to save a file (similar to write-file but for existing files)
 ipcMain.handle('save-file', async (_event, { directory, relativePath, contents }) => {
-  return await writeFile(directory, relativePath, contents)
+  return await writeFileFromDirectory(directory, relativePath, contents)
 })
 
 // IPC handler to read a file

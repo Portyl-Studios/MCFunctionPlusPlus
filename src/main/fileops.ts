@@ -155,6 +155,8 @@ export async function readFile(filePath: string): Promise<string> {
   }
 }
 
+// Writes a file directly inside a base directory using a single filename.
+// This is intended for create/new-file style flows where path separators are not allowed.
 export async function writeFile(directory: string, filename: string, contents: string): Promise<string> {
   // Validate inputs
   if (!directory || typeof directory !== 'string') {
@@ -195,6 +197,62 @@ export async function writeFile(directory: string, filename: string, contents: s
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
       throw new Error('Directory not found')
+    }
+    throw error
+  }
+}
+
+// Writes a file inside a base directory using a relative path.
+// This is intended for save/update flows where nested paths like "folder/file.ext" are allowed.
+export async function writeFileFromDirectory(directory: string, filePath: string, contents: string): Promise<string> {
+  // Validate directory
+  if (!directory || typeof directory !== 'string') {
+    throw new Error('Invalid directory')
+  }
+
+  if (isInvalidDirectory(directory)) {
+    throw new Error('Invalid directory')
+  }
+
+  // Validate relative file path
+  if (!filePath || typeof filePath !== 'string') {
+    throw new Error('Invalid file path')
+  }
+
+  if (contents === null || contents === undefined) {
+    throw new Error('Invalid contents')
+  }
+
+  const normalizedRelativePath = filePath.replace(/\\/g, '/').replace(/^\/+/, '')
+  const segments = normalizedRelativePath.split('/').filter(Boolean)
+  if (segments.length === 0) {
+    throw new Error('Invalid file path')
+  }
+
+  for (const segment of segments) {
+    if (isInvalidPathSegment(segment)) {
+      throw new Error('Invalid file path')
+    }
+  }
+
+  try {
+    const stats = await fs.stat(directory)
+    if (!stats.isDirectory()) {
+      throw new Error('Base path is not a directory')
+    }
+
+    const targetPath = path.join(directory, normalizedRelativePath)
+
+    // Ensure the target file is within the base directory
+    if (!isValidFileAccess(targetPath, directory)) {
+      throw new Error('Access denied')
+    }
+
+    await fs.writeFile(targetPath, contents, 'utf-8')
+    return targetPath
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+      throw new Error('File path not found')
     }
     throw error
   }
