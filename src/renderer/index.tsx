@@ -291,9 +291,12 @@ function CodeEditor() {
   }
 
   const handleQuitWithConfirm = async () => {
-    // If no unsaved files, just quit
+    // If no unsaved files, double confirm quit to prevent accidental exits
     if (modifiedFiles.size === 0) {
-      ;(window as any).electron.quit()
+      const confirmed = await dialog.showConfirm('Quit', 'Are you sure you want to quit?')
+      if (confirmed) {
+        ;(window as any).electron.quit()
+      }
       return
     }
 
