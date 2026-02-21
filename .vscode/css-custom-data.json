@@ -1,0 +1,61 @@
+{
+  "version": 1.1,
+  "atDirectives": [
+    {
+      "name": "@tailwind",
+      "description": "Tailwind CSS core layer injection directive (base, components, utilities)."
+    },
+    {
+      "name": "@theme",
+      "description": "Tailwind CSS theme configuration at-rule."
+    },
+    {
+      "name": "@apply",
+      "description": "Tailwind CSS utility composition at-rule."
+    },
+    {
+      "name": "@layer",
+      "description": "Tailwind CSS layer directive for base/components/utilities/custom layers."
+    },
+    {
+      "name": "@config",
+      "description": "Tailwind CSS config path directive."
+    },
+    {
+      "name": "@plugin",
+      "description": "Tailwind CSS plugin registration/configuration directive."
+    },
+    {
+      "name": "@utility",
+      "description": "Tailwind CSS v4 utility declaration directive."
+    },
+    {
+      "name": "@variant",
+      "description": "Tailwind CSS v4 variant application directive."
+    },
+    {
+      "name": "@custom-variant",
+      "description": "Tailwind CSS v4 custom variant declaration directive."
+    },
+    {
+      "name": "@source",
+      "description": "Tailwind CSS v4 source registration directive for class detection."
+    },
+    {
+      "name": "@reference",
+      "description": "Tailwind CSS v4 reference directive for sharing theme/context without output."
+    },
+    {
+      "name": "@screen",
+      "description": "Tailwind CSS screen breakpoint wrapper directive (legacy)."
+    },
+    {
+      "name": "@responsive",
+      "description": "Tailwind CSS responsive utility wrapper directive (legacy)."
+    },
+    {
+      "name": "@variants",
+      "description": "Tailwind CSS variant wrapper directive (legacy)."
+    }
+  ]
+}

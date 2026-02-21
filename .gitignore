@@ -77,5 +77,5 @@ release/
 *.tsbuildinfo
 
 # VS Code workspace files
-.vscode/
+#.vscode/
 *.code-workspace
