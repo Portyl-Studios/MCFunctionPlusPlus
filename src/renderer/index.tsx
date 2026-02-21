@@ -1279,13 +1279,27 @@ function CodeEditor() {
   const getDuplicateTabFolderLabel = (file: OpenedFile): string | null => {
     if ((fileNameCounts.get(file.fileName) ?? 0) < 2) return null
 
-    const pathSegments = file.relativePath.split("/").filter(Boolean)
-    const parentFolder = pathSegments.length > 1
-      ? pathSegments[pathSegments.length - 2]
-      : file.datapackDir.split(/[\\/]/).filter(Boolean).pop() || ""
+    const datapackName = file.datapackDir.split(/[\\/]/).filter(Boolean).pop() || ""
+    const dirs = file.relativePath.split("/").filter(Boolean).slice(0, -1)
+    const segments = [datapackName, ...dirs].filter(Boolean)
 
-    if (!parentFolder) return null
-    return `../${parentFolder}`
+    const siblings = openedFiles.filter((candidate) => candidate.fileName === file.fileName)
+    if (siblings.length < 2) return null
+
+    const siblingSegments = siblings.map((candidate) => {
+      const candidateDatapack = candidate.datapackDir.split(/[\\/]/).filter(Boolean).pop() || ""
+      const candidateDirs = candidate.relativePath.split("/").filter(Boolean).slice(0, -1)
+      return [candidateDatapack, ...candidateDirs].filter(Boolean)
+    })
+
+    for (let i = 0; i < segments.length; i += 1) {
+      const value = segments[i]
+      const differs = siblingSegments.some((candidate) => candidate[i] !== value)
+      if (differs) return `../${value}`
+    }
+
+    const fallback = segments[segments.length - 1]
+    return fallback ? `../${fallback}` : null
   }
 
   const handleTabsWheel = (event: React.WheelEvent<HTMLDivElement>) => {
