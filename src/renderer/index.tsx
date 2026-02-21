@@ -59,6 +59,7 @@ type WorkspaceTabSession = {
 }
 
 const OPEN_TABS_PREFERENCE_KEY = "openTabs"
+const EXPLORER_EXPANDED_PREFERENCE_KEY = "explorerExpandedPaths"
 
 const codeMirrorSetupExtensions = [
   lineNumbers(),
@@ -301,6 +302,7 @@ function CodeEditor() {
   const tabElementRefs = useRef<Map<string, HTMLDivElement>>(new Map())
   const [isAutoSaveEnabled, setIsAutoSaveEnabled] = useState(false)
   const isRestoringTabsRef = useRef(false)
+  const isRestoringExplorerRef = useRef(false)
   const lastSavedTabSessionSignatureRef = useRef("")
   const fileEditorStatesRef = useRef<Map<string, EditorState>>(new Map())
   const tabContextMenu = useContextMenu()
@@ -311,6 +313,11 @@ function CodeEditor() {
   const [dragOverFileKey, setDragOverFileKey] = useState<string | null>(null)
   const [dragOverPosition, setDragOverPosition] = useState<"before" | "after" | null>(null)
   const dragGhostRef = useRef<HTMLDivElement | null>(null)
+
+  const [explorerSelectedPathsByDatapack, setExplorerSelectedPathsByDatapack] = useState<Record<string, string | null>>({})
+  const [explorerSelectedFileKeysByDatapack, setExplorerSelectedFileKeysByDatapack] = useState<Record<string, string | null>>({})
+  const [explorerExpandedPathsByDatapack, setExplorerExpandedPathsByDatapack] = useState<Record<string, Set<string>>>({})
+  const explorerContainerRefs = useRef<Map<string, React.RefObject<HTMLDivElement | null>>>(new Map())
   
   // Refs are used to access current state values inside closures (e.g., editor listeners)
   // without triggering re-renders or stale closure issues
@@ -385,6 +392,18 @@ function CodeEditor() {
       openedFiles,
       activeFile,
     }
+  }
+
+  const parseWorkspaceExplorerExpanded = (value: unknown): Record<string, Set<string>> | null => {
+    if (!value || typeof value !== "object") return null
+    const entries = value as Record<string, unknown>
+    const next: Record<string, Set<string>> = {}
+    for (const [dir, paths] of Object.entries(entries)) {
+      if (!Array.isArray(paths)) continue
+      const filtered = paths.filter((item) => typeof item === "string") as string[]
+      next[dir] = new Set(filtered)
+    }
+    return next
   }
 
   const loadDatapackEntry = async (datapackDir: string): Promise<DatapackEntry | null> => {
@@ -712,12 +731,14 @@ function CodeEditor() {
     if (!view) {
       setActiveFile(fileKey)
       activeFileRef.current = fileKey
+      focusFileInExplorer(fileKey)
       return
     }
 
     persistActiveEditorState()
     setActiveFile(fileKey)
     activeFileRef.current = fileKey
+    focusFileInExplorer(fileKey)
     
     if (!fileKey) {
       view.setState(createEditorState(""))
@@ -759,6 +780,24 @@ function CodeEditor() {
   }
 
   const handleExplorerSelect = async (datapackDir: string, pathKey: string, isFile: boolean) => {
+    setExplorerSelectedPathsByDatapack((prev) => {
+      const next: Record<string, string | null> = {}
+      for (const key of Object.keys(prev)) {
+        next[key] = null
+      }
+      next[datapackDir] = pathKey
+      return next
+    })
+
+    setExplorerSelectedFileKeysByDatapack((prev) => {
+      const next: Record<string, string | null> = {}
+      for (const key of Object.keys(prev)) {
+        next[key] = null
+      }
+      next[datapackDir] = null
+      return next
+    })
+
     if (!isFile) return
 
     const rootName = datapackDir.split(/[\\/]/).pop() || ""
@@ -776,6 +815,10 @@ function CodeEditor() {
 
     // Create file key for tracking
     const fileKey = createFileKey(datapackDir, trimmedRelative)
+    setExplorerSelectedFileKeysByDatapack((prev) => ({
+      ...prev,
+      [datapackDir]: fileKey,
+    }))
     
     // Check if file is already open
     const existingFile = openedFiles.find((f) => createFileKey(f.datapackDir, f.relativePath) === fileKey)
@@ -956,6 +999,7 @@ function CodeEditor() {
         focus: () => {
           window.requestAnimationFrame(() => {
             scrollTabIntoView(activeFileRef.current, "smooth")
+            focusFileInExplorer(activeFileRef.current)
           })
         },
       }),
@@ -1059,6 +1103,30 @@ function CodeEditor() {
   }, [workspaceInfo.dir])
 
   useEffect(() => {
+    const restoreExplorerExpanded = async () => {
+      if (!workspaceInfo.dir) {
+        setExplorerExpandedPathsByDatapack({})
+        return
+      }
+
+      isRestoringExplorerRef.current = true
+      try {
+        const savedValue = await (window as any).electron.workspaceGetPreference(EXPLORER_EXPANDED_PREFERENCE_KEY)
+        const parsed = parseWorkspaceExplorerExpanded(savedValue)
+        setExplorerExpandedPathsByDatapack(parsed ?? {})
+      } catch (error) {
+        console.error("Failed to restore explorer expansion state:", error)
+        await dialog.showAlert("Error", `Failed to restore explorer expansion state: ${error instanceof Error ? error.message : "Unknown error"}`)
+        setExplorerExpandedPathsByDatapack({})
+      } finally {
+        isRestoringExplorerRef.current = false
+      }
+    }
+
+    restoreExplorerExpanded()
+  }, [workspaceInfo.dir])
+
+  useEffect(() => {
     const persistWorkspaceTabs = async () => {
       if (!workspaceInfo.dir) return
       if (isRestoringTabsRef.current) return
@@ -1085,6 +1153,27 @@ function CodeEditor() {
 
     persistWorkspaceTabs()
   }, [workspaceInfo.dir, openedFiles, activeFile])
+
+  useEffect(() => {
+    const persistExplorerExpanded = async () => {
+      if (!workspaceInfo.dir) return
+      if (isRestoringExplorerRef.current) return
+
+      const payload: Record<string, string[]> = {}
+      for (const [dir, paths] of Object.entries(explorerExpandedPathsByDatapack)) {
+        payload[dir] = Array.from(paths)
+      }
+
+      try {
+        await (window as any).electron.workspaceUpdatePreference(EXPLORER_EXPANDED_PREFERENCE_KEY, payload)
+      } catch (error) {
+        console.error("Failed to save explorer expansion state:", error)
+        await dialog.showAlert("Error", `Failed to save explorer expansion state: ${error instanceof Error ? error.message : "Unknown error"}`)
+      }
+    }
+
+    persistExplorerExpanded()
+  }, [workspaceInfo.dir, explorerExpandedPathsByDatapack])
 
   // Pause auto-save while dialogs are open to prevent saves during user confirmation prompts
   // Resume auto-save when dialog closes to continue saving modified files
@@ -1209,6 +1298,67 @@ function CodeEditor() {
     const scrollFactor = 0.5
     tabs.scrollLeft += horizontalDelta * scrollFactor
     event.preventDefault()
+  }
+
+  const getExplorerContainerRef = (datapackDir: string) => {
+    const existing = explorerContainerRefs.current.get(datapackDir)
+    if (existing) return existing
+    const created = React.createRef<HTMLDivElement | null>()
+    explorerContainerRefs.current.set(datapackDir, created)
+    return created
+  }
+
+  const buildExpandedPathsForFile = (rootName: string, relativePath: string) => {
+    const normalizedRelative = relativePath.replace(/\\/g, "/").replace(/^\/+/, "")
+    const segments = normalizedRelative.split("/").filter(Boolean)
+    const next = new Set<string>()
+    if (!rootName) return next
+    next.add(rootName)
+    let current = rootName
+    for (let i = 0; i < segments.length - 1; i += 1) {
+      current = `${current}/${segments[i]}`
+      next.add(current)
+    }
+    return next
+  }
+
+  const focusFileInExplorer = (fileKey: string | null) => {
+    if (!fileKey) return
+    const { datapackDir, relativePath } = parseFileKey(fileKey)
+    const rootName = datapackDir.split(/[\\/]/).pop() || ""
+    if (!rootName) return
+
+    const normalizedRelative = relativePath.replace(/\\/g, "/").replace(/^\/+/, "")
+    const pathKey = normalizedRelative ? `${rootName}/${normalizedRelative}` : rootName
+    const requiredExpanded = buildExpandedPathsForFile(rootName, normalizedRelative)
+
+    setExplorerSelectedPathsByDatapack((prev) => {
+      const next: Record<string, string | null> = {}
+      for (const key of Object.keys(prev)) {
+        next[key] = null
+      }
+      next[datapackDir] = pathKey
+      return next
+    })
+
+    setExplorerSelectedFileKeysByDatapack((prev) => {
+      const next: Record<string, string | null> = {}
+      for (const key of Object.keys(prev)) {
+        next[key] = null
+      }
+      next[datapackDir] = fileKey
+      return next
+    })
+
+    setExplorerExpandedPathsByDatapack((prev) => {
+      const existing = prev[datapackDir] ?? new Set<string>()
+      const next = new Set(existing)
+      requiredExpanded.forEach((value) => next.add(value))
+      return {
+        ...prev,
+        [datapackDir]: next,
+      }
+    })
   }
 
   const registerTabElement = (fileKey: string, element: HTMLDivElement | null) => {
@@ -1420,6 +1570,16 @@ function CodeEditor() {
               rootPackVersion={datapack.packVersion}
               basePath={datapack.dir}
               className="mt-2"
+              externalSelectedPath={explorerSelectedPathsByDatapack[datapack.dir]}
+              externalSelectedFileKey={explorerSelectedFileKeysByDatapack[datapack.dir]}
+              externalExpandedPaths={explorerExpandedPathsByDatapack[datapack.dir]}
+              onExpandedPathsChange={(paths) =>
+                setExplorerExpandedPathsByDatapack((prev) => ({
+                  ...prev,
+                  [datapack.dir]: paths,
+                }))
+              }
+              treeContainerRef={getExplorerContainerRef(datapack.dir)}
               onFolderCreated={handleRefreshExplorer}
               onSelect={(pathKey, isFile) => handleExplorerSelect(datapack.dir, pathKey, isFile)}
               onFileRenamed={(oldRelativePath, newName) => handleFileRenamed(datapack.dir, oldRelativePath, newName)}

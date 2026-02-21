@@ -16,6 +16,11 @@ interface DataPackTreeProps {
   onFolderCreated?: () => void
   onFileRenamed?: (oldRelativePath: string, newName: string) => Promise<boolean>
   onFileDeleted?: (relativePath: string) => Promise<boolean>
+  externalSelectedPath?: string | null
+  externalSelectedFileKey?: string | null
+  externalExpandedPaths?: Set<string>
+  onExpandedPathsChange?: (paths: Set<string>) => void
+  treeContainerRef?: React.RefObject<HTMLDivElement | null>
 }
 
 type TreeNode = {
@@ -137,14 +142,14 @@ const collectDirectoryPaths = (node: TreeNode, pathKey: string, output: string[]
   }
 }
 
-export function DatapackTree({ paths, className, folderName, rootId, rootName, rootPackVersion, basePath, onSelect, onFolderCreated, onFileRenamed, onFileDeleted }: DataPackTreeProps) {
+export function DatapackTree({ paths, className, folderName, rootId, rootName, rootPackVersion, basePath, onSelect, onFolderCreated, onFileRenamed, onFileDeleted, externalSelectedPath, externalSelectedFileKey, externalExpandedPaths, onExpandedPathsChange, treeContainerRef }: DataPackTreeProps) {
   const tree = React.useMemo(() => {
     const builtTree = buildTree(paths, folderName)
     // Enrich with schema starting from the root schema node
     enrichTreeWithSchema(builtTree, datapackSchema, true)
     return builtTree
   }, [paths, folderName])
-  const [selectedPath, setSelectedPath] = React.useState<string | null>(null)
+  const [selectedPath, setSelectedPath] = React.useState<string | null>(externalSelectedPath ?? null)
   const [contextItems, setContextItems] = React.useState<MenuItem[]>([])
   const contextMenu = useContextMenu()
   const dialog = useDialog()
@@ -160,7 +165,38 @@ export function DatapackTree({ paths, className, folderName, rootId, rootName, r
     return new Set(dirs)
   })
 
+  // Use external values if provided
+  const effectiveSelectedPath = externalSelectedPath !== undefined ? externalSelectedPath : selectedPath
+  const effectiveExpandedPaths = externalExpandedPaths ?? expandedPaths
+  const isExternalExpanded = externalExpandedPaths !== undefined
+
+  const setExpandedPathsSafe = (next: Set<string>) => {
+    if (onExpandedPathsChange) {
+      onExpandedPathsChange(next)
+    }
+    if (!isExternalExpanded) {
+      setExpandedPaths(next)
+    }
+  }
+
+  const setSelectedPathSafe = (next: string | null) => {
+    if (externalSelectedPath !== undefined) return
+    setSelectedPath(next)
+  }
+
   React.useEffect(() => {
+    if (externalSelectedPath !== undefined) {
+      setSelectedPath(externalSelectedPath)
+    }
+  }, [externalSelectedPath])
+
+  React.useEffect(() => {
+    if (isExternalExpanded || !onExpandedPathsChange) return
+    onExpandedPathsChange(expandedPaths)
+  }, [expandedPaths, isExternalExpanded, onExpandedPathsChange])
+
+  React.useEffect(() => {
+    if (isExternalExpanded || externalSelectedPath !== undefined) return
     const dirs: string[] = []
     // Expand root by default
     dirs.push(tree.name)
@@ -171,22 +207,20 @@ export function DatapackTree({ paths, className, folderName, rootId, rootName, r
     }
     setExpandedPaths(new Set(dirs))
     setSelectedPath(null)
-  }, [tree])
+  }, [tree, isExternalExpanded, externalSelectedPath])
 
   const toggleExpanded = (pathKey: string) => {
-    setExpandedPaths((prev) => {
-      const next = new Set(prev)
-      if (next.has(pathKey)) {
-        next.delete(pathKey)
-      } else {
-        next.add(pathKey)
-      }
-      return next
-    })
+    const next = new Set(effectiveExpandedPaths)
+    if (next.has(pathKey)) {
+      next.delete(pathKey)
+    } else {
+      next.add(pathKey)
+    }
+    setExpandedPathsSafe(next)
   }
 
   const handleSelect = (pathKey: string, isFile: boolean, hasChildren: boolean) => {
-    setSelectedPath(pathKey)
+    setSelectedPathSafe(pathKey)
     if (hasChildren) {
       toggleExpanded(pathKey)
     }
@@ -198,6 +232,16 @@ export function DatapackTree({ paths, className, folderName, rootId, rootName, r
   }
 
   const normalizePath = (value: string) => value.replace(/\\/g, '/').replace(/\/+$/, '')
+
+  const getRelativePathFromPathKey = (pathKey: string) => {
+    const normalizedKey = pathKey.replace(/\\/g, '/')
+    const rootPrefix = `${tree.name}/`
+    if (normalizedKey === tree.name) return ''
+    if (normalizedKey.startsWith(rootPrefix)) {
+      return normalizedKey.slice(rootPrefix.length)
+    }
+    return normalizedKey
+  }
 
   const resolveTargetPath = (rootPath: string, key: string, childName: string) => {
     const normalizedBase = normalizePath(rootPath)
@@ -384,14 +428,23 @@ export function DatapackTree({ paths, className, folderName, rootId, rootName, r
 
   const renderNode = (node: TreeNode, depth: number, pathKey: string): React.ReactNode => {
     const hasChildren = node.children && node.children.size > 0
-    const isExpanded = hasChildren && expandedPaths.has(pathKey)
+    const isExpanded = hasChildren && effectiveExpandedPaths.has(pathKey)
     const padding = depth * 12
-    const isSelected = selectedPath === pathKey
+    const relativePath = getRelativePathFromPathKey(pathKey)
+    const nodeFileKey = basePath && relativePath ? `${basePath}|${relativePath}` : null
+    const isSelected = node.isFile && externalSelectedFileKey && nodeFileKey
+      ? externalSelectedFileKey === nodeFileKey
+      : effectiveSelectedPath === pathKey
     const isRoot = depth === 0
 
     return (
       <li key={pathKey}>
         <div
+          ref={isSelected ? (el) => {
+            if (el && treeContainerRef?.current) {
+              el.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'nearest' })
+            }
+          } : null}
           className={`flex items-center cursor-pointer rounded px-1  ${isSelected ? 'bg-codemirror-select' : 'hover:bg-codemirror-highlight'} ${isRoot ? 'py-2' : ''}`}
           style={{ paddingLeft: padding }}
           onClick={() => handleSelect(pathKey, !!node.isFile, !!hasChildren)}
@@ -470,7 +523,7 @@ export function DatapackTree({ paths, className, folderName, rootId, rootName, r
 
   return (
     <>
-      <div className={`${className} overflow-x-hidden`}>
+      <div ref={treeContainerRef} className={`${className} overflow-x-hidden overflow-y-auto`}>
         <ul className="space-y-1">
           {renderNode(tree, 0, tree.name)}
         </ul>
