@@ -577,6 +577,15 @@ function CodeEditor() {
 
   const handleRemoveDatapack = async (datapackDir: string) => {
     try {
+      const fileKeysToClose = openedFiles
+        .filter((file) => file.datapackDir === datapackDir)
+        .map((file) => createFileKey(file.datapackDir, file.relativePath))
+
+      if (fileKeysToClose.length > 0) {
+        const didCloseAll = await closeTabsSequentially(fileKeysToClose)
+        if (!didCloseAll) return
+      }
+
       // Get the metadata path for this datapack
       const metadataPath = `${datapackDir}/.mpp-datapack`
       
@@ -931,12 +940,12 @@ function CodeEditor() {
     }
   }
 
-  const closeTab = async (fileKey: string) => {
+  const closeTab = async (fileKey: string): Promise<boolean> => {
     // Check if file is modified and confirm close
     if (modifiedFiles.has(fileKey)) {
       const fileName = openedFiles.find((f) => createFileKey(f.datapackDir, f.relativePath) === fileKey)?.fileName || "this file"
       const choice = await dialog.showUnsavedConfirm("Close File?", `${fileName} has unsaved changes. What would you like to do?`)
-      if (choice === "cancel") return
+      if (choice === "cancel") return false
       if (choice === "save") await saveFileInternal(fileKey)
       if (choice === "discard") {
         removeFileFromModifiedFiles(fileKey)
@@ -963,6 +972,8 @@ function CodeEditor() {
         await openFile(null)
       }
     }
+
+    return true
   }
 
   // Keep refs in sync with state so they can be used in event listeners and closures
@@ -1417,10 +1428,12 @@ function CodeEditor() {
     setOpenedFiles(newFiles)
   }
 
-  const closeTabsSequentially = async (fileKeys: string[]) => {
+  const closeTabsSequentially = async (fileKeys: string[]): Promise<boolean> => {
     for (const fileKey of fileKeys) {
-      await closeTab(fileKey)
+      const didClose = await closeTab(fileKey)
+      if (!didClose) return false
     }
+    return true
   }
 
   const closeOtherTabs = async (targetFileKey: string) => {
