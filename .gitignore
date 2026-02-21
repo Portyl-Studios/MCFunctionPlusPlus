@@ -68,6 +68,14 @@ node_modules/
 # dataconnect generated files
 .dataconnect
 
-# output directory
-out
-release
+# Build and package outputs
+dist/
+out/
+release/
+
+# TypeScript cache
+*.tsbuildinfo
+
+# VS Code workspace files
+.vscode/
+*.code-workspace
