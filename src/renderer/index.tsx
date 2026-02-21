@@ -305,6 +305,13 @@ function CodeEditor() {
   const fileEditorStatesRef = useRef<Map<string, EditorState>>(new Map())
   const tabContextMenu = useContextMenu()
   const [tabContextFileKey, setTabContextFileKey] = useState<string | null>(null)
+  
+  // File tab drag-and-drop state
+  const [draggingFileKey, setDraggingFileKey] = useState<string | null>(null)
+  const [dragOverFileKey, setDragOverFileKey] = useState<string | null>(null)
+  const [dragOverPosition, setDragOverPosition] = useState<"before" | "after" | null>(null)
+  const dragGhostRef = useRef<HTMLDivElement | null>(null)
+  
   // Refs are used to access current state values inside closures (e.g., editor listeners)
   // without triggering re-renders or stale closure issues
   const isAutoSaveEnabledRef = useRef(isAutoSaveEnabled)
@@ -1221,6 +1228,31 @@ function CodeEditor() {
   const getOpenedFileKeys = () =>
     openedFiles.map((file) => createFileKey(file.datapackDir, file.relativePath))
 
+  const reorderOpenedFiles = (draggedFileKey: string, targetFileKey: string, position: "before" | "after") => {
+    const draggedIndex = openedFiles.findIndex(
+      (f) => createFileKey(f.datapackDir, f.relativePath) === draggedFileKey
+    )
+    const targetIndex = openedFiles.findIndex(
+      (f) => createFileKey(f.datapackDir, f.relativePath) === targetFileKey
+    )
+
+    if (draggedIndex === -1 || targetIndex === -1) return
+
+    const newFiles = [...openedFiles]
+    const [draggedFile] = newFiles.splice(draggedIndex, 1)
+
+    const insertIndex = position === "after"
+      ? draggedIndex < targetIndex
+        ? targetIndex
+        : targetIndex + 1
+      : draggedIndex < targetIndex
+        ? targetIndex - 1
+        : targetIndex
+
+    newFiles.splice(insertIndex, 0, draggedFile)
+    setOpenedFiles(newFiles)
+  }
+
   const closeTabsSequentially = async (fileKeys: string[]) => {
     for (const fileKey of fileKeys) {
       await closeTab(fileKey)
@@ -1612,25 +1644,110 @@ function CodeEditor() {
                 const fileKey = createFileKey(file.datapackDir, file.relativePath)
                 const isActive = activeFile === fileKey
                 const duplicateFolderLabel = getDuplicateTabFolderLabel(file)
+                const isDragging = draggingFileKey === fileKey
+                const showLeftIndicator = dragOverFileKey === fileKey && dragOverPosition === "before"
+                const showRightIndicator = dragOverFileKey === fileKey && dragOverPosition === "after"
                 return (
-                  <div
-                    key={fileKey}
-                    ref={(element) => registerTabElement(fileKey, element)}
-                    onContextMenu={(event) => handleTabRightClick(event, fileKey)}
-                    onClick={() => {
-                      openFile(fileKey)
-                    }}
-                    className={`
-                      flex items-center gap-2 px-2 py-1
-                      border-r border-codemirror-600
-                      whitespace-nowrap
-                      cursor-pointer
-                      ${isActive
-                        ? "bg-codemirror-default text-codemirror-100"
-                        : "hover:bg-codemirror-highlight text-codemirror-300"
-                      }
-                    `}
-                  >
+                  <div className="relative flex" key={fileKey}>
+                    {showLeftIndicator && (
+                      <div className="absolute left-0 top-0 bottom-0 w-[2px] bg-codemirror-100 pointer-events-none" />
+                    )}
+                    <div
+                      ref={(element) => registerTabElement(fileKey, element)}
+                      draggable
+                      onContextMenu={(event) => handleTabRightClick(event, fileKey)}
+                      onClick={() => {
+                        openFile(fileKey)
+                      }}
+                      onDragStart={(event) => {
+                        event.dataTransfer.effectAllowed = "move"
+                        event.dataTransfer.setData("text/plain", fileKey)
+                        setDraggingFileKey(fileKey)
+
+                        // Clean up old ghost if it exists
+                        if (dragGhostRef.current) {
+                          dragGhostRef.current.remove()
+                          dragGhostRef.current = null
+                        }
+
+                        // Create custom ghost image
+                        const ghost = document.createElement("div")
+                        ghost.className = `
+                          px-2 py-1
+                          bg-codemirror-600 rounded
+                          border border-codemirror-400
+                          text-sm text-codemirror-100
+                          flex items-center whitespace-nowrap`
+                        ghost.textContent = file.fileName
+                        ghost.style.position = "fixed"
+                        ghost.style.top = "-1000px"
+                        ghost.style.left = "-1000px"
+                        ghost.style.pointerEvents = "none"
+
+                        if (duplicateFolderLabel) {
+                          const label = document.createElement("span")
+                          label.className = "text-xs text-codemirror-300 italic ml-1"
+                          label.textContent = duplicateFolderLabel
+                          ghost.appendChild(label)
+                        }
+
+                        if (modifiedFiles.has(fileKey)) {
+                          const indicator = document.createElement("div")
+                          indicator.className = `codicon codicon-circle-filled text-amber-400 ml-2`
+                          ghost.appendChild(indicator)
+                        }
+
+                        document.body.appendChild(ghost)
+                        dragGhostRef.current = ghost
+
+                        event.dataTransfer.setDragImage(ghost, 0, 0)
+                        //event.dataTransfer.setDragImage(ghost, ghost.offsetWidth / 2, ghost.offsetHeight / 2)
+                      }}
+                      onDragEnd={() => {
+                        setDraggingFileKey(null)
+                        setDragOverFileKey(null)
+                        setDragOverPosition(null)
+                        
+                        if (dragGhostRef.current) {
+                          dragGhostRef.current.remove()
+                          dragGhostRef.current = null
+                        }
+                      }}
+                      onDragOver={(event) => {
+                        event.preventDefault()
+                        event.dataTransfer.dropEffect = "move"
+                        const rect = (event.currentTarget as HTMLElement).getBoundingClientRect()
+                        const midpoint = rect.left + rect.width / 2
+                        const position = event.clientX < midpoint ? "before" : "after"
+                        setDragOverFileKey(fileKey)
+                        setDragOverPosition(position)
+                      }}
+                      onDragLeave={() => {
+                        setDragOverFileKey(null)
+                        setDragOverPosition(null)
+                      }}
+                      onDrop={(event) => {
+                        event.preventDefault()
+                        const draggedKey = event.dataTransfer.getData("text/plain")
+                        if (draggedKey && draggedKey !== fileKey) {
+                          reorderOpenedFiles(draggedKey, fileKey, dragOverPosition === "after" ? "after" : "before")
+                        }
+                        setDragOverFileKey(null)
+                        setDragOverPosition(null)
+                        setDraggingFileKey(null)
+                      }}
+                      className={`
+                        flex items-center gap-2 px-2 py-1
+                        border-r border-codemirror-600
+                        whitespace-nowrap
+                        cursor-pointer
+                        ${isDragging ? "opacity-10" : ""}
+                        ${isActive
+                          ? "bg-codemirror-default text-codemirror-100"
+                          : "hover:bg-codemirror-highlight text-codemirror-300"
+                        }
+                      `}
+                    >
                     <span className="text-sm">{file.fileName}</span>
 
                     {/* Duplicate Disambiguation Label */}
@@ -1654,6 +1771,10 @@ function CodeEditor() {
                         text-codemirror-200 hover:text-codemirror-50
                         cursor-pointer`}
                     />
+                    </div>
+                    {showRightIndicator && (
+                      <div className="absolute right-0 top-0 bottom-0 w-[2px] bg-codemirror-100 pointer-events-none" />
+                    )}
                   </div>
                 )
               })}
