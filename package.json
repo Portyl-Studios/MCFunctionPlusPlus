@@ -1,39 +1,100 @@
 {
-  "name": "MCFunction++",
+  "name": "mcfunctionplusplus",
   "version": "1.0.0",
-  "description": "MCFunction++ is a transpiler that hopes to bring modern programming constructs, like variables, arithmetic operations, and control structures, to the world of Minecraft.",
+  "description": "MCFunction++ is a Minecraft datapack IDE + build system, split into desktop + web, with a shared core.",
   "type": "module",
   "main": "./out/main/main.js",
   "scripts": {
-    "build": "vite build && tsc && tailwindcss -i ./src/renderer/index.css -o ./out/renderer/index.css",
-    "dev": "concurrently \"node dev.js\" \"npx tailwindcss -i ./src/renderer/index.css -o ./out/renderer/index.css --watch\" \"tsc --watch\" \"vite\"",
+    "build": "tsc && vite build",
+    "dev": "vite",
     "electron": "npm run build && electron .",
-    "start": "electron ."
+    "start": "electron .",
+    "dist": "npm run build && electron-builder",
+    "dist:win": "npm run build && electron-builder --win",
+    "dist:mac": "npm run build && electron-builder --mac",
+    "dist:linux": "npm run build && electron-builder --linux"
   },
-  "keywords": [],
-  "author": "touchportyl",
+  "keywords": [
+    "minecraft",
+    "datapack",
+    "mcfunction",
+    "ide",
+    "transpiler"
+  ],
+  "author": "portylstudios",
   "license": "GPL-3.0",
+  "build": {
+    "appId": "com.portylstudios.mcfunctionplusplus",
+    "productName": "MCFunction++",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "out/**/*",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "resources/",
+        "to": "resources",
+        "filter": [
+          "**/*"
+        ]
+      }
+    ],
+    "win": {
+      "target": [
+        "nsis",
+        "portable"
+      ],
+      "icon": "assets/icon.ico"
+    },
+    "mac": {
+      "target": [
+        "dmg",
+        "zip"
+      ],
+      "icon": "assets/icon.icns",
+      "category": "public.app-category.developer-tools"
+    },
+    "linux": {
+      "target": [
+        "AppImage",
+        "deb"
+      ],
+      "icon": "assets/icon.png",
+      "category": "Development"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true
+    }
+  },
   "devDependencies": {
-    "@types/electron": "^1.4.38",
-    "@types/react": "^19.0.2",
-    "@types/react-dom": "^19.0.2",
-    "@vitejs/plugin-react": "^4.3.4",
-    "autoprefixer": "^10.4.20",
-    "concurrently": "^9.1.0",
-    "electron": "^33.2.1",
-    "open": "^10.1.0",
-    "postcss": "^8.4.49",
-    "postcss-cli": "^11.0.0",
-    "tailwindcss": "^3.4.17",
-    "typescript": "^5.7.2",
-    "vite": "^6.0.4"
+    "@tailwindcss/postcss": "^4.1.18",
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^5.1.4",
+    "autoprefixer": "^10.4.24",
+    "electron": "^40.3.0",
+    "electron-builder": "^26.7.0",
+    "postcss": "^8.5.6",
+    "tailwindcss": "^4.1.18",
+    "typescript": "^5.9.3",
+    "vite": "^7.3.1",
+    "vite-plugin-electron": "^0.29.0",
+    "vite-plugin-electron-renderer": "^0.14.6"
   },
   "dependencies": {
-    "@radix-ui/react-icons": "^1.3.2",
-    "electron-is-dev": "^3.0.1",
-    "firebase": "^11.1.0",
-    "lucide-react": "^0.468.0",
-    "react": "^19.0.0",
-    "react-dom": "^19.0.0"
+    "@codemirror/lang-json": "^6.0.2",
+    "@codemirror/state": "^6.5.4",
+    "@codemirror/theme-one-dark": "^6.1.3",
+    "@codemirror/view": "^6.39.13",
+    "@vscode/codicons": "^0.0.44",
+    "codemirror": "^6.0.2",
+    "react": "^19.2.4",
+    "react-dom": "^19.2.4"
   }
 }
