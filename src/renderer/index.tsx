@@ -15,7 +15,7 @@ import {
 } from "@codemirror/view"
 import { defaultKeymap, history, historyKeymap, indentWithTab } from "@codemirror/commands"
 import { foldGutter, foldKeymap, indentOnInput, syntaxHighlighting, defaultHighlightStyle, bracketMatching } from "@codemirror/language"
-import { autocompletion, closeBrackets, closeBracketsKeymap, completionKeymap } from "@codemirror/autocomplete"
+import { autocompletion, closeBrackets, closeBracketsKeymap, completionKeymap, startCompletion } from "@codemirror/autocomplete"
 import { searchKeymap, highlightSelectionMatches } from "@codemirror/search"
 import { lintKeymap } from "@codemirror/lint"
 import { oneDark } from "@codemirror/theme-one-dark"
@@ -29,7 +29,7 @@ import { DatapackTree } from "./datapacktree"
 import { Dialog, useDialog } from "./dialog"
 import { ContextMenu, useContextMenu } from "./contextmenu"
 import { getDirFromPath, toRelativePaths, createFileKey, parseFileKey } from "./utils"
-import { mcfunctionLanguage } from "./mcfunction-language"
+import { mcfunctionLanguage, mcfunctionCompletionSource, loadMcfunctionCommandSchema, loadMinecraftData } from "./mcfunction-language"
 
 type DatapackEntry = {
   dir: string
@@ -61,6 +61,28 @@ type WorkspaceTabSession = {
 const OPEN_TABS_PREFERENCE_KEY = "openTabs"
 const EXPLORER_EXPANDED_PREFERENCE_KEY = "explorerExpandedPaths"
 
+// Custom keymap to trigger autocomplete on Enter
+const mcfunctionKeymap = keymap.of([
+  {
+    key: "Enter",
+    run: (view) => {
+      // After Enter is processed, check if we should show autocomplete
+      setTimeout(() => {
+        const { state } = view
+        const line = state.doc.lineAt(state.selection.main.head)
+        const beforeCursor = line.text.slice(0, state.selection.main.head - line.from)
+        
+        // If line is empty or only whitespace, trigger autocomplete
+        if (/^\s*$/.test(beforeCursor)) {
+          startCompletion(view)
+        }
+      }, 10)
+      
+      return false // Let default Enter handling happen
+    }
+  }
+])
+
 const codeMirrorSetupExtensions = [
   lineNumbers(),
   highlightActiveLineGutter(),
@@ -74,10 +96,16 @@ const codeMirrorSetupExtensions = [
   syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
   bracketMatching(),
   closeBrackets(),
-  autocompletion(),
+  autocompletion({
+    override: [mcfunctionCompletionSource],
+    activateOnTyping: true,
+    closeOnBlur: true,
+    maxRenderedOptions: 100,
+  }),
   rectangularSelection(),
   highlightActiveLine(),
   highlightSelectionMatches(),
+  mcfunctionKeymap,
   keymap.of([
     ...closeBracketsKeymap,
     ...defaultKeymap,
@@ -981,6 +1009,17 @@ function CodeEditor() {
   useEffect(() => {
     activeFileRef.current = activeFile
   }, [activeFile])
+
+  useEffect(() => {
+    void (async () => {
+      try {
+        await loadMcfunctionCommandSchema("1.21.11")
+        await loadMinecraftData("1.21.11")
+      } catch (error) {
+        console.error("Failed to load mcfunction command schema:", error)
+      }
+    })()
+  }, [])
 
   const createEditorState = (doc: string) => EditorState.create({
     doc,

@@ -118,5 +118,11 @@ contextBridge.exposeInMainWorld('electron', {
   },
   preferencesUpdate: (updates: Record<string, unknown>) => {
     return ipcRenderer.invoke('preferences-update', { updates })
+  },
+  commandSchemaGet: (version: string) => {
+    return ipcRenderer.invoke('command-schema-get', { version })
+  },
+  minecraftDataGet: (version: string, dataType: string) => {
+    return ipcRenderer.invoke('minecraft-data-get', { version, dataType })
   }
 })

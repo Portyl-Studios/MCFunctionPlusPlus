@@ -166,6 +166,43 @@ ipcMain.handle('preferences-update', async (_event, { updates }) => {
   return await preferencesManager.update(updates)
 })
 
+ipcMain.handle('command-schema-get', async (_event, { version }) => {
+  if (!version || typeof version !== 'string') {
+    throw new Error('Invalid command schema version')
+  }
+
+  const normalizedVersion = version.trim()
+  if (!/^[0-9]+(?:\.[0-9]+)*$/.test(normalizedVersion)) {
+    throw new Error('Invalid command schema version format')
+  }
+
+  const schemaPath = path.join(__resourcepath, 'minecraft', normalizedVersion, 'commands.json')
+  return await readFile(schemaPath)
+})
+
+ipcMain.handle('minecraft-data-get', async (_event, { version, dataType }) => {
+  if (!version || typeof version !== 'string') {
+    throw new Error('Invalid Minecraft data version')
+  }
+
+  if (!dataType || typeof dataType !== 'string') {
+    throw new Error('Invalid data type')
+  }
+
+  const normalizedVersion = version.trim()
+  if (!/^[0-9]+(?:\.[0-9]+)*$/.test(normalizedVersion)) {
+    throw new Error('Invalid Minecraft data version format')
+  }
+
+  const normalizedDataType = dataType.trim()
+  if (!/^[a-z_]+$/.test(normalizedDataType)) {
+    throw new Error('Invalid data type format')
+  }
+
+  const dataPath = path.join(__resourcepath, 'minecraft', normalizedVersion, `${normalizedDataType}.json`)
+  return await readFile(dataPath)
+})
+
 app.on('ready', async () => {
   // Load preferences on startup
   await preferencesManager.load()
