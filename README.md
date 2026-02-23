@@ -104,6 +104,15 @@ The built React app from `out/renderer/` will be deployed to your Firebase hosti
 
 ---
 
+## Minecraft Source Files
+This project uses files extracted from the Minecraft `server.jar` file.
+
+1. Download the latest version of the `server.jar` file from [here](https://www.minecraft.net/en-us/download/server)
+2. Run `java -DbundlerMainClass=net.minecraft.data.Main -jar server.jar --reports`
+3. The folder used is `/generated/reports/` stored in `/resources/minecraft/<mc_version>`
+
+---
+
 ## License
 GPLv3 (General Public License)
 Any derived works must also be open-source and licensed under GPLv3.
