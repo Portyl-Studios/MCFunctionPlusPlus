@@ -18,7 +18,6 @@ import { foldGutter, foldKeymap, indentOnInput, syntaxHighlighting, defaultHighl
 import { autocompletion, closeBrackets, closeBracketsKeymap, completionKeymap } from "@codemirror/autocomplete"
 import { searchKeymap, highlightSelectionMatches } from "@codemirror/search"
 import { lintKeymap } from "@codemirror/lint"
-import { json } from "@codemirror/lang-json"
 import { oneDark } from "@codemirror/theme-one-dark"
 import "./index.css"
 import { Section, ResizeHandle, useResizableSection } from "./section"
@@ -30,6 +29,7 @@ import { DatapackTree } from "./datapacktree"
 import { Dialog, useDialog } from "./dialog"
 import { ContextMenu, useContextMenu } from "./contextmenu"
 import { getDirFromPath, toRelativePaths, createFileKey, parseFileKey } from "./utils"
+import { mcfunctionLanguage } from "./mcfunction-language"
 
 type DatapackEntry = {
   dir: string
@@ -1014,7 +1014,7 @@ function CodeEditor() {
           })
         },
       }),
-      json(),
+      mcfunctionLanguage,
     ],
   })
 
