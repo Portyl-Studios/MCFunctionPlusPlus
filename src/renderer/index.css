@@ -51,7 +51,7 @@
 
   .menu-layer {
     @apply
-      z-[9999]
+      z-9999
     ;
   }
 
@@ -63,7 +63,7 @@
   .button {
     @apply
       bg-codemirror-600 hover:bg-codemirror-500
-      border-1 border-codemirror-500 rounded
+      border border-codemirror-500 rounded
       text-codemirror-100
       px-3 py-1
       cursor-pointer
