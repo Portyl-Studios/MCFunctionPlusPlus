@@ -6,7 +6,13 @@ type McFunctionStreamState = {
   inNbt: boolean
   nbtDepth: number
   atLineStart: boolean
+  atCommandStart: boolean
+  isContinuedLine: boolean
+  isInvalidLine: boolean
   jsonState: unknown
+  inSelector: boolean
+  selectorExpectsValue: boolean
+  nextExpected: "score_holder" | "objective" | null
 }
 
 type CommandNode = {
@@ -556,7 +562,13 @@ export const mcfunctionLanguage = StreamLanguage.define<McFunctionStreamState>({
       inNbt: false,
       nbtDepth: 0,
       atLineStart: true,
+      atCommandStart: true,
+      isContinuedLine: false,
+      isInvalidLine: false,
       jsonState: createJsonState(),
+      inSelector: false,
+      selectorExpectsValue: false,
+      nextExpected: null,
     }
   },
   copyState(state) {
@@ -564,39 +576,202 @@ export const mcfunctionLanguage = StreamLanguage.define<McFunctionStreamState>({
       inNbt: state.inNbt,
       nbtDepth: state.nbtDepth,
       atLineStart: state.atLineStart,
+      atCommandStart: state.atCommandStart,
+      isContinuedLine: state.isContinuedLine,
+      isInvalidLine: state.isInvalidLine,
       jsonState: jsonStreamParser.copyState ? jsonStreamParser.copyState(state.jsonState) : state.jsonState,
+      inSelector: state.inSelector,
+      selectorExpectsValue: state.selectorExpectsValue,
+      nextExpected: state.nextExpected,
     }
   },
   token(stream, state) {
+
     if (!state.inNbt) {
-      if (stream.sol()) state.atLineStart = true
+
+      // Start of line - reset state
+      if (stream.sol())
+      {
+        if (!state.isContinuedLine) {
+          state.atLineStart = true
+          state.atCommandStart = true
+          state.isInvalidLine = false
+        }
+        state.isContinuedLine = false
+      }
+
+      // Propogate invalid lines if they were marked as such in the previous line and continue to check for line continuation
+      if (state.isInvalidLine) {
+        state.isInvalidLine = true;
+        if (/\\\s*$/.test(stream.string)) {
+          state.isContinuedLine = true;
+        }
+        stream.skipToEnd();
+        return "invalid";
+      }
+
       if (stream.eatSpace()) return null
 
+      // Comments
       if (stream.peek() === "#") {
         stream.skipToEnd()
         return "comment"
       }
 
+      // NBT, hand over to JSON mode for the rest of the line
       if (stream.peek() === "{") {
         state.inNbt = true
         state.nbtDepth = 0
         state.jsonState = createJsonState()
-      } else {
-        if (state.atLineStart && stream.match(/\/?[a-z0-9_:-]+/i)) {
-          const commandToken = normalizeCommandToken(stream.current())
-          state.atLineStart = false
-          return rootCommandNames.has(commandToken) ? "keyword" : null
+      }
+      else {
+
+        // Preprocessor
+        
+        // Matches lines starting with $
+        if (state.atCommandStart && stream.match("$")) {
+          return "meta"
         }
 
-        state.atLineStart = false
+        // Matches the format $(...) for preprocessor variables
+        if (stream.match(/\$\([^)]+\)/)) {
+          return "variable"
+        }
 
-        if (stream.match(/@[a-z](?:\[[^\]]*\])?/i)) return "variable-2"
+        // Root command
+        if (state.atCommandStart &&
+          stream.match(/[a-z0-9_:-]+/i)
+        ) {
+          const commandToken = normalizeCommandToken(stream.current())
+          state.atLineStart = false
+          state.atCommandStart = false
+          if (rootCommandNames.has(commandToken)) {
+            return "keyword"
+          }
+          else {
+            state.isInvalidLine = true;
+            if (/\\\s*$/.test(stream.string)) {
+              state.isContinuedLine = true;
+            }
+            stream.skipToEnd();
+            return "invalid";
+          }
+        }
+
+        // Root commands after execute ... run
+        if (stream.match(/\brun\b/)) {
+          state.atCommandStart = true;
+          return "keyword";
+        }
+
+        // Same line operator
+        // Matches \
+        if (stream.match(/\\\s*$/)) {
+          state.isContinuedLine = true;
+          return "operator"
+        }
+
+        // Numbers
+        // Matches patterns like 0, 12, 12.3, 1..2, 1.., ..2, 1t, 2s, 3d, etc.
+        if (stream.match(/^-?\d+\.\.\d+|-?\d+\.\.|\.\.-?\d+|-?\d+(\.\d+)?[bslfdts]?/)) return "number"
+
+        // Entity selectors
+        // Matches patterns like [type=pig,name=Bob,distance=..5]
+
+        // 1. Enter Selector Mode
+        if (stream.peek() === "[") {
+          state.inSelector = true;
+          state.selectorExpectsValue = false;
+          stream.next();
+          return "punctuation"; // Style for [
+        }
+
+        // 2. Exit Selector Mode
+        if (stream.peek() === "]") {
+          state.inSelector = false;
+          stream.next();
+          return "punctuation"; // Style for ]
+        }
+
+        // 3. Handle Content Inside Selector
+        if (state.inSelector) {
+          if (stream.eatSpace()) return null;
+
+          // Handle the Equals sign
+          if (stream.match("=")) {
+            state.selectorExpectsValue = true;
+            return "punctuation";
+          }
+
+          // Handle the Comma separator
+          if (stream.match(",")) {
+            state.selectorExpectsValue = false;
+            return "punctuation";
+          }
+
+          // Match the actual text (key or value)
+          const match = stream.match(/[A-Za-z0-9_$.#-]+/);
+          if (match && typeof match !== "boolean") {
+            if (state.selectorExpectsValue) {
+              // Color for the VALUE (e.g., 'pig' or '1..5')
+              return "string"; 
+            } else {
+              // Color for the KEY (e.g., 'type' or 'name')
+              return "propertyName"; 
+            }
+          }
+        }
+
+        // Entity selectors
+        // Matches patterns like @e, @p, @a, @s
+        if (stream.match(/@[a-z]/)) return "variable-2"
+
+        // Math operators
+        // Matches =, +=, -=, *=, /=, %=, >< (swapping), <, <=, >, >=, !=, matches
+        if (stream.match(/[=<>]|[-+*/%\!<>]=|><|matches/)) return "operator"
+
+        // Namespaced IDs and literals
+        if (stream.match(/[a-zA-Z]+:[^\s]+/)) return "namespace"
+
+        // Custom player name variables
+        // Matches patterns like test$123, player_name$score, etc.
+        if (stream.match(/[a-zA-Z0-9_.]+\$[a-zA-Z0-9_.]+/)) return "variable"
+
+        // Strings and numbers
+        // Catch all for strings (quoted) and numbers (with optional suffixes like b, s, l, f, d)
         if (stream.match(/"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'/)) return "string"
-        if (stream.match(/-?\d+(?:\.\d+)?[bslfd]?/i)) return "number"
+        //if (stream.match(/-?\d+(?:\.\d+)?[bslfd]?/i)) return "number"
+        
+        // Command tokens
+        const match = stream.match(/[A-Za-z0-9_$.#-]+/);
+        if (!match || typeof match === "boolean") {
+          if (!match) stream.next();
+          return null;
+        }
+
+        const token = match[0];
+        const normalized = normalizeCommandToken(token);
+
+        if (state.nextExpected === "score_holder") {
+          state.nextExpected = "objective"; 
+          //return "variableName"; 
+        }
+
+        if (state.nextExpected === "objective") {
+          state.nextExpected = null;
+          //return "type"; 
+        }
+
+        const scoreTriggers = ["score", "set", "add", "remove", "operation", "reset"];
+        if (scoreTriggers.includes(normalized)) {
+          state.nextExpected = "score_holder";
+          //return "keyword";
+        }
 
         stream.next()
         return null
       }
+
     }
 
     const startPos = stream.pos
