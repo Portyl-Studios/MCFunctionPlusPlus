@@ -602,12 +602,12 @@ export const mcfunctionLanguage = StreamLanguage.define<McFunctionStreamState>({
 
       // Propogate invalid lines if they were marked as such in the previous line and continue to check for line continuation
       if (state.isInvalidLine) {
-        state.isInvalidLine = true;
+        state.isInvalidLine = true
         if (/\\\s*$/.test(stream.string)) {
-          state.isContinuedLine = true;
+          state.isContinuedLine = true
         }
-        stream.skipToEnd();
-        return "invalid";
+        stream.skipToEnd()
+        return "invalid"
       }
 
       if (stream.eatSpace()) return null
@@ -649,27 +649,36 @@ export const mcfunctionLanguage = StreamLanguage.define<McFunctionStreamState>({
             return "keyword"
           }
           else {
-            state.isInvalidLine = true;
+            state.isInvalidLine = true
             if (/\\\s*$/.test(stream.string)) {
-              state.isContinuedLine = true;
+              state.isContinuedLine = true
             }
-            stream.skipToEnd();
-            return "invalid";
+            stream.skipToEnd()
+            return "invalid"
           }
         }
 
         // Root commands after execute ... run
         if (stream.match(/\brun\b/)) {
-          state.atCommandStart = true;
-          return "keyword";
+          state.atCommandStart = true
+          return "controlKeyword"
+        }
+
+        // Control keywords
+        // Matches if, unless
+        if (stream.match(/\b(if|unless)\b/)) {
+          return "controlKeyword"
         }
 
         // Same line operator
         // Matches \
         if (stream.match(/\\\s*$/)) {
-          state.isContinuedLine = true;
+          state.isContinuedLine = true
           return "operator"
         }
+
+        // Namespaced IDs and literals
+        if (stream.match(/[a-zA-Z]+:[^\s]+/)) return "namespace"
 
         // Numbers
         // Matches patterns like 0, 12, 12.3, 1..2, 1.., ..2, 1t, 2s, 3d, etc.
@@ -680,92 +689,92 @@ export const mcfunctionLanguage = StreamLanguage.define<McFunctionStreamState>({
 
         // 1. Enter Selector Mode
         if (stream.peek() === "[") {
-          state.inSelector = true;
-          state.selectorExpectsValue = false;
-          stream.next();
-          return "punctuation"; // Style for [
+          state.inSelector = true
+          state.selectorExpectsValue = false
+          stream.next()
+          return "squareBracket"
         }
 
         // 2. Exit Selector Mode
         if (stream.peek() === "]") {
-          state.inSelector = false;
-          stream.next();
-          return "punctuation"; // Style for ]
+          state.inSelector = false
+          stream.next()
+          return "squareBracket"
         }
 
         // 3. Handle Content Inside Selector
         if (state.inSelector) {
-          if (stream.eatSpace()) return null;
+          if (stream.eatSpace()) return null
 
           // Handle the Equals sign
           if (stream.match("=")) {
-            state.selectorExpectsValue = true;
-            return "punctuation";
+            state.selectorExpectsValue = true
+            return "separator"
           }
 
           // Handle the Comma separator
           if (stream.match(",")) {
-            state.selectorExpectsValue = false;
-            return "punctuation";
+            state.selectorExpectsValue = false
+            return "separator"
           }
 
           // Match the actual text (key or value)
-          const match = stream.match(/[A-Za-z0-9_$.#-]+/);
+          const match = stream.match(/[A-Za-z0-9_$.#-]+/)
           if (match && typeof match !== "boolean") {
-            if (state.selectorExpectsValue) {
-              // Color for the VALUE (e.g., 'pig' or '1..5')
-              return "string"; 
-            } else {
+            if (!state.selectorExpectsValue) {
               // Color for the KEY (e.g., 'type' or 'name')
-              return "propertyName"; 
+              return "attributeName" 
+            } else {
+              // Color for the VALUE (e.g., 'pig' or '1..5')
+              return "attributeValue" 
             }
           }
         }
 
         // Entity selectors
         // Matches patterns like @e, @p, @a, @s
-        if (stream.match(/@[a-z]/)) return "variable-2"
+        if (stream.match(/@[a-z]/)) return "labelName"
+
+        // Special case for operator keywords
+        // Matches add, remove, reset, operation
+        if (stream.match(/\b(operation|add|remove|get|set|reset)\b/)) return "operatorKeyword"
 
         // Math operators
         // Matches =, +=, -=, *=, /=, %=, >< (swapping), <, <=, >, >=, !=, matches
         if (stream.match(/[=<>]|[-+*/%\!<>]=|><|matches/)) return "operator"
 
-        // Namespaced IDs and literals
-        if (stream.match(/[a-zA-Z]+:[^\s]+/)) return "namespace"
-
         // Custom player name variables
         // Matches patterns like test$123, player_name$score, etc.
-        if (stream.match(/[a-zA-Z0-9_.]+\$[a-zA-Z0-9_.]+/)) return "variable"
+        if (stream.match(/[a-zA-Z0-9_.]+\$[a-zA-Z0-9_.]+/)) return "variableName"
 
-        // Strings and numbers
-        // Catch all for strings (quoted) and numbers (with optional suffixes like b, s, l, f, d)
+        // Strings
+        // Catch all for strings (quoted)
         if (stream.match(/"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'/)) return "string"
-        //if (stream.match(/-?\d+(?:\.\d+)?[bslfd]?/i)) return "number"
         
         // Command tokens
-        const match = stream.match(/[A-Za-z0-9_$.#-]+/);
+        const match = stream.match(/[A-Za-z0-9_$.#-]+/)
         if (!match || typeof match === "boolean") {
-          if (!match) stream.next();
-          return null;
+          if (!match) stream.next()
+          return null
         }
 
-        const token = match[0];
-        const normalized = normalizeCommandToken(token);
+        const token = match[0]
+        const normalized = normalizeCommandToken(token)
 
         if (state.nextExpected === "score_holder") {
-          state.nextExpected = "objective"; 
-          //return "variableName"; 
+          state.nextExpected = "objective" 
+          //return "variableName" 
         }
 
         if (state.nextExpected === "objective") {
-          state.nextExpected = null;
-          //return "type"; 
+          state.nextExpected = null
+          //return "type" 
         }
 
-        const scoreTriggers = ["score", "set", "add", "remove", "operation", "reset"];
+        const scoreTriggers = ["score", "set", "add", "remove", "operation", "reset"]
         if (scoreTriggers.includes(normalized)) {
-          state.nextExpected = "score_holder";
-          //return "keyword";
+          state.nextExpected = "score_holder"
+          //return "keyword"
         }
 
         stream.next()

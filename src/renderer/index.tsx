@@ -18,7 +18,7 @@ import { foldGutter, foldKeymap, indentOnInput, syntaxHighlighting, defaultHighl
 import { autocompletion, closeBrackets, closeBracketsKeymap, completionKeymap, startCompletion } from "@codemirror/autocomplete"
 import { searchKeymap, highlightSelectionMatches } from "@codemirror/search"
 import { lintKeymap } from "@codemirror/lint"
-import { oneDark } from "@codemirror/theme-one-dark"
+import { portylDarkTheme } from "./themes/portyl-dark"
 import "./index.css"
 import { Section, ResizeHandle, useResizableSection } from "./section"
 import { Panel, type PanelTab } from "./panel"
@@ -1030,7 +1030,7 @@ function CodeEditor() {
   const createEditorState = (doc: string) => EditorState.create({
     doc,
     extensions: [
-      oneDark,
+      portylDarkTheme,
       ...codeMirrorSetupExtensions,
       EditorView.lineWrapping,
       EditorView.updateListener.of((update) => {
