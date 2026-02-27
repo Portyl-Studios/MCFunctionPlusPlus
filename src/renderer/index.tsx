@@ -61,13 +61,18 @@ type WorkspaceTabSession = {
 const OPEN_TABS_PREFERENCE_KEY = "openTabs"
 const EXPLORER_EXPANDED_PREFERENCE_KEY = "explorerExpandedPaths"
 
+let enterAutocompleteTimer: number | null = null
+
 // Custom keymap to trigger autocomplete on Enter
 const mcfunctionKeymap = keymap.of([
   {
     key: "Enter",
     run: (view) => {
-      // After Enter is processed, check if we should show autocomplete
-      setTimeout(() => {
+      if (enterAutocompleteTimer !== null) {
+        window.clearTimeout(enterAutocompleteTimer)
+      }
+
+      enterAutocompleteTimer = window.setTimeout(() => {
         const { state } = view
         const line = state.doc.lineAt(state.selection.main.head)
         const beforeCursor = line.text.slice(0, state.selection.main.head - line.from)
@@ -76,7 +81,8 @@ const mcfunctionKeymap = keymap.of([
         if (/^\s*$/.test(beforeCursor)) {
           startCompletion(view)
         }
-      }, 10)
+        enterAutocompleteTimer = null
+      }, 800)
       
       return false // Let default Enter handling happen
     }
