@@ -4,10 +4,12 @@ import {HighlightStyle, syntaxHighlighting} from "@codemirror/language"
 import {tags as t} from "@lezer/highlight"
 
 const invalid = "#ffffff",
+  blood = "#ff4040",
   coral = "#e06c75",
   ember = "#ff8f70",
-  yellow = "#f1cb01",
-  aurora = "#f2c86e",
+  aurora = "#f1cb01",
+  warning = "#ffdc40",
+  golden = "#ffe066",
   chalky = "#d5b06b",
   whiskey = "#d19a66",
   terracotta = "#ce8c8d",
@@ -16,6 +18,7 @@ const invalid = "#ffffff",
   minty = "#9ce9c2",
   cyan = "#56b6c2",
   malibu = "#61afef",
+  cafe = "#42cafe",
   sky = "#90d5ff",
   ice = "#86d6f2",
   lilac = "#b392f0",
@@ -23,12 +26,51 @@ const invalid = "#ffffff",
   magenta = "#ff87f0",
   stone = "#7d8799",
   ivory = "#abb2bf",
+  light = "#e5e0ee",
   darkBackground = "#21252b",
   highlightBackground = "#2f343d",
   background = "#1a1d23",
   tooltipBackground = "#353a42",
-  selection = "#434956",
-  cursor = "#528bff"
+  selection = "#333946"
+
+type LintSquiggleOptions = {
+  wavelength?: number
+  amplitude?: number
+  strokeWidth?: number
+  baseline?: number
+  backgroundPosition?: string
+  paddingBottom?: string
+}
+
+const createLintSquiggleStyle = (color: string, options: LintSquiggleOptions = {}) => {
+  const {
+    wavelength = 15,
+    amplitude = 3,
+    strokeWidth = 1,
+    baseline = 3,
+    backgroundPosition = "left bottom",
+    paddingBottom = "3px",
+  } = options
+
+  const height = Math.max(1, baseline + 1)
+  const halfWave = wavelength / 2
+  const quarterWave = wavelength / 4
+  const threeQuarterWave = (wavelength * 3) / 4
+  const peakY = Math.max(0, baseline - amplitude)
+
+  const svg = `<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 ${wavelength} ${height}'><path d='M0 ${baseline} L${quarterWave} ${peakY} L${halfWave} ${baseline} L${threeQuarterWave} ${peakY} L${wavelength} ${baseline}' stroke='${color}' fill='none' stroke-width='${strokeWidth}'/></svg>`
+  const encodedSvg = encodeURIComponent(svg)
+
+  return {
+    backgroundImage: `url("data:image/svg+xml,${encodedSvg}")`,
+    backgroundPosition,
+    backgroundRepeat: "repeat-x",
+    backgroundSize: `${wavelength}px ${height}px`,
+    boxShadow: "none",
+    textDecoration: "none",
+    paddingBottom,
+  }
+}
 
 export const portylDarkEditorTheme = EditorView.theme({
   "&": {
@@ -37,10 +79,10 @@ export const portylDarkEditorTheme = EditorView.theme({
   },
 
   ".cm-content": {
-    caretColor: cursor
+    caretColor: cafe
   },
 
-  ".cm-cursor, .cm-dropCursor": {borderLeftColor: cursor},
+  ".cm-cursor, .cm-dropCursor": {borderLeftColor: cafe},
   "&.cm-focused > .cm-scroller > .cm-selectionLayer .cm-selectionBackground, .cm-selectionBackground, .cm-content ::selection": {backgroundColor: selection},
 
   ".cm-panels": {backgroundColor: darkBackground, color: ivory},
@@ -48,18 +90,20 @@ export const portylDarkEditorTheme = EditorView.theme({
   ".cm-panels.cm-panels-bottom": {borderTop: "2px solid black"},
 
   ".cm-searchMatch": {
-    backgroundColor: "#72a1ff59",
-    outline: "1px solid #457dff"
+    backgroundColor: `${sky}20`,
+    outline: `1px solid ${sky}ee`,
+    borderRadius: "1px"
   },
   ".cm-searchMatch.cm-searchMatch-selected": {
-    backgroundColor: "#6199ff2f"
+    backgroundColor: `${light}20`,
+    outline: `1px solid ${light}`,
   },
 
-  ".cm-activeLine": {backgroundColor: "#6699ff0b"},
-  ".cm-selectionMatch": {backgroundColor: "#aafe661a"},
+  ".cm-activeLine": {backgroundColor: `${light}20`},
+  ".cm-selectionMatch": {backgroundColor: `${light}20`},
 
   "&.cm-focused .cm-matchingBracket, &.cm-focused .cm-nonmatchingBracket": {
-    backgroundColor: "#bad0f847"
+    backgroundColor: `${light}60`
   },
 
   ".cm-gutters": {
@@ -75,7 +119,7 @@ export const portylDarkEditorTheme = EditorView.theme({
   ".cm-foldPlaceholder": {
     backgroundColor: "transparent",
     border: "none",
-    color: "#ddd"
+    color: `${light}`
   },
 
   ".cm-tooltip": {
@@ -95,6 +139,24 @@ export const portylDarkEditorTheme = EditorView.theme({
       backgroundColor: highlightBackground,
       color: ivory
     }
+  },
+
+  ".cm-lintRange-error": {
+    ...createLintSquiggleStyle(blood)
+  },
+
+  ".cm-lintRange-warning": {
+    ...createLintSquiggleStyle(warning)
+  },
+
+  ".cm-diagnostic-error": {
+    background: "#2a313d",
+    borderLeft: `3px solid ${blood}`,
+  },
+
+  ".cm-diagnostic-warning": {
+    background: "#2a313d",
+    borderLeft: `3px solid ${warning}`
   }
 }, {dark: true})
 
