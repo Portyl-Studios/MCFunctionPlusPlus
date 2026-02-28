@@ -2,7 +2,7 @@
 @import '@vscode/codicons/dist/codicon.css';
 
 @theme {
-  --color-codemirror-default: #282c34;
+  --color-codemirror-default: #1a1d23;
   --color-codemirror-highlight: #2a313d;
   --color-codemirror-select: #3f4859;
   --color-codemirror-50: #f0f2f5;
@@ -90,19 +90,19 @@
 }
 
 ::-webkit-scrollbar-track {
-  background: #1a1d23;
+  background: var(--color-codemirror-700);
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #282c34;
+  background: var(--color-codemirror-500);
   border-radius: 5px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #2a313d;
+  background: var(--color-codemirror-highlight);
 }
 
 * {
-  scrollbar-color: #282c34 #1a1d23;
+  scrollbar-color: var(--color-codemirror-500) var(--color-codemirror-700);
   scrollbar-width: auto;
 }

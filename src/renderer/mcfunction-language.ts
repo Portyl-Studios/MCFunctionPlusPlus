@@ -3,15 +3,27 @@ import type { Completion, CompletionContext, CompletionResult } from "@codemirro
 import { json as jsonStreamParser } from "@codemirror/legacy-modes/mode/javascript"
 
 type McFunctionStreamState = {
-  inNbt: boolean
-  nbtDepth: number
   atLineStart: boolean
   atCommandStart: boolean
   isContinuedLine: boolean
   isInvalidLine: boolean
-  jsonState: unknown
-  inSelector: boolean
-  selectorExpectsValue: boolean
+
+  //bracketDepth: number
+  //angleBracketDepth: number // <>
+  squareBracketDepth: number  // []
+  parenDepth: number          // ()
+  braceDepth: number          // {}
+  apostropheDepth: number     // '
+  quotationDepth: number      // "
+  
+  expectingBracketKey: boolean
+  expectingBracketValue: boolean
+  expectingQuotedBracketStringValue: boolean
+  expectingQuotedBracketCommandValue: boolean
+  inQuotedBracketStringValue: boolean
+  inQuotedBracketCommandValue: boolean
+  quotedBracketValueCanStartCommand: boolean
+
   nextExpected: "score_holder" | "objective" | null
 }
 
@@ -559,49 +571,312 @@ rebuildCommandIndexes()
 export const mcfunctionLanguage = StreamLanguage.define<McFunctionStreamState>({
   startState() {
     return {
-      inNbt: false,
-      nbtDepth: 0,
       atLineStart: true,
       atCommandStart: true,
       isContinuedLine: false,
       isInvalidLine: false,
-      jsonState: createJsonState(),
-      inSelector: false,
-      selectorExpectsValue: false,
+
+      squareBracketDepth: 0,
+      parenDepth: 0,
+      braceDepth: 0,
+      apostropheDepth: 0,
+      quotationDepth: 0,
+      
+      expectingBracketKey: true,
+      expectingBracketValue: false,
+      expectingQuotedBracketStringValue: false,
+      expectingQuotedBracketCommandValue: false,
+      inQuotedBracketStringValue: false,
+      inQuotedBracketCommandValue: false,
+      quotedBracketValueCanStartCommand: false,
+
       nextExpected: null,
     }
   },
   copyState(state) {
     return {
-      inNbt: state.inNbt,
-      nbtDepth: state.nbtDepth,
       atLineStart: state.atLineStart,
       atCommandStart: state.atCommandStart,
       isContinuedLine: state.isContinuedLine,
       isInvalidLine: state.isInvalidLine,
-      jsonState: jsonStreamParser.copyState ? jsonStreamParser.copyState(state.jsonState) : state.jsonState,
-      inSelector: state.inSelector,
-      selectorExpectsValue: state.selectorExpectsValue,
+
+      squareBracketDepth: state.squareBracketDepth,
+      parenDepth: state.parenDepth,
+      braceDepth: state.braceDepth,
+      apostropheDepth: state.apostropheDepth,
+      quotationDepth: state.quotationDepth,
+
+      expectingBracketKey: state.expectingBracketKey,
+      expectingBracketValue: state.expectingBracketValue,
+      expectingQuotedBracketStringValue: state.expectingQuotedBracketStringValue,
+      expectingQuotedBracketCommandValue: state.expectingQuotedBracketCommandValue,
+      inQuotedBracketStringValue: state.inQuotedBracketStringValue,
+      inQuotedBracketCommandValue: state.inQuotedBracketCommandValue,
+      quotedBracketValueCanStartCommand: state.quotedBracketValueCanStartCommand,
+
       nextExpected: state.nextExpected,
     }
   },
   token(stream, state) {
 
-    if (!state.inNbt) {
-
-      // Start of line - reset state
-      if (stream.sol())
-      {
-        if (!state.isContinuedLine) {
-          state.atLineStart = true
-          state.atCommandStart = true
-          state.isInvalidLine = false
-        }
+    // Reset state at start of line
+    // Ignore if it's a continued line
+    if (stream.sol())
+    {
+      if (!state.isContinuedLine) {
+        state.atLineStart = true
+        state.atCommandStart = true
+        state.isInvalidLine = false
+      }
+      else {
         state.isContinuedLine = false
       }
+    }
 
-      // Propogate invalid lines if they were marked as such in the previous line and continue to check for line continuation
-      if (state.isInvalidLine) {
+    // Propogate invalid lines if they were marked as such in the previous line and continue to check for line continuation
+    if (state.isInvalidLine) {
+      state.isInvalidLine = true
+      if (/\\\s*$/.test(stream.string)) {
+        state.isContinuedLine = true
+      }
+      stream.skipToEnd()
+      return "invalid"
+    }
+
+    // Consume spaces
+    if (stream.eatSpace()) return null
+
+    // Comments
+    if (state.atLineStart && stream.peek() === "#") {
+      stream.skipToEnd()
+      return "comment"
+    }
+
+    // Brackets and quotes affect state and are important for determining context, so we handle them before anything else
+
+    // Square Brackets []
+    if (!state.inQuotedBracketStringValue && stream.peek() === "[") {
+      state.squareBracketDepth += 1
+      state.expectingBracketKey = true
+      state.expectingBracketValue = false
+      state.expectingQuotedBracketStringValue = false
+      state.expectingQuotedBracketCommandValue = false
+      state.inQuotedBracketStringValue = false
+      state.inQuotedBracketCommandValue = false
+      state.quotedBracketValueCanStartCommand = false
+      stream.next()
+      return "squareBracket"
+    }
+    if (!state.inQuotedBracketStringValue && stream.peek() === "]") {
+      state.squareBracketDepth = Math.max(0, state.squareBracketDepth - 1)
+      if (state.squareBracketDepth === 0) {
+        state.expectingBracketKey = false
+        state.expectingBracketValue = false
+        state.expectingQuotedBracketStringValue = false
+        state.expectingQuotedBracketCommandValue = false
+        state.inQuotedBracketStringValue = false
+        state.inQuotedBracketCommandValue = false
+        state.quotedBracketValueCanStartCommand = false
+      }
+      stream.next()
+      return "squareBracket"
+    }
+
+    // Parentheses ()
+    if (!state.inQuotedBracketStringValue && stream.peek() === "(") {
+      state.parenDepth += 1
+      state.expectingBracketKey = true
+      state.expectingBracketValue = false
+      state.expectingQuotedBracketStringValue = false
+      state.expectingQuotedBracketCommandValue = false
+      state.inQuotedBracketStringValue = false
+      state.inQuotedBracketCommandValue = false
+      state.quotedBracketValueCanStartCommand = false
+      stream.next()
+      return "paren"
+    }
+    if (!state.inQuotedBracketStringValue && stream.peek() === ")") {
+      state.parenDepth = Math.max(0, state.parenDepth - 1)
+      if (state.parenDepth === 0) {
+        state.expectingBracketKey = false
+        state.expectingBracketValue = false
+        state.expectingQuotedBracketStringValue = false
+        state.expectingQuotedBracketCommandValue = false
+        state.inQuotedBracketStringValue = false
+        state.inQuotedBracketCommandValue = false
+        state.quotedBracketValueCanStartCommand = false
+      }
+      stream.next()
+      return "paren"
+    }
+
+    // Braces {}
+    if (
+      !state.inQuotedBracketStringValue && stream.peek() === "{"
+    ) {
+      state.braceDepth += 1
+      state.expectingBracketKey = true
+      state.expectingBracketValue = false
+      state.expectingQuotedBracketStringValue = false
+      state.expectingQuotedBracketCommandValue = false
+      state.inQuotedBracketStringValue = false
+      state.inQuotedBracketCommandValue = false
+      state.quotedBracketValueCanStartCommand = false
+      stream.next()
+      return "brace"
+    }
+    if (!state.inQuotedBracketStringValue && stream.peek() === "}") {
+      state.braceDepth = Math.max(0, state.braceDepth - 1)
+      if (state.braceDepth === 0) {
+        state.expectingBracketKey = false
+        state.expectingBracketValue = false
+        state.expectingQuotedBracketStringValue = false
+        state.expectingQuotedBracketCommandValue = false
+        state.inQuotedBracketStringValue = false
+        state.inQuotedBracketCommandValue = false
+        state.quotedBracketValueCanStartCommand = false
+      }
+      stream.next()
+      return "brace"
+    }
+
+    if (state.inQuotedBracketCommandValue) {
+      if (stream.peek() === '"') {
+        state.inQuotedBracketCommandValue = false
+        stream.next()
+        return "string"
+      }
+    }
+
+    // Quoted bracket value string for "text" / "value" keys only
+    if (state.inQuotedBracketStringValue) {
+      if (state.quotedBracketValueCanStartCommand) {
+        if (stream.peek() === "/") {
+          state.quotedBracketValueCanStartCommand = false
+          state.inQuotedBracketStringValue = false
+          state.inQuotedBracketCommandValue = true
+          state.atCommandStart = true
+          stream.next()
+          return "keyword"
+        }
+        state.quotedBracketValueCanStartCommand = false
+      }
+
+      if (stream.match(/\$\([^)]+\)/)) return "macroName"
+      if (stream.match(/(?:[^"\\$]|\\.)+/)) return "string"
+      if (stream.peek() === '"') {
+        state.inQuotedBracketStringValue = false
+        stream.next()
+        return "string"
+      }
+      stream.next()
+      return "string"
+    }
+
+    if (
+      (state.squareBracketDepth > 0 || state.braceDepth > 0 || state.parenDepth > 0) &&
+      state.expectingBracketValue &&
+      state.expectingQuotedBracketStringValue &&
+      stream.peek() === '"'
+    ) {
+      state.inQuotedBracketStringValue = true
+      state.quotedBracketValueCanStartCommand = state.expectingQuotedBracketCommandValue
+      state.expectingQuotedBracketStringValue = false
+      state.expectingQuotedBracketCommandValue = false
+      stream.next()
+      return "string"
+    }
+
+    if (
+      (state.squareBracketDepth > 0 || state.braceDepth > 0 || state.parenDepth > 0) &&
+      state.expectingBracketKey &&
+      stream.peek() === '"'
+    ) {
+      if (stream.match(/"(text|value|command)"(?=\s*[:=])/)) {
+        state.expectingQuotedBracketStringValue = true
+        state.expectingQuotedBracketCommandValue =
+          stream.current() === '"value"' || stream.current() === '"command"'
+        return "attributeName"
+      }
+
+      if (stream.match(/"[A-Za-z0-9_$.#-]+"(?=\s*[:=])/)) {
+        state.expectingQuotedBracketStringValue = false
+        state.expectingQuotedBracketCommandValue = false
+        return "attributeName"
+      }
+    }
+
+    // Apostrophes
+    if (stream.peek() === "'") {
+      state.apostropheDepth += 1
+      stream.next()
+      return "string"
+    }
+    if (stream.peek() === "'") {
+      state.apostropheDepth = Math.max(0, state.apostropheDepth - 1)
+      stream.next()
+      return "string"
+    }
+
+    // Quotation marks
+    if (stream.peek() === '"') {
+      state.quotationDepth += 1
+      stream.next()
+      return "string"
+    }
+    if (stream.peek() === '"') {
+      state.quotationDepth = Math.max(0, state.quotationDepth - 1)
+      stream.next()
+      return "string"
+    }
+
+    // If we're inside any brackets, we want to check for key=value pairs and comma separators
+    if (state.squareBracketDepth > 0 || state.braceDepth > 0 || state.parenDepth > 0) {
+      // Handle separators (: and =)
+      if (stream.match(/[:=]/)) {
+        state.expectingBracketKey = false
+        state.expectingBracketValue = true
+        return "punctuation"
+      }
+
+      // Handle the Comma separator
+      if (stream.match(",")) {
+        state.expectingBracketKey = true
+        state.expectingBracketValue = false
+        state.expectingQuotedBracketStringValue = false
+        state.expectingQuotedBracketCommandValue = false
+        state.inQuotedBracketStringValue = false
+        state.inQuotedBracketCommandValue = false
+        state.quotedBracketValueCanStartCommand = false
+        return "punctuation"
+      }
+    }
+
+
+    // Preprocessor
+    
+    // Matches lines starting with $
+    if (state.atCommandStart && stream.match("$")) {
+      return "macroName"
+    }
+
+    // Matches the format $(...) for preprocessor variables
+    if (stream.match(/\$\([^)]+\)/)) {
+      return "macroName"
+    }
+
+
+    // Root command
+    if (state.atCommandStart &&
+      stream.match(/[a-z0-9_:-]+/i)
+    ) {
+      const commandToken = normalizeCommandToken(stream.current())
+      state.atLineStart = false
+      state.atCommandStart = false
+      if (rootCommandNames.has(commandToken)) {
+        return "keyword"
+      }
+      else {
         state.isInvalidLine = true
         if (/\\\s*$/.test(stream.string)) {
           state.isContinuedLine = true
@@ -609,204 +884,106 @@ export const mcfunctionLanguage = StreamLanguage.define<McFunctionStreamState>({
         stream.skipToEnd()
         return "invalid"
       }
+    }
 
-      if (stream.eatSpace()) return null
+    // Root commands after execute ... run
+    if (stream.match(/\brun\b/)) {
+      state.atCommandStart = true
+      return "controlKeyword"
+    }
 
-      // Comments
-      if (stream.peek() === "#") {
-        stream.skipToEnd()
-        return "comment"
-      }
+    // Same line operator
+    // Matches \
+    if (stream.match(/\\\s*$/)) {
+      state.isContinuedLine = true
+      return "operator"
+    }
 
-      // NBT, hand over to JSON mode for the rest of the line
-      if (stream.peek() === "{") {
-        state.inNbt = true
-        state.nbtDepth = 0
-        state.jsonState = createJsonState()
-      }
-      else {
+    // Escapes
+    // Matches \ followed by any character (e.g., \[, \], \(, \), \{, \}, \$, etc.)
+    if (stream.match(/\\./)) {
+      return "escape"
+    }
 
-        // Preprocessor
-        
-        // Matches lines starting with $
-        if (state.atCommandStart && stream.match("$")) {
-          return "meta"
+    // Namespaced IDs
+    // Matches patterns like minecraft:stone, custom_namespace:custom_id, etc.
+    // Only match early if we're expecting a key or value in brackets, to avoid coloring normal command tokens that happen to have colons
+    if (state.expectingBracketValue && stream.peek() !== '"' && stream.match(/#?[a-z_][a-z0-9_.-]*:[a-z0-9_./-]+/)) return "namespace"
+    if (
+      state.expectingBracketKey &&
+      (stream.string[stream.pos - 1] === '"' || stream.string[stream.pos - 1] === "'") &&
+      stream.match(/#?[a-z_][a-z0-9_.-]*:[a-z0-9_./-]+(?=["'])/)
+    ) return "namespace"
+
+    // Coordinates
+    // Matches a set of 2 or 3 coordinates with either ~ or ^ (e.g., ~ ~-1 ~, ^1 ^2 ^3, etc.)
+    if (stream.match(/^[~^]-?\d*\.?\d*(?:\s+[~^]-?\d*\.?\d*){1,2}/)) {
+      return "number"
+    }
+
+    // Numbers
+    // Matches patterns like 0, 12, 12.3, 1..2, 1.., ..2, 1t, 2s, 3d, etc.
+    if (stream.match(/^-?\d+\.\.\d+|-?\d+\.\.|\.\.-?\d+|-?\d+(\.\d+)?[bslfdts]?/)) return "number"
+
+
+    // Now we handle the context within brackets
+
+    // Bracket/brace/paren key value pairs
+    // Matches patterns like [type=pig,name=Bob,distance=..5], {key:value}, etc.
+    if (state.squareBracketDepth > 0 || state.braceDepth > 0 || state.parenDepth > 0) {
+      
+      // Match the actual text (key or value)
+      const match = stream.match(/[A-Za-z0-9_$.#-]+/)
+      if (match && typeof match !== "boolean") {
+        if (state.expectingBracketKey) {
+          // Color for the KEY (e.g., 'type' or 'name')
+          return "attributeName" 
+        } else if (state.expectingBracketValue) {
+          state.expectingQuotedBracketStringValue = false
+          state.expectingQuotedBracketCommandValue = false
+          // Color for the VALUE (e.g., 'pig' or '1..5')
+          return "attributeValue"
         }
-
-        // Matches the format $(...) for preprocessor variables
-        if (stream.match(/\$\([^)]+\)/)) {
-          return "variable"
-        }
-
-        // Root command
-        if (state.atCommandStart &&
-          stream.match(/[a-z0-9_:-]+/i)
-        ) {
-          const commandToken = normalizeCommandToken(stream.current())
-          state.atLineStart = false
-          state.atCommandStart = false
-          if (rootCommandNames.has(commandToken)) {
-            return "keyword"
-          }
-          else {
-            state.isInvalidLine = true
-            if (/\\\s*$/.test(stream.string)) {
-              state.isContinuedLine = true
-            }
-            stream.skipToEnd()
-            return "invalid"
-          }
-        }
-
-        // Root commands after execute ... run
-        if (stream.match(/\brun\b/)) {
-          state.atCommandStart = true
-          return "controlKeyword"
-        }
-
-        // Control keywords
-        // Matches if, unless
-        if (stream.match(/\b(if|unless)\b/)) {
-          return "controlKeyword"
-        }
-
-        // Same line operator
-        // Matches \
-        if (stream.match(/\\\s*$/)) {
-          state.isContinuedLine = true
-          return "operator"
-        }
-
-        // Namespaced IDs and literals
-        if (stream.match(/[a-zA-Z]+:[^\s]+/)) return "namespace"
-
-        // Numbers
-        // Matches patterns like 0, 12, 12.3, 1..2, 1.., ..2, 1t, 2s, 3d, etc.
-        if (stream.match(/^-?\d+\.\.\d+|-?\d+\.\.|\.\.-?\d+|-?\d+(\.\d+)?[bslfdts]?/)) return "number"
-
-        // Entity selectors
-        // Matches patterns like [type=pig,name=Bob,distance=..5]
-
-        // 1. Enter Selector Mode
-        if (stream.peek() === "[") {
-          state.inSelector = true
-          state.selectorExpectsValue = false
-          stream.next()
-          return "squareBracket"
-        }
-
-        // 2. Exit Selector Mode
-        if (stream.peek() === "]") {
-          state.inSelector = false
-          stream.next()
-          return "squareBracket"
-        }
-
-        // 3. Handle Content Inside Selector
-        if (state.inSelector) {
-          if (stream.eatSpace()) return null
-
-          // Handle the Equals sign
-          if (stream.match("=")) {
-            state.selectorExpectsValue = true
-            return "separator"
-          }
-
-          // Handle the Comma separator
-          if (stream.match(",")) {
-            state.selectorExpectsValue = false
-            return "separator"
-          }
-
-          // Match the actual text (key or value)
-          const match = stream.match(/[A-Za-z0-9_$.#-]+/)
-          if (match && typeof match !== "boolean") {
-            if (!state.selectorExpectsValue) {
-              // Color for the KEY (e.g., 'type' or 'name')
-              return "attributeName" 
-            } else {
-              // Color for the VALUE (e.g., 'pig' or '1..5')
-              return "attributeValue" 
-            }
-          }
-        }
-
-        // Entity selectors
-        // Matches patterns like @e, @p, @a, @s
-        if (stream.match(/@[a-z]/)) return "labelName"
-
-        // Special case for operator keywords
-        // Matches add, remove, reset, operation
-        if (stream.match(/\b(operation|add|remove|get|set|reset)\b/)) return "operatorKeyword"
-
-        // Math operators
-        // Matches =, +=, -=, *=, /=, %=, >< (swapping), <, <=, >, >=, !=, matches
-        if (stream.match(/[=<>]|[-+*/%\!<>]=|><|matches/)) return "operator"
-
-        // Custom player name variables
-        // Matches patterns like test$123, player_name$score, etc.
-        if (stream.match(/[a-zA-Z0-9_.]+\$[a-zA-Z0-9_.]+/)) return "variableName"
-
-        // Strings
-        // Catch all for strings (quoted)
-        if (stream.match(/"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'/)) return "string"
-        
-        // Command tokens
-        const match = stream.match(/[A-Za-z0-9_$.#-]+/)
-        if (!match || typeof match === "boolean") {
-          if (!match) stream.next()
-          return null
-        }
-
-        const token = match[0]
-        const normalized = normalizeCommandToken(token)
-
-        if (state.nextExpected === "score_holder") {
-          state.nextExpected = "objective" 
-          //return "variableName" 
-        }
-
-        if (state.nextExpected === "objective") {
-          state.nextExpected = null
-          //return "type" 
-        }
-
-        const scoreTriggers = ["score", "set", "add", "remove", "operation", "reset"]
-        if (scoreTriggers.includes(normalized)) {
-          state.nextExpected = "score_holder"
-          //return "keyword"
-        }
-
-        stream.next()
-        return null
       }
 
     }
 
-    const startPos = stream.pos
-    const tokenType = jsonStreamParser.token ? jsonStreamParser.token(stream, state.jsonState) : null
+    
+    // Namespaced IDs
+    // Matches patterns like minecraft:stone, custom_namespace:custom_id, etc.
+    // Secondary match for namespaced IDs that appear outside of brackets or after keywords, to catch all the other cases after we've handled brackets above
+    if (stream.match(/#?[a-z_][a-z0-9_.-]*:[a-z0-9_./-]+/)) return "namespace"
 
-    if (stream.pos === startPos) {
-      stream.next()
-      return tokenType
+    // Control keywords
+    // Matches if, unless
+    if (stream.match(/\b(if|unless)\b/)) {
+      //return "controlKeyword"
     }
 
-    const consumed = stream.string.slice(startPos, stream.pos)
+    // Entity selectors
+    // Matches patterns like @e, @p, @a, @s
+    if (stream.match(/@[a-z]/)) return "labelName"
 
-    if (tokenType !== "string") {
-      for (const character of consumed) {
-        if (character === "{") state.nbtDepth += 1
-        if (character === "}") state.nbtDepth -= 1
-      }
-    }
+    // Special case for operator keywords
+    // Matches add, remove, operation, get, set, reset, merge, modify, append, insert, prepend
+    if (stream.match(/\b(add|remove|operation|get|set|reset|merge|modify|append|insert|prepend)\b/)) return "operatorKeyword"
 
-    if (state.nbtDepth <= 0) {
-      state.inNbt = false
-      state.nbtDepth = 0
-      state.atLineStart = false
-      state.jsonState = createJsonState()
-    }
+    // Math operators
+    // Matches =, +=, -=, *=, /=, %=, >< (swapping), <, <=, >, >=, !=, matches
+    if (stream.match(/[=<>]|[-+*/%\!<>]=|><|matches/)) return "operator"
 
-    return tokenType
+    // Custom player name variables
+    // Matches patterns like:
+    // - test$123, player_name$score, etc.
+    // - $score, $player_name, etc.
+    // - #score, #player_name, etc.
+    if (stream.match(/[a-zA-Z0-9_.]+\$[a-zA-Z0-9_.]+|[\$\#][a-zA-Z0-9_.]+/)) return "variableName"
+
+    // Generic identifiers (consume whole words so suffixes like "Target" don't tokenize as "get")
+    if (stream.match(/[A-Za-z_][A-Za-z0-9_.-]*/)) return null
+
+    stream.next()
+    return null
+
   },
 })
