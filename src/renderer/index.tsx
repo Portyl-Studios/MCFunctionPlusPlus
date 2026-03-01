@@ -1740,6 +1740,7 @@ function CodeEditor() {
               onFileRenamed={(oldRelativePath, newName) => handleFileRenamed(datapack.dir, oldRelativePath, newName)}
               onFileDeleted={(relativePath) => handleFileDeleted(datapack.dir, relativePath)}
               onContextMenuRequest={handleDatapackTreeContextMenu}
+              modifiedFileKeys={modifiedFiles}
             />
           ))}
         </div>
@@ -2009,7 +2010,7 @@ function CodeEditor() {
 
                         if (modifiedFiles.has(fileKey)) {
                           const indicator = document.createElement("div")
-                          indicator.className = `codicon codicon-circle-filled text-amber-400 ml-2`
+                          indicator.className = `codicon codicon-circle-filled text-orange-300 ml-2`
                           ghost.appendChild(indicator)
                         }
 
@@ -2073,7 +2074,7 @@ function CodeEditor() {
 
                     {/* Indicators */}
                     {modifiedFiles.has(fileKey) &&
-                      <div className={`codicon codicon-circle-filled text-amber-400`}/>
+                      <div className={`codicon codicon-circle-filled text-orange-300`}/>
                     }
 
                     {/* Close Button */}

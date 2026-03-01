@@ -18,6 +18,7 @@ interface DataPackTreeProps {
   onFileRenamed?: (oldRelativePath: string, newName: string) => Promise<boolean>
   onFileDeleted?: (relativePath: string) => Promise<boolean>
   onContextMenuRequest?: (event: React.MouseEvent, items: MenuItem[]) => void
+  modifiedFileKeys?: Set<string>
   externalSelectedPath?: string | null
   externalSelectedFileKey?: string | null
   externalExpandedPaths?: Set<string>
@@ -144,7 +145,7 @@ const collectDirectoryPaths = (node: TreeNode, pathKey: string, output: string[]
   }
 }
 
-export function DatapackTree({ paths, className, folderName, rootId, rootName, rootPackVersion, basePath, onSelect, onFolderCreated, onFileRenamed, onFileDeleted, onContextMenuRequest, externalSelectedPath, externalSelectedFileKey, externalExpandedPaths, onExpandedPathsChange, treeContainerRef }: DataPackTreeProps) {
+export function DatapackTree({ paths, className, folderName, rootId, rootName, rootPackVersion, basePath, onSelect, onFolderCreated, onFileRenamed, onFileDeleted, onContextMenuRequest, modifiedFileKeys, externalSelectedPath, externalSelectedFileKey, externalExpandedPaths, onExpandedPathsChange, treeContainerRef }: DataPackTreeProps) {
   const tree = React.useMemo(() => {
     const builtTree = buildTree(paths, folderName)
     // Enrich with schema starting from the root schema node
@@ -208,6 +209,35 @@ export function DatapackTree({ paths, className, folderName, rootId, rootName, r
     setExpandedPaths(new Set(dirs))
     setSelectedPath(null)
   }, [tree, isExternalExpanded, externalSelectedPath])
+
+  const modifiedPathKeys = React.useMemo(() => {
+    const next = new Set<string>()
+    if (!basePath || !modifiedFileKeys?.size) return next
+
+    for (const fileKey of modifiedFileKeys) {
+      const separatorIndex = fileKey.indexOf('|')
+      if (separatorIndex === -1) continue
+
+      const datapackDir = fileKey.slice(0, separatorIndex)
+      if (datapackDir !== basePath) continue
+
+      const relativePath = fileKey
+        .slice(separatorIndex + 1)
+        .replace(/\\/g, '/')
+        .replace(/^\/+/, '')
+
+      next.add(tree.name)
+
+      const segments = relativePath.split('/').filter(Boolean)
+      let currentPath = tree.name
+      for (const segment of segments) {
+        currentPath = `${currentPath}/${segment}`
+        next.add(currentPath)
+      }
+    }
+
+    return next
+  }, [basePath, modifiedFileKeys, tree.name])
 
   const toggleExpanded = (pathKey: string) => {
     const next = new Set(effectiveExpandedPaths)
@@ -436,10 +466,18 @@ export function DatapackTree({ paths, className, folderName, rootId, rootName, r
       ? detectEditorLanguage(relativePath || node.name).codicon
       : 'codicon-file'
     const nodeFileKey = basePath && relativePath ? `${basePath}|${relativePath}` : null
+    const isModified = modifiedPathKeys.has(pathKey)
     const isSelected = node.isFile && externalSelectedFileKey && nodeFileKey
       ? externalSelectedFileKey === nodeFileKey
       : effectiveSelectedPath === pathKey
     const isRoot = depth === 0
+    const nodeNameWeightClass = node.isFile ? 'font-normal' : (isRoot ? 'font-bold' : 'font-semibold')
+    const nodeNameColorClass = node.schemaNode
+      ? 'text-emerald-300'
+      : isModified
+        ? 'text-orange-300'
+        : 'text-codemirror-100'
+    const nodeNameStyleClass = node.experimental ? 'italic' : ''
 
     return (
       <li key={pathKey}>
@@ -450,7 +488,7 @@ export function DatapackTree({ paths, className, folderName, rootId, rootName, r
                 el.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'nearest' })
               }
             } : null}
-            className={`flex items-center cursor-pointer rounded px-1  ${isSelected ? 'bg-codemirror-select' : 'hover:bg-codemirror-highlight'} ${isRoot ? 'py-2' : ''}`}
+            className={`flex min-w-0 items-center cursor-pointer rounded px-1  ${isSelected ? 'bg-codemirror-select' : 'hover:bg-codemirror-highlight'} ${isRoot ? 'py-2' : ''}`}
             style={{ paddingLeft: padding }}
             onClick={() => handleSelect(pathKey, !!node.isFile, !!hasChildren)}
             onContextMenu={(e) => handleRightClick(e, node, pathKey)}
@@ -473,36 +511,44 @@ export function DatapackTree({ paths, className, folderName, rootId, rootName, r
               ) : (<div></div>)}
             </span>
 
-            {/* Name */}
-            <span className={`
-              ${node.isFile ? 'font-normal' : (isRoot ? 'font-bold' : 'font-semibold')}
-              ${node.schemaNode ? 'text-emerald-300' : 'text-codemirror-100'}
-              ${node.experimental ? 'italic' : ''}
-            `}>
-              {isRoot ? rootName || node.name : node.name}
-            </span>
+            <div className="flex min-w-0 flex-1 items-center overflow-hidden">
+              {/* Name */}
+              <span className={`min-w-0 truncate
+                ${nodeNameWeightClass} ${nodeNameColorClass} ${nodeNameStyleClass}`}
+                title={isRoot ? (rootName || node.name) : node.name}
+              >
+                {isRoot ? rootName || node.name : node.name}
+              </span>
 
-            {/* Pillboxes */}
-            {isRoot && rootPackVersion && (
-              <span className="pillbox bg-indigo-800 text-indigo-100">
-                v{rootPackVersion}
-              </span>
-            )}
-            {isRoot && node.packFormatVersion && (
-              <span className="pillbox">
-                {node.packFormatVersion}
-              </span>
-            )}
-            {node.contentType && (
-              <span className="pillbox">
-                {node.contentType}
-              </span>
-            )}
-            {node.experimental && (
-              <span className="pillbox bg-amber-900 text-amber-400">
-                exp
-              </span>
-            )}
+              {/* Pillboxes */}
+              {isRoot && rootPackVersion && (
+                <span className="pillbox bg-indigo-800 text-indigo-100">
+                  v{rootPackVersion}
+                </span>
+              )}
+              {isRoot && node.packFormatVersion && (
+                <span className="pillbox">
+                  {node.packFormatVersion}
+                </span>
+              )}
+              {node.contentType && (
+                <span className="pillbox">
+                  {node.contentType}
+                </span>
+              )}
+              {node.experimental && (
+                <span className="pillbox bg-amber-900 text-amber-400">
+                  exp
+                </span>
+              )}
+            </div>
+
+            <div className="ml-auto flex shrink-0 items-center">
+              {isModified && (
+                <i className="codicon codicon-diff-modified text-orange-300 ml-1 shrink-0" />
+              )}
+            </div>
+
           </div>
         </Tooltip>
         {hasChildren && isExpanded && (
