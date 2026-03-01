@@ -519,7 +519,6 @@ export function DatapackTree({ paths, className, folderName, rootId, rootName, r
               {/* Name */}
               <span className={`min-w-0 truncate
                 ${nodeNameWeightClass} ${nodeNameColorClass} ${nodeNameStyleClass}`}
-                title={isRoot ? (rootName || node.name) : node.name}
               >
                 {isRoot ? rootName || node.name : node.name}
               </span>

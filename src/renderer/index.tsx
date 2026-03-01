@@ -2198,7 +2198,6 @@ function CodeEditor() {
               border-b border-codemirror-600
               text-codemirror-300 text-xs
               flex items-center"
-              title={activeRelativePath ?? "No file open"}
             >
               <span className="truncate">{activeFileRelativePathLabel}</span>
             </div>
