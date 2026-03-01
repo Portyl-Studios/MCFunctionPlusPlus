@@ -3,6 +3,7 @@ import datapackSchema from '../../resources/datapackschema/94.1.json'
 import { ContextMenu, useContextMenu } from './contextmenu'
 import type { MenuItem } from './menuitem'
 import { Dialog, useDialog } from './dialog'
+import { Tooltip } from './tooltip'
 
 interface DataPackTreeProps {
   paths: string[]
@@ -439,77 +440,68 @@ export function DatapackTree({ paths, className, folderName, rootId, rootName, r
 
     return (
       <li key={pathKey}>
-        <div
-          ref={isSelected ? (el) => {
-            if (el && treeContainerRef?.current) {
-              el.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'nearest' })
-            }
-          } : null}
-          className={`flex items-center cursor-pointer rounded px-1  ${isSelected ? 'bg-codemirror-select' : 'hover:bg-codemirror-highlight'} ${isRoot ? 'py-2' : ''}`}
-          style={{ paddingLeft: padding }}
-          onClick={() => handleSelect(pathKey, !!node.isFile, !!hasChildren)}
-          onContextMenu={(e) => handleRightClick(e, node, pathKey)}
-          title={node.description || ''}
-        >
-          <span className={`mr-2 flex items-center text-codemirror-100 h-4 ${isRoot ? 'w-auto' : 'w-4'}`}>
-            {hasChildren ? (
-              isExpanded ? (
-                <i className="codicon codicon-chevron-down" />
+        <Tooltip content={node.description} disabled={!node.description}>
+          <div
+            ref={isSelected ? (el) => {
+              if (el && treeContainerRef?.current) {
+                el.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'nearest' })
+              }
+            } : null}
+            className={`flex items-center cursor-pointer rounded px-1  ${isSelected ? 'bg-codemirror-select' : 'hover:bg-codemirror-highlight'} ${isRoot ? 'py-2' : ''}`}
+            style={{ paddingLeft: padding }}
+            onClick={() => handleSelect(pathKey, !!node.isFile, !!hasChildren)}
+            onContextMenu={(e) => handleRightClick(e, node, pathKey)}
+          >
+            <span className={`mr-2 flex items-center text-codemirror-100 h-4 ${isRoot ? 'w-auto' : 'w-4'}`}>
+              {hasChildren ? (
+                isExpanded ? (
+                  <i className="codicon codicon-chevron-down" />
+                ) : (
+                  <i className="codicon codicon-chevron-right" />
+                )
               ) : (
-                <i className="codicon codicon-chevron-right" />
-              )
-            ) : (
-              <i className="codicon codicon-file" />
-            )}
-            {/* Datapack ID */}
-            {isRoot ? (
-              <span className="pillbox px-2 pt-1 pb-0.5 bg-emerald-800 text-sm font-mono font-bold text-codemirror-50">
-                {rootId || 'ID'}
+                <i className="codicon codicon-file" />
+              )}
+              {/* Datapack ID */}
+              {isRoot ? (
+                <span className="pillbox px-2 pt-1 pb-0.5 bg-emerald-800 text-sm font-mono font-bold text-codemirror-50">
+                  {rootId || 'ID'}
+                </span>
+              ) : (<div></div>)}
+            </span>
+
+            {/* Name */}
+            <span className={`
+              ${node.isFile ? 'font-normal' : (isRoot ? 'font-bold' : 'font-semibold')}
+              ${node.schemaNode ? 'text-emerald-300' : 'text-codemirror-100'}
+              ${node.experimental ? 'italic' : ''}
+            `}>
+              {isRoot ? rootName || node.name : node.name}
+            </span>
+
+            {/* Pillboxes */}
+            {isRoot && rootPackVersion && (
+              <span className="pillbox bg-indigo-800 text-indigo-100">
+                v{rootPackVersion}
               </span>
-            ) : (<div></div>)}
-          </span>
-
-          {/* Name */}
-          <span className={`
-            ${node.isFile ? 'font-normal' : (isRoot ? 'font-bold' : 'font-semibold')}
-            ${node.schemaNode ? 'text-emerald-300' : 'text-codemirror-100'}
-            ${node.experimental ? 'italic' : ''}
-          `}>
-            {isRoot ? rootName || node.name : node.name}
-          </span>
-
-          {/* Pillboxes */}
-          {isRoot && rootPackVersion && (
-            <span className="pillbox bg-indigo-800 text-indigo-100">
-              v{rootPackVersion}
-            </span>
-          )}
-          {isRoot && node.packFormatVersion && (
-            <span className="pillbox">
-              {node.packFormatVersion}
-            </span>
-          )}
-          {/*isRoot && node.minMinecraftVersion && (
-            <span className="pillbox">
-              {node.minMinecraftVersion}
-            </span>
-          )*/}
-          {/*isRoot && node.maxMinecraftVersion && (
-            <span className="pillbox">
-              {node.maxMinecraftVersion}
-            </span>
-          )*/}
-          {node.contentType && (
-            <span className="pillbox">
-              {node.contentType}
-            </span>
-          )}
-          {node.experimental && (
-            <span className="pillbox bg-amber-900 text-amber-400">
-              exp
-            </span>
-          )}
-        </div>
+            )}
+            {isRoot && node.packFormatVersion && (
+              <span className="pillbox">
+                {node.packFormatVersion}
+              </span>
+            )}
+            {node.contentType && (
+              <span className="pillbox">
+                {node.contentType}
+              </span>
+            )}
+            {node.experimental && (
+              <span className="pillbox bg-amber-900 text-amber-400">
+                exp
+              </span>
+            )}
+          </div>
+        </Tooltip>
         {hasChildren && isExpanded && (
           <ul className="mt-1 space-y-1">
             {sortChildren(node.children!).map((child) =>
