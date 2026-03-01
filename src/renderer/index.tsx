@@ -2185,14 +2185,18 @@ function CodeEditor() {
 
         <div className="flex-1"/>
 
-        {/* Line/Column */}
-        <div className="footer-element">Ln {cursorMarkerInfo.line}, Col {cursorMarkerInfo.column} {cursorMarkerInfo.selectedCharacters ? `(${cursorMarkerInfo.selectedCharacters} selected)` : ""}</div>
+        {activeFile && (
+          <>
+            {/* Line/Column */}
+            <div className="footer-element">Ln {cursorMarkerInfo.line}, Col {cursorMarkerInfo.column} {cursorMarkerInfo.selectedCharacters ? `(${cursorMarkerInfo.selectedCharacters} selected)` : ""}</div>
 
-        {/* Language */}
-        <div className="footer-element footer-button">
-          <span className="codicon codicon-file-code"></span>
-          {activeLanguage.label}
-        </div>
+            {/* Language */}
+            <div className="footer-element footer-button">
+              <span className="codicon codicon-file-code"></span>
+              {activeLanguage.label}
+            </div>
+          </>
+        )}
 
       </div>
 
