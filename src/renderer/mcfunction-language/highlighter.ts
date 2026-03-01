@@ -9,6 +9,19 @@ const streamErrorHandling = {
       state.atLineStart = true
       state.atCommandStart = true
       state.isInvalidLine = false
+      state.squareBracketDepth = 0
+      state.parenDepth = 0
+      state.braceDepth = 0
+      state.apostropheDepth = 0
+      state.quotationDepth = 0
+      state.expectingBracketKey = true
+      state.expectingBracketValue = false
+      state.expectingQuotedBracketStringValue = false
+      state.expectingQuotedBracketCommandValue = false
+      state.inQuotedBracketStringValue = false
+      state.inQuotedBracketCommandValue = false
+      state.quotedBracketValueCanStartCommand = false
+      state.nextExpected = null
       return
     }
 
@@ -247,30 +260,15 @@ const highlighter = {
       }
     }
 
-    // Node: apostrophe quote token (single quote).
+    // Node: quote tokens (single and double quote).
     if (stream.peek() === "'") {
       state.apostropheDepth += 1
       stream.next()
       return "string"
     }
 
-    // Node: apostrophe quote token (single quote closing).
-    if (stream.peek() === "'") {
-      state.apostropheDepth = Math.max(0, state.apostropheDepth - 1)
-      stream.next()
-      return "string"
-    }
-
-    // Node: quotation mark token (double quote).
     if (stream.peek() === '"') {
       state.quotationDepth += 1
-      stream.next()
-      return "string"
-    }
-
-    // Node: quotation mark token (double quote closing).
-    if (stream.peek() === '"') {
-      state.quotationDepth = Math.max(0, state.quotationDepth - 1)
       stream.next()
       return "string"
     }

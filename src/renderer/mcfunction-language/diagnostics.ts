@@ -9,17 +9,29 @@ const findCommandSuggestions = (command: string) => {
     .slice(0, 3)
 }
 
-type BracketEntry = { char: "[" | "(" | "{"; pos: number }
+type BracketChar = "[" | "(" | "{"
+type ContainerKind = "object" | "list" | "paren"
+type ObjectContainerMode = "key-or-end" | "after-key" | "value" | "comma-or-end"
+type ListContainerMode = "value-or-end" | "after-key" | "comma-or-end"
+
+type ContainerEntry =
+  | { kind: "object"; char: "{"; pos: number; mode: ObjectContainerMode }
+  | { kind: "list"; char: "["; pos: number; mode: ListContainerMode }
+  | { kind: "paren"; char: "("; pos: number; mode: ListContainerMode }
 
 type DiagnosticParseState = {
-  bracketStack: BracketEntry[]
+  containerStack: ContainerEntry[]
   quote: "'" | '"' | null
+  quoteStartPos: number | null
+  quoteRole: "object-key" | "value" | null
   escaped: boolean
 }
 
 const createDiagnosticParseState = (): DiagnosticParseState => ({
-  bracketStack: [],
+  containerStack: [],
   quote: null,
+  quoteStartPos: null,
+  quoteRole: null,
   escaped: false,
 })
 
@@ -29,90 +41,9 @@ const hasLineContinuation = (text: string) => !isCommentLine(text) && /\\\s*$/.t
 
 const stripLineContinuation = (text: string) => (hasLineContinuation(text) ? text.replace(/\\\s*$/, "") : text)
 
-const validateBracketsAndQuotes = (
-  text: string,
-  lineFrom: number,
-  parseState: DiagnosticParseState,
-  finalizeBlock: boolean,
-): Diagnostic[] => {
-  const diagnostics: Diagnostic[] = []
-  const scanText = text
-
-  for (let index = 0; index < scanText.length; index += 1) {
-    const char = scanText[index]
-
-    if (parseState.escaped) {
-      parseState.escaped = false
-      continue
-    }
-
-    if (char === "\\") {
-      parseState.escaped = true
-      continue
-    }
-
-    if (parseState.quote) {
-      if (char === parseState.quote) parseState.quote = null
-      continue
-    }
-
-    if (char === "'" || char === '"') {
-      parseState.quote = char
-      continue
-    }
-
-    if (char === "[" || char === "(" || char === "{") {
-      parseState.bracketStack.push({ char, pos: lineFrom + index })
-      continue
-    }
-
-    if (char === "]" || char === ")" || char === "}") {
-      const expectedOpen = char === "]" ? "[" : char === ")" ? "(" : "{"
-      const top = parseState.bracketStack[parseState.bracketStack.length - 1]
-      if (!top || top.char !== expectedOpen) {
-        diagnostics.push({
-          from: lineFrom + index,
-          to: lineFrom + index + 1,
-          severity: "error",
-          message: `Unexpected '${char}'.`,
-        })
-        continue
-      }
-      parseState.bracketStack.pop()
-    }
-  }
-
-  if (!finalizeBlock) return diagnostics
-
-  if (parseState.quote) {
-    diagnostics.push({
-      from: lineFrom + Math.max(0, scanText.length - 1),
-      to: lineFrom + scanText.length,
-      severity: "error",
-      message: "Unterminated string literal.",
-    })
-  }
-
-  for (const remaining of parseState.bracketStack) {
-    diagnostics.push({
-      from: remaining.pos,
-      to: remaining.pos + 1,
-      severity: "error",
-      message: `Unclosed '${remaining.char}'.`,
-    })
-  }
-
-  parseState.bracketStack = []
-  parseState.quote = null
-  parseState.escaped = false
-
-  return diagnostics
-}
-
 export const mcfunctionDiagnosticSource = (view: EditorView): Diagnostic[] => {
   const diagnostics: Diagnostic[] = []
   const doc = view.state.doc
-  const parseState = createDiagnosticParseState()
 
   const getContinuationBlockEndLine = (startLineNumber: number) => {
     let endLineNumber = startLineNumber
@@ -125,17 +56,12 @@ export const mcfunctionDiagnosticSource = (view: EditorView): Diagnostic[] => {
   }
 
   let isContinuationLine = false
-  let lastProcessedLineFrom = 0
-  let lastProcessedLineLength = 0
 
   for (let lineNumber = 1; lineNumber <= doc.lines; lineNumber += 1) {
     const line = doc.line(lineNumber)
     const text = line.text
     const hasContinuation = hasLineContinuation(text)
     const textForValidation = stripLineContinuation(text)
-
-    lastProcessedLineFrom = line.from
-    lastProcessedLineLength = textForValidation.length
 
     if (!text.trim() || isCommentLine(text)) {
       isContinuationLine = hasContinuation
@@ -171,8 +97,6 @@ export const mcfunctionDiagnosticSource = (view: EditorView): Diagnostic[] => {
       const rawCommandToken = commandMatch[1].split(/\s+/)[0]
       const command = normalizeCommandToken(rawCommandToken)
       if (!mcfunctionStore.rootCommandNames.has(command)) {
-        const fullMatch = commandMatch[0]
-        const commandStartInLine = fullMatch.lastIndexOf(rawCommandToken)
         const suggestions = findCommandSuggestions(command)
         const suggestionText = suggestions.length > 0 ? ` Did you mean: ${suggestions.join(", ")}?` : ""
 
@@ -188,12 +112,7 @@ export const mcfunctionDiagnosticSource = (view: EditorView): Diagnostic[] => {
       }
     }
 
-    diagnostics.push(...validateBracketsAndQuotes(textForValidation, line.from, parseState, !hasContinuation))
     isContinuationLine = hasContinuation
-  }
-
-  if (parseState.quote || parseState.bracketStack.length > 0) {
-    diagnostics.push(...validateBracketsAndQuotes("", lastProcessedLineFrom + lastProcessedLineLength, parseState, true))
   }
 
   return diagnostics
