@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from "react"
 import ReactDOM from "react-dom/client"
 
-import { EditorState } from "@codemirror/state"
+import { EditorState, type Extension } from "@codemirror/state"
 import {
   EditorView,
   keymap,
@@ -18,6 +18,7 @@ import { foldGutter, foldKeymap, indentOnInput, syntaxHighlighting, defaultHighl
 import { autocompletion, closeBrackets, closeBracketsKeymap, completionKeymap, startCompletion } from "@codemirror/autocomplete"
 import { searchKeymap, highlightSelectionMatches } from "@codemirror/search"
 import { linter, lintKeymap } from "@codemirror/lint"
+import { json, jsonParseLinter } from "@codemirror/lang-json"
 import { portylDarkTheme } from "./themes/portyl-dark"
 import "./index.css"
 import { Section, ResizeHandle, useResizableSection } from "./section"
@@ -63,6 +64,31 @@ const EXPLORER_EXPANDED_PREFERENCE_KEY = "explorerExpandedPaths"
 
 let enterAutocompleteTimer: number | null = null
 
+type EditorLanguageId = "mcfunction" | "json" | "plaintext"
+
+type EditorLanguageInfo = {
+  id: EditorLanguageId
+  label: string
+}
+
+const detectEditorLanguage = (relativePath: string | null | undefined): EditorLanguageInfo => {
+  if (!relativePath) {
+    return { id: "plaintext", label: "Plain Text" }
+  }
+
+  const normalized = relativePath.replace(/\\/g, "/").toLowerCase()
+
+  if (normalized.endsWith(".mcfunction")) {
+    return { id: "mcfunction", label: "MCFunction" }
+  }
+
+  if (normalized.endsWith(".json") || normalized.endsWith(".mcmeta")) {
+    return { id: "json", label: "JSON" }
+  }
+
+  return { id: "plaintext", label: "Plain Text" }
+}
+
 // Custom keymap to trigger autocomplete on Enter
 const mcfunctionKeymap = keymap.of([
   {
@@ -89,6 +115,36 @@ const mcfunctionKeymap = keymap.of([
   }
 ])
 
+const getLanguageProcessingExtensions = (languageId: EditorLanguageId): Extension[] => {
+  if (languageId === "mcfunction") {
+    return [
+      autocompletion({
+        override: [mcfunctionCompletionSource],
+        activateOnTyping: true,
+        closeOnBlur: true,
+        maxRenderedOptions: 100,
+      }),
+      linter(mcfunctionDiagnosticSource),
+      mcfunctionKeymap,
+      mcfunctionLanguage,
+    ]
+  }
+
+  if (languageId === "json") {
+    return [
+      autocompletion({
+        activateOnTyping: true,
+        closeOnBlur: true,
+        maxRenderedOptions: 100,
+      }),
+      linter(jsonParseLinter()),
+      json(),
+    ]
+  }
+
+  return []
+}
+
 const codeMirrorSetupExtensions = [
   lineNumbers(),
   highlightActiveLineGutter(),
@@ -102,17 +158,9 @@ const codeMirrorSetupExtensions = [
   syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
   bracketMatching(),
   closeBrackets(),
-  autocompletion({
-    override: [mcfunctionCompletionSource],
-    activateOnTyping: true,
-    closeOnBlur: true,
-    maxRenderedOptions: 100,
-  }),
-  linter(mcfunctionDiagnosticSource),
   rectangularSelection(),
   highlightActiveLine(),
   highlightSelectionMatches(),
-  mcfunctionKeymap,
   keymap.of([
     ...closeBracketsKeymap,
     ...defaultKeymap,
@@ -785,7 +833,7 @@ function CodeEditor() {
     focusFileInExplorer(fileKey)
     
     if (!fileKey) {
-      view.setState(createEditorState(""))
+      view.setState(createEditorState("", null))
       return
     }
     
@@ -817,7 +865,7 @@ function CodeEditor() {
       return
     }
 
-    const newState = createEditorState(contents)
+    const newState = createEditorState(contents, fileKey)
     fileEditorStatesRef.current.set(fileKey, newState)
     view.setState(newState)
     view.focus()
@@ -1028,41 +1076,46 @@ function CodeEditor() {
     })()
   }, [])
 
-  const createEditorState = (doc: string) => EditorState.create({
-    doc,
-    extensions: [
-      portylDarkTheme,
-      ...codeMirrorSetupExtensions,
-      EditorView.lineWrapping,
-      EditorView.updateListener.of((update) => {
-        if (update.docChanged && activeFileRef.current) {
-          const fileKey = activeFileRef.current
-          const newContent = update.state.doc.toString()
+  const createEditorState = (doc: string, fileKey: string | null = activeFileRef.current) => {
+    const relativePath = fileKey ? parseFileKey(fileKey).relativePath : null
+    const language = detectEditorLanguage(relativePath)
 
-          setModifiedFiles((prev) => new Set(prev).add(fileKey))
+    return EditorState.create({
+      doc,
+      extensions: [
+        portylDarkTheme,
+        ...codeMirrorSetupExtensions,
+        EditorView.lineWrapping,
+        EditorView.updateListener.of((update) => {
+          if (update.docChanged && activeFileRef.current) {
+            const fileKey = activeFileRef.current
+            const newContent = update.state.doc.toString()
 
-          setOpenedFiles((prev) =>
-            prev.map((f) =>
-              createFileKey(f.datapackDir, f.relativePath) === fileKey
-                ? { ...f, content: newContent }
-                : f
+            setModifiedFiles((prev) => new Set(prev).add(fileKey))
+
+            setOpenedFiles((prev) =>
+              prev.map((f) =>
+                createFileKey(f.datapackDir, f.relativePath) === fileKey
+                  ? { ...f, content: newContent }
+                  : f
+              )
             )
-          )
 
-          scheduleAutoSave(fileKey, newContent)
-        }
-      }),
-      EditorView.domEventHandlers({
-        focus: () => {
-          window.requestAnimationFrame(() => {
-            scrollTabIntoView(activeFileRef.current, "smooth")
-            focusFileInExplorer(activeFileRef.current)
-          })
-        },
-      }),
-      mcfunctionLanguage,
-    ],
-  })
+            scheduleAutoSave(fileKey, newContent)
+          }
+        }),
+        EditorView.domEventHandlers({
+          focus: () => {
+            window.requestAnimationFrame(() => {
+              scrollTabIntoView(activeFileRef.current, "smooth")
+              focusFileInExplorer(activeFileRef.current)
+            })
+          },
+        }),
+        ...getLanguageProcessingExtensions(language.id),
+      ],
+    })
+  }
 
   const persistActiveEditorState = () => {
     const currentFileKey = activeFileRef.current
@@ -1327,6 +1380,9 @@ function CodeEditor() {
 
     loadWorkspaceDatapacks()
   }, [workspaceInfo.dir])
+
+  const activeRelativePath = activeFile ? parseFileKey(activeFile).relativePath : null
+  const activeLanguage = detectEditorLanguage(activeRelativePath)
 
   const fileNameCounts = openedFiles.reduce((counts, file) => {
     counts.set(file.fileName, (counts.get(file.fileName) ?? 0) + 1)
@@ -2065,9 +2121,24 @@ function CodeEditor() {
           />
         )}
 
-      </div>      {/* Footer */}
-      <div className="flex flex-row items-center h-[30px] bg-codemirror-700 text-codemirror-100 px-2 py-1 border-t border-codemirror-600">
-        <div className="text-sm">Made by touchportyl</div>
+      </div>
+      
+      {/* Footer */}
+      <div className="h-[30px] border-t border-codemirror-600
+        bg-codemirror-700 text-codemirror-100
+        flex flex-row items-center gap-4
+      ">
+
+        <div className="footer-element">Made by touchportyl</div>
+
+        <div className="flex-1"/>
+
+        {/* Language */}
+        <div className="footer-element footer-button">
+          <span className="codicon codicon-file-code"></span>
+          {activeLanguage.label}
+        </div>
+
       </div>
 
       {/* File Tab Floating Context Menu */}
