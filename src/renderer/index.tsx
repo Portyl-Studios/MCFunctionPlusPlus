@@ -28,7 +28,8 @@ import { DropdownMenu, type MenuItem } from "./dropdownmenu"
 import { useWorkspace } from "./use-workspace"
 import iconPath from "../../assets/icon.png"
 import { DatapackTree } from "./datapacktree"
-import { Dialog, useDialog } from "./dialog"
+import { Dialog } from "./dialog"
+import { useDialogRequest } from "./dialog-request"
 import { ContextMenu } from "./contextmenu"
 import { useContextMenuRequest } from "./contextmenu-request"
 import { getDirFromPath, toRelativePaths, createFileKey, parseFileKey } from "./utils"
@@ -488,7 +489,7 @@ function CodeEditor() {
   const isAutoSaveEnabledRef = useRef(isAutoSaveEnabled)
   // Track auto-save timers per file using fileKey format: "datapackDir|relativePath"
   const autoSaveTimersRef = useRef<Map<string, number>>(new Map())
-  const dialog = useDialog()
+  const dialog = useDialogRequest()
   const isDialogOpenRef = useRef(dialog.isOpen)
   const {
     workspaceInfo,
@@ -2339,12 +2340,8 @@ function CodeEditor() {
       />
 
       {/* Dialog */}
-      {dialog.dialogConfig && (
-        <Dialog
-          {...dialog.dialogConfig}
-          isOpen={dialog.isOpen}
-          onClose={dialog.closeDialog}
-        />
+      {dialog.dialogProps && (
+        <Dialog {...dialog.dialogProps} />
       )}
     </div>
   )
