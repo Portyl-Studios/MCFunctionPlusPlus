@@ -34,6 +34,7 @@ import { getDirFromPath, toRelativePaths, createFileKey, parseFileKey } from "./
 import { loadMcfunctionCommandSchema, loadMinecraftData } from "./mcfunction-language"
 import { detectEditorLanguage, getLanguageProcessingExtensions, type DiagnosticSummary } from "./language-handler"
 import { runGlobalDiagnosticsScan } from "./diagnostics/global-diagnostics"
+import { Tooltip } from "./overlays/tooltip"
 
 type DatapackEntry = {
   dir: string
@@ -326,6 +327,8 @@ function CodeEditor() {
   const [isHeaderMenuTwoOpen, setIsHeaderMenuTwoOpen] = useState(false)
   const [isHeaderMenuThreeOpen, setIsHeaderMenuThreeOpen] = useState(false)
   const [isHeaderMenuFourOpen, setIsHeaderMenuFourOpen] = useState(false)
+  const [isHeaderMenuFiveOpen, setIsHeaderMenuFiveOpen] = useState(false)
+  const [isHeaderMenuSixOpen, setIsHeaderMenuSixOpen] = useState(false)
   const [isFullScreen, setIsFullScreen] = useState(false)
   const [openedFiles, setOpenedFiles] = useState<OpenedFile[]>([])
   const [activeFile, setActiveFile] = useState<string | null>(null)
@@ -1961,6 +1964,26 @@ function CodeEditor() {
           />
 
           <DropdownMenu 
+            label="Build"
+            items={[
+              { label: "Build Datapack", onClick: undefined, disabled: true }
+            ] as MenuItem[]}
+            isOpen={isHeaderMenuFourOpen}
+            setIsOpen={setIsHeaderMenuFourOpen}
+            disabled={dialog.isOpen}
+          />
+
+          <DropdownMenu 
+            label="Export"
+            items={[
+              { label: "Export Datapack", onClick: undefined, disabled: true }
+            ] as MenuItem[]}
+            isOpen={isHeaderMenuFiveOpen}
+            setIsOpen={setIsHeaderMenuFiveOpen}
+            disabled={dialog.isOpen}
+          />
+
+          <DropdownMenu 
             label="Panels"
             items={[
               { 
@@ -1988,26 +2011,32 @@ function CodeEditor() {
                 onToggle: (nextState) => handleToggleRightTab("settings", nextState)
               }
             ] as MenuItem[]}
-            isOpen={isHeaderMenuFourOpen}
-            setIsOpen={setIsHeaderMenuFourOpen}
+            isOpen={isHeaderMenuSixOpen}
+            setIsOpen={setIsHeaderMenuSixOpen}
             disabled={dialog.isOpen}
           />
 
           <div className="flex-1" style={{ WebkitAppRegion: "drag" } as any} onContextMenu={handleTitlebarRightClick}></div>
           
           {/* Window Control Buttons */}
-          <div
-            onClick={() => (window as any).electron.minimize()} 
-            className="header-button-right pt-2.5 pb-2 codicon codicon-chrome-minimize"
-          />
-          <div
-            onClick={() => (window as any).electron.toggleFullscreen()}
-            className={`header-button-right pt-2.5 pb-2 codicon ${isFullScreen ? "codicon-chrome-restore" : "codicon-chrome-maximize"}`}
-          />
-          <div
-            onClick={handleQuitWithConfirm}
-            className="header-button-right hover:bg-rose-600 pt-2.5 pb-2 codicon codicon-chrome-close"
-          />
+          <Tooltip content="Minimize">
+            <div
+              onClick={() => (window as any).electron.minimize()} 
+              className="header-button pt-2.5 pb-2 codicon codicon-chrome-minimize"
+            />
+          </Tooltip>
+          <Tooltip content={`${isFullScreen ? "Restore" : "Maximize"}`}>
+            <div
+              onClick={() => (window as any).electron.toggleFullscreen()}
+              className={`header-button pt-2.5 pb-2 codicon ${isFullScreen ? "codicon-chrome-restore" : "codicon-chrome-maximize"}`}
+            />
+          </Tooltip>
+          <Tooltip content="Close">
+            <div
+              onClick={handleQuitWithConfirm}
+              className="header-button hover:bg-rose-600 pt-2.5 pb-2 codicon codicon-chrome-close"
+            />
+          </Tooltip>
 
         </div>
       </div>

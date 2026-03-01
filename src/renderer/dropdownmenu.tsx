@@ -15,7 +15,7 @@ interface DropdownMenuProps {
 export function DropdownMenu({ label, items, isOpen, setIsOpen, buttonClassName, disabled }: DropdownMenuProps) {
   const menuRef = useRef<HTMLDivElement>(null)
   const [alignRight, setAlignRight] = useState(false)
-  const buttonClass = buttonClassName ?? 'header-button-left'
+  const buttonClass = buttonClassName ?? 'header-button'
   const disabledClass = disabled ? 'opacity-50 cursor-not-allowed pointer-events-none' : ''
 
   useEffect(() => {
@@ -70,7 +70,7 @@ export function DropdownMenu({ label, items, isOpen, setIsOpen, buttonClassName,
           if (disabled) return
           setIsOpen(!isOpen)
         }}
-        className={`${buttonClass} ${disabledClass} ${isOpen ? 'border-b border-codemirror-select' : ''}`}
+        className={`${buttonClass} ${disabledClass} ${isOpen ? 'bg-codemirror-500' : ''}`}
       >
         {label}
       </div>
