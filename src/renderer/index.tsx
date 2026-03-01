@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from "react"
 import ReactDOM from "react-dom/client"
 
-import { EditorState, type Extension } from "@codemirror/state"
+import { EditorState } from "@codemirror/state"
 import {
   EditorView,
   keymap,
@@ -15,11 +15,9 @@ import {
 } from "@codemirror/view"
 import { defaultKeymap, history, historyKeymap, indentWithTab } from "@codemirror/commands"
 import { foldGutter, foldKeymap, indentOnInput, syntaxHighlighting, defaultHighlightStyle, bracketMatching } from "@codemirror/language"
-import { autocompletion, closeBrackets, closeBracketsKeymap, completionKeymap, startCompletion } from "@codemirror/autocomplete"
+import { closeBrackets, closeBracketsKeymap, completionKeymap } from "@codemirror/autocomplete"
 import { searchKeymap, highlightSelectionMatches } from "@codemirror/search"
-import { linter, lintKeymap, type Diagnostic } from "@codemirror/lint"
-import { json, jsonParseLinter } from "@codemirror/lang-json"
-import { markdown } from "@codemirror/lang-markdown"
+import { lintKeymap } from "@codemirror/lint"
 import { portylDarkTheme } from "./themes/portyl-dark"
 import "./index.css"
 import { Section, ResizeHandle, useResizableSection } from "./section"
@@ -33,7 +31,8 @@ import { useDialogRequest } from "./overlays/dialog-request"
 import { ContextMenu } from "./overlays/contextmenu"
 import { useContextMenuRequest } from "./overlays/contextmenu-request"
 import { getDirFromPath, toRelativePaths, createFileKey, parseFileKey } from "./utils"
-import { mcfunctionLanguage, mcfunctionCompletionSource, loadMcfunctionCommandSchema, loadMinecraftData, mcfunctionDiagnosticSource } from "./mcfunction-language"
+import { loadMcfunctionCommandSchema, loadMinecraftData } from "./mcfunction-language"
+import { detectEditorLanguage, getLanguageProcessingExtensions, type DiagnosticSummary } from "./language-handler"
 
 type DatapackEntry = {
   dir: string
@@ -65,24 +64,10 @@ type WorkspaceTabSession = {
 const OPEN_TABS_PREFERENCE_KEY = "openTabs"
 const EXPLORER_EXPANDED_PREFERENCE_KEY = "explorerExpandedPaths"
 
-let enterAutocompleteTimer: number | null = null
-
-type EditorLanguageId = "mcfunction" | "json" | "markdown" | "plaintext"
-
-type EditorLanguageInfo = {
-  id: EditorLanguageId
-  label: string
-}
-
 type CursorMarkerInfo = {
   line: number
   column: number
   selectedCharacters: number
-}
-
-type DiagnosticSummary = {
-  errors: number
-  warnings: number
 }
 
 const defaultCursorMarkerInfo: CursorMarkerInfo = {
@@ -96,33 +81,6 @@ const defaultDiagnosticSummary: DiagnosticSummary = {
   warnings: 0,
 }
 
-const detectEditorLanguage = (relativePath: string | null | undefined): EditorLanguageInfo => {
-  if (!relativePath) {
-    return { id: "plaintext", label: "Plain Text" }
-  }
-
-  const normalized = relativePath.replace(/\\/g, "/").toLowerCase()
-
-  if (normalized.endsWith(".mcfunction")) {
-    return { id: "mcfunction", label: "MCFunction" }
-  }
-
-  if (
-    normalized.endsWith(".json") ||
-    normalized.endsWith(".mcmeta") ||
-    normalized.endsWith(".mpp-datapack") ||
-    normalized.endsWith(".mpp-workspace")
-  ) {
-    return { id: "json", label: "JSON" }
-  }
-
-  if (normalized.endsWith(".md") || normalized.endsWith(".markdown")) {
-    return { id: "markdown", label: "Markdown" }
-  }
-
-  return { id: "plaintext", label: "Plain Text" }
-}
-
 const getCursorMarkerInfo = (state: EditorState): CursorMarkerInfo => {
   const selection = state.selection.main
   const startPosition = selection.from
@@ -133,102 +91,6 @@ const getCursorMarkerInfo = (state: EditorState): CursorMarkerInfo => {
     column: startPosition - line.from + 1,
     selectedCharacters: selection.to - selection.from,
   }
-}
-
-const summarizeDiagnostics = (diagnostics: readonly Diagnostic[]): DiagnosticSummary => {
-  let errors = 0
-  let warnings = 0
-
-  for (const diagnostic of diagnostics) {
-    if (diagnostic.severity === "error") {
-      errors += 1
-      continue
-    }
-
-    if (diagnostic.severity === "warning") {
-      warnings += 1
-    }
-  }
-
-  return { errors, warnings }
-}
-
-// Custom keymap to trigger autocomplete on Enter
-const mcfunctionKeymap = keymap.of([
-  {
-    key: "Enter",
-    run: (view) => {
-      if (enterAutocompleteTimer !== null) {
-        window.clearTimeout(enterAutocompleteTimer)
-      }
-
-      enterAutocompleteTimer = window.setTimeout(() => {
-        const { state } = view
-        const line = state.doc.lineAt(state.selection.main.head)
-        const beforeCursor = line.text.slice(0, state.selection.main.head - line.from)
-        
-        // If line is empty or only whitespace, trigger autocomplete
-        if (/^\s*$/.test(beforeCursor)) {
-          startCompletion(view)
-        }
-        enterAutocompleteTimer = null
-      }, 800)
-      
-      return false // Let default Enter handling happen
-    }
-  }
-])
-
-const getLanguageProcessingExtensions = (
-  languageId: EditorLanguageId,
-  onDiagnosticSummaryChange?: (summary: DiagnosticSummary) => void,
-): Extension[] => {
-  if (languageId === "mcfunction") {
-    return [
-      autocompletion({
-        override: [mcfunctionCompletionSource],
-        activateOnTyping: true,
-        closeOnBlur: true,
-        maxRenderedOptions: 100,
-      }),
-      linter((view) => {
-        const diagnostics = mcfunctionDiagnosticSource(view)
-        onDiagnosticSummaryChange?.(summarizeDiagnostics(diagnostics))
-        return diagnostics
-      }),
-      mcfunctionKeymap,
-      mcfunctionLanguage,
-    ]
-  }
-
-  if (languageId === "json") {
-    return [
-      autocompletion({
-        activateOnTyping: true,
-        closeOnBlur: true,
-        maxRenderedOptions: 100,
-      }),
-      linter((view) => {
-        const diagnostics = jsonParseLinter()(view)
-        onDiagnosticSummaryChange?.(summarizeDiagnostics(diagnostics))
-        return diagnostics
-      }),
-      json(),
-    ]
-  }
-
-  if (languageId === "markdown") {
-    return [
-      autocompletion({
-        activateOnTyping: true,
-        closeOnBlur: true,
-        maxRenderedOptions: 100,
-      }),
-      markdown(),
-    ]
-  }
-
-  return []
 }
 
 const codeMirrorSetupExtensions = [
@@ -1172,7 +1034,7 @@ function CodeEditor() {
     const relativePath = fileKey ? parseFileKey(fileKey).relativePath : null
     const language = detectEditorLanguage(relativePath)
 
-    if (language.id === "markdown" || language.id === "plaintext") {
+    if (!language.supportsDiagnostics) {
       setDiagnosticSummary(defaultDiagnosticSummary)
     }
 
@@ -1494,7 +1356,7 @@ function CodeEditor() {
 
   const activeRelativePath = activeFile ? parseFileKey(activeFile).relativePath : null
   const activeLanguage = detectEditorLanguage(activeRelativePath)
-  const showDiagnosticSummary = activeLanguage.id === "mcfunction" || activeLanguage.id === "json"
+  const showDiagnosticSummary = activeLanguage.supportsDiagnostics
   const activeFileRelativePathLabel = activeRelativePath
     ? activeRelativePath
       .replace(/\\/g, "/")
@@ -2327,7 +2189,7 @@ function CodeEditor() {
 
           {/* Language */}
           <div className="footer-element">
-            <span className="codicon codicon-file-code"></span>
+            <span className={`codicon ${activeLanguage.codicon}`}></span>
             {activeLanguage.label}
           </div>
 
