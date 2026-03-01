@@ -1,6 +1,5 @@
 import React from 'react'
 import datapackSchema from '../../resources/datapackschema/94.1.json'
-import { ContextMenu, useContextMenu } from './contextmenu'
 import type { MenuItem } from './menuitem'
 import { Dialog, useDialog } from './dialog'
 import { Tooltip } from './tooltip'
@@ -17,6 +16,7 @@ interface DataPackTreeProps {
   onFolderCreated?: () => void
   onFileRenamed?: (oldRelativePath: string, newName: string) => Promise<boolean>
   onFileDeleted?: (relativePath: string) => Promise<boolean>
+  onContextMenuRequest?: (event: React.MouseEvent, items: MenuItem[]) => void
   externalSelectedPath?: string | null
   externalSelectedFileKey?: string | null
   externalExpandedPaths?: Set<string>
@@ -143,7 +143,7 @@ const collectDirectoryPaths = (node: TreeNode, pathKey: string, output: string[]
   }
 }
 
-export function DatapackTree({ paths, className, folderName, rootId, rootName, rootPackVersion, basePath, onSelect, onFolderCreated, onFileRenamed, onFileDeleted, externalSelectedPath, externalSelectedFileKey, externalExpandedPaths, onExpandedPathsChange, treeContainerRef }: DataPackTreeProps) {
+export function DatapackTree({ paths, className, folderName, rootId, rootName, rootPackVersion, basePath, onSelect, onFolderCreated, onFileRenamed, onFileDeleted, onContextMenuRequest, externalSelectedPath, externalSelectedFileKey, externalExpandedPaths, onExpandedPathsChange, treeContainerRef }: DataPackTreeProps) {
   const tree = React.useMemo(() => {
     const builtTree = buildTree(paths, folderName)
     // Enrich with schema starting from the root schema node
@@ -151,8 +151,6 @@ export function DatapackTree({ paths, className, folderName, rootId, rootName, r
     return builtTree
   }, [paths, folderName])
   const [selectedPath, setSelectedPath] = React.useState<string | null>(externalSelectedPath ?? null)
-  const [contextItems, setContextItems] = React.useState<MenuItem[]>([])
-  const contextMenu = useContextMenu()
   const dialog = useDialog()
   const [expandedPaths, setExpandedPaths] = React.useState<Set<string>>(() => {
     const dirs: string[] = []
@@ -402,7 +400,7 @@ export function DatapackTree({ paths, className, folderName, rootId, rootName, r
     const isRootNode = pathKey === tree.name
     const canRenameOrDelete = !isRootNode && basePath !== undefined
 
-    setContextItems([
+    const items: MenuItem[] = [
       {label: 'Cut', onClick: undefined, disabled: true},
       {label: 'Copy', onClick: undefined, disabled: true},
       {label: 'Paste', onClick: undefined, disabled: true},
@@ -423,8 +421,9 @@ export function DatapackTree({ paths, className, folderName, rootId, rootName, r
         children: submenuItems.length ? submenuItems : undefined,
         disabled: submenuItems.length === 0,
       },
-    ])
-    contextMenu.openContextMenu(e)
+    ]
+
+    onContextMenuRequest?.(e, items)
   }
 
   const renderNode = (node: TreeNode, depth: number, pathKey: string): React.ReactNode => {
@@ -519,13 +518,6 @@ export function DatapackTree({ paths, className, folderName, rootId, rootName, r
         <ul className="space-y-1">
           {renderNode(tree, 0, tree.name)}
         </ul>
-        <ContextMenu
-          items={contextItems}
-          x={contextMenu.position.x}
-          y={contextMenu.position.y}
-          isOpen={contextMenu.isOpen}
-          onClose={contextMenu.closeContextMenu}
-        />
       </div>
       {dialog.dialogConfig && (
         <Dialog

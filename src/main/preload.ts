@@ -14,6 +14,13 @@ contextBridge.exposeInMainWorld('electron', {
   onFullscreenChange: (callback: (isFullScreen: boolean) => void) => {
     ipcRenderer.on('fullscreen-changed', (_event: any, isFullScreen: boolean) => callback(isFullScreen))
   },
+  onTitlebarContextMenu: (callback: (position: { x: number; y: number }) => void) => {
+    const listener = (_event: any, position: { x: number; y: number }) => callback(position)
+    ipcRenderer.on('titlebar-context-menu', listener)
+    return () => {
+      ipcRenderer.removeListener('titlebar-context-menu', listener)
+    }
+  },
   quit: () => {
     return ipcRenderer.invoke('quit')
   },

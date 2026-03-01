@@ -86,6 +86,7 @@ interface UseContextMenuResult {
   isOpen: boolean
   position: { x: number; y: number }
   openContextMenu: (event: React.MouseEvent) => void
+  openContextMenuAt: (x: number, y: number) => void
   closeContextMenu: () => void
 }
 
@@ -99,6 +100,11 @@ export function useContextMenu(): UseContextMenuResult {
     setIsOpen(true)
   }
 
+  const openContextMenuAt = (x: number, y: number) => {
+    setPosition({ x, y })
+    setIsOpen(true)
+  }
+
   const closeContextMenu = () => {
     setIsOpen(false)
   }
@@ -107,6 +113,7 @@ export function useContextMenu(): UseContextMenuResult {
     isOpen,
     position,
     openContextMenu,
+    openContextMenuAt,
     closeContextMenu,
   }
 }

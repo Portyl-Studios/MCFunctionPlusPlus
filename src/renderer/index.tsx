@@ -83,6 +83,8 @@ type DiagnosticSummary = {
   warnings: number
 }
 
+type ActiveContextMenuKind = "tab" | "titlebar" | "datapack" | null
+
 const defaultCursorMarkerInfo: CursorMarkerInfo = {
   line: 1,
   column: 1,
@@ -469,7 +471,9 @@ function CodeEditor() {
   const isRestoringExplorerRef = useRef(false)
   const lastSavedTabSessionSignatureRef = useRef("")
   const fileEditorStatesRef = useRef<Map<string, EditorState>>(new Map())
-  const tabContextMenu = useContextMenu()
+  const contextMenu = useContextMenu()
+  const [activeContextMenuKind, setActiveContextMenuKind] = useState<ActiveContextMenuKind>(null)
+  const [datapackContextItems, setDatapackContextItems] = useState<MenuItem[]>([])
   const [tabContextFileKey, setTabContextFileKey] = useState<string | null>(null)
   
   // File tab drag-and-drop state
@@ -1428,6 +1432,18 @@ function CodeEditor() {
     ;(window as any).electron.onFullscreenChange((isFullScreen: boolean) => {
       setIsFullScreen(isFullScreen)
     })
+
+    const unsubscribeTitlebarContextMenu = (window as any).electron.onTitlebarContextMenu?.((position: { x: number; y: number }) => {
+      setTabContextFileKey(null)
+      setActiveContextMenuKind("titlebar")
+      contextMenu.openContextMenuAt(position.x, position.y)
+    })
+
+    return () => {
+      if (typeof unsubscribeTitlebarContextMenu === "function") {
+        unsubscribeTitlebarContextMenu()
+      }
+    }
   }, [])
 
   // Keyboard shortcuts
@@ -1602,7 +1618,23 @@ function CodeEditor() {
 
   const handleTabRightClick = (event: React.MouseEvent, fileKey: string) => {
     setTabContextFileKey(fileKey)
-    tabContextMenu.openContextMenu(event)
+    setActiveContextMenuKind("tab")
+    contextMenu.openContextMenu(event)
+  }
+
+  const handleTitlebarRightClick = (event: React.MouseEvent) => {
+    event.preventDefault()
+    event.stopPropagation()
+    setTabContextFileKey(null)
+    setActiveContextMenuKind("titlebar")
+    contextMenu.openContextMenu(event)
+  }
+
+  const handleDatapackTreeContextMenu = (event: React.MouseEvent, items: MenuItem[]) => {
+    setTabContextFileKey(null)
+    setDatapackContextItems(items)
+    setActiveContextMenuKind("datapack")
+    contextMenu.openContextMenu(event)
   }
 
   const getOpenedFileKeys = () =>
@@ -1772,6 +1804,50 @@ function CodeEditor() {
     }
   ]
 
+  const titlebarContextItems: MenuItem[] = [
+    {
+      label: "Restore",
+      onClick: () => {
+        if (isFullScreen) {
+          ;(window as any).electron.toggleFullscreen()
+        }
+      },
+      disabled: !isFullScreen,
+    },
+    {
+      label: "Minimize",
+      onClick: () => {
+        ;(window as any).electron.minimize()
+      },
+    },
+    {
+      label: "Maximize",
+      onClick: () => {
+        if (!isFullScreen) {
+          ;(window as any).electron.toggleFullscreen()
+        }
+      },
+      disabled: isFullScreen,
+    },
+    {},
+    {
+      label: "Close",
+      shortcut: "Alt+F4",
+      onClick: handleQuitWithConfirm,
+    },
+  ]
+
+  const activeContextMenuItems = activeContextMenuKind === "titlebar"
+    ? titlebarContextItems
+    : activeContextMenuKind === "datapack"
+      ? datapackContextItems
+      : tabContextItems
+
+  const closeActiveContextMenu = () => {
+    setActiveContextMenuKind(null)
+    contextMenu.closeContextMenu()
+  }
+
   useEffect(() => {
     if (!activeFile) return
 
@@ -1816,6 +1892,7 @@ function CodeEditor() {
               onSelect={(pathKey, isFile) => handleExplorerSelect(datapack.dir, pathKey, isFile)}
               onFileRenamed={(oldRelativePath, newName) => handleFileRenamed(datapack.dir, oldRelativePath, newName)}
               onFileDeleted={(relativePath) => handleFileDeleted(datapack.dir, relativePath)}
+              onContextMenuRequest={handleDatapackTreeContextMenu}
             />
           ))}
         </div>
@@ -1876,7 +1953,7 @@ function CodeEditor() {
       <div className="flex flex-row h-[36px] bg-codemirror-700 text-sm text-codemirror-100 border-b border-codemirror-600" style={{ WebkitAppRegion: "drag" } as any}>
 
         {/* App Icon */}
-        <div className="px-4 py-2 font-bold">
+        <div className="px-4 py-2 font-bold" onContextMenu={handleTitlebarRightClick}>
           <img src={iconPath} alt="MCFunction++" style={{ height: "20px", width: "20px" }} />
         </div>
         
@@ -1974,7 +2051,7 @@ function CodeEditor() {
             disabled={dialog.isOpen}
           />
 
-          <div className="flex-1" style={{ WebkitAppRegion: "drag" } as any}></div>
+          <div className="flex-1" style={{ WebkitAppRegion: "drag" } as any} onContextMenu={handleTitlebarRightClick}></div>
           
           {/* Window Control Buttons */}
           <div
@@ -2273,13 +2350,13 @@ function CodeEditor() {
 
       </div>
 
-      {/* File Tab Floating Context Menu */}
+      {/* Shared Context Menu (single-instance) */}
       <ContextMenu
-        items={tabContextItems}
-        x={tabContextMenu.position.x}
-        y={tabContextMenu.position.y}
-        isOpen={tabContextMenu.isOpen}
-        onClose={tabContextMenu.closeContextMenu}
+        items={activeContextMenuItems}
+        x={contextMenu.position.x}
+        y={contextMenu.position.y}
+        isOpen={contextMenu.isOpen && activeContextMenuKind !== null}
+        onClose={closeActiveContextMenu}
       />
 
       {/* Dialog */}

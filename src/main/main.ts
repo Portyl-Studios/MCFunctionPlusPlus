@@ -251,6 +251,15 @@ app.on('ready', async () => {
   mainWindow.on('unmaximize', emitWindowStateChanged)
   mainWindow.on('enter-full-screen', emitWindowStateChanged)
   mainWindow.on('leave-full-screen', emitWindowStateChanged)
+  mainWindow.on('system-context-menu', (event, point) => {
+    event.preventDefault()
+    if (!mainWindow || mainWindow.isDestroyed()) return
+    const bounds = mainWindow.getBounds()
+    mainWindow.webContents.send('titlebar-context-menu', {
+      x: point.x - bounds.x,
+      y: point.y - bounds.y,
+    })
+  })
   mainWindow.webContents.on('did-finish-load', emitWindowStateChanged)
 
   mainWindow.on('closed', () => (mainWindow = null))
