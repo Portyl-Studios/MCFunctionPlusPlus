@@ -17,7 +17,7 @@ import { defaultKeymap, history, historyKeymap, indentWithTab } from "@codemirro
 import { foldGutter, foldKeymap, indentOnInput, syntaxHighlighting, defaultHighlightStyle, bracketMatching } from "@codemirror/language"
 import { autocompletion, closeBrackets, closeBracketsKeymap, completionKeymap, startCompletion } from "@codemirror/autocomplete"
 import { searchKeymap, highlightSelectionMatches } from "@codemirror/search"
-import { linter, lintKeymap } from "@codemirror/lint"
+import { linter, lintKeymap, type Diagnostic } from "@codemirror/lint"
 import { json, jsonParseLinter } from "@codemirror/lang-json"
 import { markdown } from "@codemirror/lang-markdown"
 import { portylDarkTheme } from "./themes/portyl-dark"
@@ -78,10 +78,20 @@ type CursorMarkerInfo = {
   selectedCharacters: number
 }
 
+type DiagnosticSummary = {
+  errors: number
+  warnings: number
+}
+
 const defaultCursorMarkerInfo: CursorMarkerInfo = {
   line: 1,
   column: 1,
   selectedCharacters: 0,
+}
+
+const defaultDiagnosticSummary: DiagnosticSummary = {
+  errors: 0,
+  warnings: 0,
 }
 
 const detectEditorLanguage = (relativePath: string | null | undefined): EditorLanguageInfo => {
@@ -118,6 +128,24 @@ const getCursorMarkerInfo = (state: EditorState): CursorMarkerInfo => {
   }
 }
 
+const summarizeDiagnostics = (diagnostics: readonly Diagnostic[]): DiagnosticSummary => {
+  let errors = 0
+  let warnings = 0
+
+  for (const diagnostic of diagnostics) {
+    if (diagnostic.severity === "error") {
+      errors += 1
+      continue
+    }
+
+    if (diagnostic.severity === "warning") {
+      warnings += 1
+    }
+  }
+
+  return { errors, warnings }
+}
+
 // Custom keymap to trigger autocomplete on Enter
 const mcfunctionKeymap = keymap.of([
   {
@@ -144,7 +172,10 @@ const mcfunctionKeymap = keymap.of([
   }
 ])
 
-const getLanguageProcessingExtensions = (languageId: EditorLanguageId): Extension[] => {
+const getLanguageProcessingExtensions = (
+  languageId: EditorLanguageId,
+  onDiagnosticSummaryChange?: (summary: DiagnosticSummary) => void,
+): Extension[] => {
   if (languageId === "mcfunction") {
     return [
       autocompletion({
@@ -153,7 +184,11 @@ const getLanguageProcessingExtensions = (languageId: EditorLanguageId): Extensio
         closeOnBlur: true,
         maxRenderedOptions: 100,
       }),
-      linter(mcfunctionDiagnosticSource),
+      linter((view) => {
+        const diagnostics = mcfunctionDiagnosticSource(view)
+        onDiagnosticSummaryChange?.(summarizeDiagnostics(diagnostics))
+        return diagnostics
+      }),
       mcfunctionKeymap,
       mcfunctionLanguage,
     ]
@@ -166,7 +201,11 @@ const getLanguageProcessingExtensions = (languageId: EditorLanguageId): Extensio
         closeOnBlur: true,
         maxRenderedOptions: 100,
       }),
-      linter(jsonParseLinter()),
+      linter((view) => {
+        const diagnostics = jsonParseLinter()(view)
+        onDiagnosticSummaryChange?.(summarizeDiagnostics(diagnostics))
+        return diagnostics
+      }),
       json(),
     ]
   }
@@ -422,6 +461,7 @@ function CodeEditor() {
   const [activeFile, setActiveFile] = useState<string | null>(null)
   const [modifiedFiles, setModifiedFiles] = useState<Set<string>>(new Set())
   const [cursorMarkerInfo, setCursorMarkerInfo] = useState<CursorMarkerInfo>(defaultCursorMarkerInfo)
+  const [diagnosticSummary, setDiagnosticSummary] = useState<DiagnosticSummary>(defaultDiagnosticSummary)
   const tabsRef = useRef<HTMLDivElement>(null)
   const tabElementRefs = useRef<Map<string, HTMLDivElement>>(new Map())
   const [isAutoSaveEnabled, setIsAutoSaveEnabled] = useState(false)
@@ -864,6 +904,7 @@ function CodeEditor() {
     if (!view) {
       setActiveFile(fileKey)
       activeFileRef.current = fileKey
+      setDiagnosticSummary(defaultDiagnosticSummary)
       focusFileInExplorer(fileKey)
       return
     }
@@ -871,6 +912,7 @@ function CodeEditor() {
     persistActiveEditorState()
     setActiveFile(fileKey)
     activeFileRef.current = fileKey
+    setDiagnosticSummary(defaultDiagnosticSummary)
     focusFileInExplorer(fileKey)
     
     if (!fileKey) {
@@ -1124,6 +1166,10 @@ function CodeEditor() {
     const relativePath = fileKey ? parseFileKey(fileKey).relativePath : null
     const language = detectEditorLanguage(relativePath)
 
+    if (language.id === "markdown" || language.id === "plaintext") {
+      setDiagnosticSummary(defaultDiagnosticSummary)
+    }
+
     return EditorState.create({
       doc,
       extensions: [
@@ -1160,7 +1206,7 @@ function CodeEditor() {
             })
           },
         }),
-        ...getLanguageProcessingExtensions(language.id),
+        ...getLanguageProcessingExtensions(language.id, setDiagnosticSummary),
       ],
     })
   }
@@ -1432,6 +1478,7 @@ function CodeEditor() {
 
   const activeRelativePath = activeFile ? parseFileKey(activeFile).relativePath : null
   const activeLanguage = detectEditorLanguage(activeRelativePath)
+  const showDiagnosticSummary = activeLanguage.id === "mcfunction" || activeLanguage.id === "json"
   const activeFileRelativePathLabel = activeRelativePath
     ? activeRelativePath
       .replace(/\\/g, "/")
@@ -2201,18 +2248,28 @@ function CodeEditor() {
 
         <div className="flex-1"/>
 
-        {activeFile && (
-          <>
-            {/* Line/Column */}
-            <div className="footer-element">Ln {cursorMarkerInfo.line}, Col {cursorMarkerInfo.column} {cursorMarkerInfo.selectedCharacters ? `(${cursorMarkerInfo.selectedCharacters} selected)` : ""}</div>
+        {activeFile && (<>
 
-            {/* Language */}
-            <div className="footer-element footer-button">
-              <span className="codicon codicon-file-code"></span>
-              {activeLanguage.label}
+          {/* Diagnostics */}
+          {showDiagnosticSummary && (
+            <div className="footer-element">
+              <span className="codicon codicon-error"></span>
+              {diagnosticSummary.errors}
+              <span className="codicon codicon-warning"></span>
+              {diagnosticSummary.warnings}
             </div>
-          </>
-        )}
+          )}
+        
+          {/* Line/Column */}
+          <div className="footer-element">Ln {cursorMarkerInfo.line}, Col {cursorMarkerInfo.column} {cursorMarkerInfo.selectedCharacters ? `(${cursorMarkerInfo.selectedCharacters} selected)` : ""}</div>
+
+          {/* Language */}
+          <div className="footer-element">
+            <span className="codicon codicon-file-code"></span>
+            {activeLanguage.label}
+          </div>
+
+        </>)}
 
       </div>
 
