@@ -19,6 +19,7 @@ import { autocompletion, closeBrackets, closeBracketsKeymap, completionKeymap, s
 import { searchKeymap, highlightSelectionMatches } from "@codemirror/search"
 import { linter, lintKeymap } from "@codemirror/lint"
 import { json, jsonParseLinter } from "@codemirror/lang-json"
+import { markdown } from "@codemirror/lang-markdown"
 import { portylDarkTheme } from "./themes/portyl-dark"
 import "./index.css"
 import { Section, ResizeHandle, useResizableSection } from "./section"
@@ -64,7 +65,7 @@ const EXPLORER_EXPANDED_PREFERENCE_KEY = "explorerExpandedPaths"
 
 let enterAutocompleteTimer: number | null = null
 
-type EditorLanguageId = "mcfunction" | "json" | "plaintext"
+type EditorLanguageId = "mcfunction" | "json" | "markdown" | "plaintext"
 
 type EditorLanguageInfo = {
   id: EditorLanguageId
@@ -96,6 +97,10 @@ const detectEditorLanguage = (relativePath: string | null | undefined): EditorLa
 
   if (normalized.endsWith(".json") || normalized.endsWith(".mcmeta")) {
     return { id: "json", label: "JSON" }
+  }
+
+  if (normalized.endsWith(".md") || normalized.endsWith(".markdown")) {
+    return { id: "markdown", label: "Markdown" }
   }
 
   return { id: "plaintext", label: "Plain Text" }
@@ -163,6 +168,17 @@ const getLanguageProcessingExtensions = (languageId: EditorLanguageId): Extensio
       }),
       linter(jsonParseLinter()),
       json(),
+    ]
+  }
+
+  if (languageId === "markdown") {
+    return [
+      autocompletion({
+        activateOnTyping: true,
+        closeOnBlur: true,
+        maxRenderedOptions: 100,
+      }),
+      markdown(),
     ]
   }
 
