@@ -33,6 +33,7 @@ import { useContextMenuRequest } from "./overlays/contextmenu-request"
 import { getDirFromPath, toRelativePaths, createFileKey, parseFileKey } from "./utils"
 import { loadMcfunctionCommandSchema, loadMinecraftData } from "./mcfunction-language"
 import { detectEditorLanguage, getLanguageProcessingExtensions, type DiagnosticSummary } from "./language-handler"
+import { runGlobalDiagnosticsScan } from "./diagnostics/global-diagnostics"
 
 type DatapackEntry = {
   dir: string
@@ -329,6 +330,7 @@ function CodeEditor() {
   const [openedFiles, setOpenedFiles] = useState<OpenedFile[]>([])
   const [activeFile, setActiveFile] = useState<string | null>(null)
   const [modifiedFiles, setModifiedFiles] = useState<Set<string>>(new Set())
+  const [fileDiagnosticSummaries, setFileDiagnosticSummaries] = useState<Record<string, DiagnosticSummary>>({})
   const [cursorMarkerInfo, setCursorMarkerInfo] = useState<CursorMarkerInfo>(defaultCursorMarkerInfo)
   const [diagnosticSummary, setDiagnosticSummary] = useState<DiagnosticSummary>(defaultDiagnosticSummary)
   const tabsRef = useRef<HTMLDivElement>(null)
@@ -356,8 +358,11 @@ function CodeEditor() {
   const isAutoSaveEnabledRef = useRef(isAutoSaveEnabled)
   // Track auto-save timers per file using fileKey format: "datapackDir|relativePath"
   const autoSaveTimersRef = useRef<Map<string, number>>(new Map())
+  const diagnosticsScanRunIdRef = useRef(0)
   const dialog = useDialogRequest()
   const isDialogOpenRef = useRef(dialog.isOpen)
+  const openedFilesRef = useRef(openedFiles)
+  const modifiedFilesRef = useRef(modifiedFiles)
   const {
     workspaceInfo,
     handleOpenWorkspace,
@@ -645,6 +650,15 @@ function CodeEditor() {
     })
   }
 
+  const removeFileFromDiagnosticSummaries = (fileKey: string) => {
+    setFileDiagnosticSummaries((prev) => {
+      if (!(fileKey in prev)) return prev
+      const next = { ...prev }
+      delete next[fileKey]
+      return next
+    })
+  }
+
   const removeFileFromOpenAndModified = (fileKey: string) => {
     removeFileFromOpenedFiles(fileKey)
     removeFileFromModifiedFiles(fileKey)
@@ -709,6 +723,15 @@ function CodeEditor() {
         return next
       })
 
+      setFileDiagnosticSummaries((prev) => {
+        if (!(oldFileKey in prev)) return prev
+        const next = { ...prev }
+        const summary = next[oldFileKey]
+        delete next[oldFileKey]
+        next[newFileKey] = summary
+        return next
+      })
+
       if (wasActive) {
         await openFile(newFileKey)
       }
@@ -750,6 +773,7 @@ function CodeEditor() {
     // Remove from opened files and modified files
     const updatedFiles = openedFiles.filter((f) => createFileKey(f.datapackDir, f.relativePath) !== fileKey)
     removeFileFromOpenAndModified(fileKey)
+    removeFileFromDiagnosticSummaries(fileKey)
 
     // If the deleted file was active, switch to another file
     if (activeFile === fileKey) {
@@ -772,7 +796,7 @@ function CodeEditor() {
     if (!view) {
       setActiveFile(fileKey)
       activeFileRef.current = fileKey
-      setDiagnosticSummary(defaultDiagnosticSummary)
+      setDiagnosticSummary(fileKey ? (fileDiagnosticSummaries[fileKey] ?? defaultDiagnosticSummary) : defaultDiagnosticSummary)
       focusFileInExplorer(fileKey)
       return
     }
@@ -780,7 +804,7 @@ function CodeEditor() {
     persistActiveEditorState()
     setActiveFile(fileKey)
     activeFileRef.current = fileKey
-    setDiagnosticSummary(defaultDiagnosticSummary)
+    setDiagnosticSummary(fileKey ? (fileDiagnosticSummaries[fileKey] ?? defaultDiagnosticSummary) : defaultDiagnosticSummary)
     focusFileInExplorer(fileKey)
     
     if (!fileKey) {
@@ -1036,6 +1060,22 @@ function CodeEditor() {
 
     if (!language.supportsDiagnostics) {
       setDiagnosticSummary(defaultDiagnosticSummary)
+      if (fileKey) {
+        removeFileFromDiagnosticSummaries(fileKey)
+      }
+    }
+
+    const handleDiagnosticSummaryChange = (summary: DiagnosticSummary) => {
+      if (fileKey) {
+        setFileDiagnosticSummaries((prev) => ({
+          ...prev,
+          [fileKey]: summary,
+        }))
+      }
+
+      if (activeFileRef.current === fileKey) {
+        setDiagnosticSummary(summary)
+      }
     }
 
     return EditorState.create({
@@ -1074,7 +1114,7 @@ function CodeEditor() {
             })
           },
         }),
-        ...getLanguageProcessingExtensions(language.id, setDiagnosticSummary),
+        ...getLanguageProcessingExtensions(language.id, handleDiagnosticSummaryChange),
       ],
     })
   }
@@ -1102,6 +1142,58 @@ function CodeEditor() {
   useEffect(() => {
     isAutoSaveEnabledRef.current = isAutoSaveEnabled
   }, [isAutoSaveEnabled])
+
+  useEffect(() => {
+    openedFilesRef.current = openedFiles
+  }, [openedFiles])
+
+  useEffect(() => {
+    modifiedFilesRef.current = modifiedFiles
+  }, [modifiedFiles])
+
+  useEffect(() => {
+    if (!workspaceInfo.dir || datapacks.length === 0) {
+      setFileDiagnosticSummaries((prev) => {
+        const preserved: Record<string, DiagnosticSummary> = {}
+        for (const [fileKey, summary] of Object.entries(prev)) {
+          if (modifiedFilesRef.current.has(fileKey)) {
+            preserved[fileKey] = summary
+          }
+        }
+        return preserved
+      })
+      return
+    }
+
+    const scanRunId = diagnosticsScanRunIdRef.current + 1
+    diagnosticsScanRunIdRef.current = scanRunId
+
+    void (async () => {
+      const nextSummaries = await runGlobalDiagnosticsScan({
+        datapacks,
+        openedFiles: openedFilesRef.current,
+        modifiedFileKeys: modifiedFilesRef.current,
+        readFile: (datapackDir, relativePath) => (window as any).electron.readFile(datapackDir, relativePath),
+        shouldCancel: () => diagnosticsScanRunIdRef.current !== scanRunId,
+      })
+
+      if (!nextSummaries) return
+      if (diagnosticsScanRunIdRef.current !== scanRunId) return
+
+      setFileDiagnosticSummaries((prev) => {
+        const preservedModified: Record<string, DiagnosticSummary> = {}
+        for (const [fileKey, summary] of Object.entries(prev)) {
+          if (modifiedFilesRef.current.has(fileKey)) {
+            preservedModified[fileKey] = summary
+          }
+        }
+        return {
+          ...nextSummaries,
+          ...preservedModified,
+        }
+      })
+    })()
+  }, [workspaceInfo.dir, datapacks])
 
   // Handle workspace tab restoration on workspace load
   useEffect(() => {
@@ -1144,6 +1236,7 @@ function CodeEditor() {
 
         setOpenedFiles(restoredOpenedFiles)
         setModifiedFiles(new Set())
+        setFileDiagnosticSummaries({})
 
         const availableKeys = new Set(
           restoredOpenedFiles.map((file) => createFileKey(file.datapackDir, file.relativePath))
@@ -1741,6 +1834,7 @@ function CodeEditor() {
               onFileDeleted={(relativePath) => handleFileDeleted(datapack.dir, relativePath)}
               onContextMenuRequest={handleDatapackTreeContextMenu}
               modifiedFileKeys={modifiedFiles}
+              fileDiagnosticSummaries={fileDiagnosticSummaries}
             />
           ))}
         </div>

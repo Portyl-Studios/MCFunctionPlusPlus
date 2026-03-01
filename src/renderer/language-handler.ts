@@ -1,4 +1,4 @@
-import type { Extension } from "@codemirror/state"
+import { EditorState, type Extension } from "@codemirror/state"
 import { keymap } from "@codemirror/view"
 import { autocompletion, startCompletion } from "@codemirror/autocomplete"
 import { linter, type Diagnostic } from "@codemirror/lint"
@@ -185,4 +185,23 @@ export const getLanguageProcessingExtensions = (
 ): Extension[] => {
   const language = LANGUAGE_BY_ID.get(languageId) ?? FALLBACK_LANGUAGE
   return language.createExtensions(onDiagnosticSummaryChange)
+}
+
+export const computeDiagnosticSummaryForContent = (
+  languageId: EditorLanguageId,
+  content: string,
+): DiagnosticSummary => {
+  if (languageId === "mcfunction") {
+    const state = EditorState.create({ doc: content })
+    const diagnostics = mcfunctionDiagnosticSource({ state } as any)
+    return summarizeDiagnostics(diagnostics)
+  }
+
+  if (languageId === "json") {
+    const state = EditorState.create({ doc: content })
+    const diagnostics = jsonParseLinter()({ state } as any)
+    return summarizeDiagnostics(diagnostics)
+  }
+
+  return { errors: 0, warnings: 0 }
 }

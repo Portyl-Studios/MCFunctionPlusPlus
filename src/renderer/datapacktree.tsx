@@ -3,7 +3,7 @@ import datapackSchema from '../../resources/datapackschema/94.1.json'
 import type { MenuItem } from './menuitem'
 import { Dialog, useDialog } from './overlays/dialog'
 import { Tooltip } from './overlays/tooltip'
-import { detectEditorLanguage } from './language-handler'
+import { detectEditorLanguage, type DiagnosticSummary } from './language-handler'
 
 interface DataPackTreeProps {
   paths: string[]
@@ -19,6 +19,7 @@ interface DataPackTreeProps {
   onFileDeleted?: (relativePath: string) => Promise<boolean>
   onContextMenuRequest?: (event: React.MouseEvent, items: MenuItem[]) => void
   modifiedFileKeys?: Set<string>
+  fileDiagnosticSummaries?: Record<string, DiagnosticSummary>
   externalSelectedPath?: string | null
   externalSelectedFileKey?: string | null
   externalExpandedPaths?: Set<string>
@@ -145,7 +146,7 @@ const collectDirectoryPaths = (node: TreeNode, pathKey: string, output: string[]
   }
 }
 
-export function DatapackTree({ paths, className, folderName, rootId, rootName, rootPackVersion, basePath, onSelect, onFolderCreated, onFileRenamed, onFileDeleted, onContextMenuRequest, modifiedFileKeys, externalSelectedPath, externalSelectedFileKey, externalExpandedPaths, onExpandedPathsChange, treeContainerRef }: DataPackTreeProps) {
+export function DatapackTree({ paths, className, folderName, rootId, rootName, rootPackVersion, basePath, onSelect, onFolderCreated, onFileRenamed, onFileDeleted, onContextMenuRequest, modifiedFileKeys, fileDiagnosticSummaries, externalSelectedPath, externalSelectedFileKey, externalExpandedPaths, onExpandedPathsChange, treeContainerRef }: DataPackTreeProps) {
   const tree = React.useMemo(() => {
     const builtTree = buildTree(paths, folderName)
     // Enrich with schema starting from the root schema node
@@ -466,6 +467,9 @@ export function DatapackTree({ paths, className, folderName, rootId, rootName, r
       ? detectEditorLanguage(relativePath || node.name).codicon
       : 'codicon-file'
     const nodeFileKey = basePath && relativePath ? `${basePath}|${relativePath}` : null
+    const nodeDiagnosticSummary = nodeFileKey ? fileDiagnosticSummaries?.[nodeFileKey] : undefined
+    const hasDiagnosticError = (nodeDiagnosticSummary?.errors ?? 0) > 0
+    const hasDiagnosticWarning = !hasDiagnosticError && (nodeDiagnosticSummary?.warnings ?? 0) > 0
     const isModified = modifiedPathKeys.has(pathKey)
     const isSelected = node.isFile && externalSelectedFileKey && nodeFileKey
       ? externalSelectedFileKey === nodeFileKey
@@ -544,6 +548,12 @@ export function DatapackTree({ paths, className, folderName, rootId, rootName, r
             </div>
 
             <div className="ml-auto flex shrink-0 items-center">
+              {hasDiagnosticError && (
+                <i className="codicon codicon-error text-red-400 ml-1 shrink-0" />
+              )}
+              {hasDiagnosticWarning && (
+                <i className="codicon codicon-warning text-amber-400 ml-1 shrink-0" />
+              )}
               {isModified && (
                 <i className="codicon codicon-diff-modified text-orange-300 ml-1 shrink-0" />
               )}
