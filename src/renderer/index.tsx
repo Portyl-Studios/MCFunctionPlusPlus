@@ -1416,6 +1416,13 @@ function CodeEditor() {
 
   const activeRelativePath = activeFile ? parseFileKey(activeFile).relativePath : null
   const activeLanguage = detectEditorLanguage(activeRelativePath)
+  const activeFileRelativePathLabel = activeRelativePath
+    ? activeRelativePath
+      .replace(/\\/g, "/")
+      .split("/")
+      .filter(Boolean)
+      .join(" > ")
+    : "No file open"
 
   const fileNameCounts = openedFiles.reduce((counts, file) => {
     counts.set(file.fileName, (counts.get(file.fileName) ?? 0) + 1)
@@ -2100,6 +2107,18 @@ function CodeEditor() {
                   </div>
                 )
               })}
+            </div>
+
+            {/* Active File Path Bar */}
+            <div
+              className="h-6 px-2
+              bg-codemirror-700
+              border-b border-codemirror-600
+              text-codemirror-300 text-xs
+              flex items-center"
+              title={activeRelativePath ?? "No file open"}
+            >
+              <span className="truncate">{activeFileRelativePathLabel}</span>
             </div>
 
             {/* CodeMirror Editor */}
