@@ -107,7 +107,12 @@ const detectEditorLanguage = (relativePath: string | null | undefined): EditorLa
     return { id: "mcfunction", label: "MCFunction" }
   }
 
-  if (normalized.endsWith(".json") || normalized.endsWith(".mcmeta")) {
+  if (
+    normalized.endsWith(".json") ||
+    normalized.endsWith(".mcmeta") ||
+    normalized.endsWith(".mpp-datapack") ||
+    normalized.endsWith(".mpp-workspace")
+  ) {
     return { id: "json", label: "JSON" }
   }
 
