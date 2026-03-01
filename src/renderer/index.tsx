@@ -29,7 +29,8 @@ import { useWorkspace } from "./use-workspace"
 import iconPath from "../../assets/icon.png"
 import { DatapackTree } from "./datapacktree"
 import { Dialog, useDialog } from "./dialog"
-import { ContextMenu, useContextMenu } from "./contextmenu"
+import { ContextMenu } from "./contextmenu"
+import { useContextMenuRequest } from "./contextmenu-request"
 import { getDirFromPath, toRelativePaths, createFileKey, parseFileKey } from "./utils"
 import { mcfunctionLanguage, mcfunctionCompletionSource, loadMcfunctionCommandSchema, loadMinecraftData, mcfunctionDiagnosticSource } from "./mcfunction-language"
 
@@ -82,8 +83,6 @@ type DiagnosticSummary = {
   errors: number
   warnings: number
 }
-
-type ActiveContextMenuKind = "tab" | "titlebar" | "datapack" | null
 
 const defaultCursorMarkerInfo: CursorMarkerInfo = {
   line: 1,
@@ -471,10 +470,7 @@ function CodeEditor() {
   const isRestoringExplorerRef = useRef(false)
   const lastSavedTabSessionSignatureRef = useRef("")
   const fileEditorStatesRef = useRef<Map<string, EditorState>>(new Map())
-  const contextMenu = useContextMenu()
-  const [activeContextMenuKind, setActiveContextMenuKind] = useState<ActiveContextMenuKind>(null)
-  const [datapackContextItems, setDatapackContextItems] = useState<MenuItem[]>([])
-  const [tabContextFileKey, setTabContextFileKey] = useState<string | null>(null)
+  const contextMenuRequest = useContextMenuRequest()
   
   // File tab drag-and-drop state
   const [draggingFileKey, setDraggingFileKey] = useState<string | null>(null)
@@ -1434,9 +1430,7 @@ function CodeEditor() {
     })
 
     const unsubscribeTitlebarContextMenu = (window as any).electron.onTitlebarContextMenu?.((position: { x: number; y: number }) => {
-      setTabContextFileKey(null)
-      setActiveContextMenuKind("titlebar")
-      contextMenu.openContextMenuAt(position.x, position.y)
+      contextMenuRequest.openAt(position.x, position.y, { items: titlebarContextItems })
     })
 
     return () => {
@@ -1617,24 +1611,17 @@ function CodeEditor() {
   }
 
   const handleTabRightClick = (event: React.MouseEvent, fileKey: string) => {
-    setTabContextFileKey(fileKey)
-    setActiveContextMenuKind("tab")
-    contextMenu.openContextMenu(event)
+    contextMenuRequest.openForEvent(event, { items: createTabContextItems(fileKey) })
   }
 
   const handleTitlebarRightClick = (event: React.MouseEvent) => {
     event.preventDefault()
     event.stopPropagation()
-    setTabContextFileKey(null)
-    setActiveContextMenuKind("titlebar")
-    contextMenu.openContextMenu(event)
+    contextMenuRequest.openForEvent(event, { items: titlebarContextItems })
   }
 
   const handleDatapackTreeContextMenu = (event: React.MouseEvent, items: MenuItem[]) => {
-    setTabContextFileKey(null)
-    setDatapackContextItems(items)
-    setActiveContextMenuKind("datapack")
-    contextMenu.openContextMenu(event)
+    contextMenuRequest.openForEvent(event, { items })
   }
 
   const getOpenedFileKeys = () =>
@@ -1730,79 +1717,82 @@ function CodeEditor() {
   }
 
   const openedFileKeys = getOpenedFileKeys()
-  const contextTabIndex = tabContextFileKey ? openedFileKeys.indexOf(tabContextFileKey) : -1
-  const hasTabsToRight = contextTabIndex >= 0 && contextTabIndex < openedFileKeys.length - 1
-  const hasOtherTabs = contextTabIndex >= 0 && openedFileKeys.length > 1
   const hasSavedTabs = openedFileKeys.some((fileKey) => !modifiedFiles.has(fileKey))
   const hasAnyOpenTabs = openedFileKeys.length > 0
 
-  const tabContextItems: MenuItem[] = [
-    {
-      label: "Close",
-      disabled: !tabContextFileKey,
-      onClick: () => {
-        if (!tabContextFileKey) return
-        void closeTab(tabContextFileKey)
+  const createTabContextItems = (targetFileKey: string): MenuItem[] => {
+    const contextTabIndex = openedFileKeys.indexOf(targetFileKey)
+    const hasTabsToRight = contextTabIndex >= 0 && contextTabIndex < openedFileKeys.length - 1
+    const hasOtherTabs = contextTabIndex >= 0 && openedFileKeys.length > 1
+
+    return [
+      {
+        label: "Close",
+        disabled: contextTabIndex === -1,
+        onClick: () => {
+          if (contextTabIndex === -1) return
+          void closeTab(targetFileKey)
+        },
+        shortcut: "Ctrl+W",
       },
-      shortcut: "Ctrl+W",
-    },
-    {
-      label: "Close Others",
-      disabled: !hasOtherTabs,
-      onClick: () => {
-        if (!tabContextFileKey) return
-        void closeOtherTabs(tabContextFileKey)
+      {
+        label: "Close Others",
+        disabled: !hasOtherTabs,
+        onClick: () => {
+          if (contextTabIndex === -1) return
+          void closeOtherTabs(targetFileKey)
+        },
       },
-    },
-    {
-      label: "Close to the Right",
-      disabled: !hasTabsToRight,
-      onClick: () => {
-        if (!tabContextFileKey) return
-        void closeTabsToTheRight(tabContextFileKey)
+      {
+        label: "Close to the Right",
+        disabled: !hasTabsToRight,
+        onClick: () => {
+          if (contextTabIndex === -1) return
+          void closeTabsToTheRight(targetFileKey)
+        },
       },
-    },
-    {
-      label: "Close Saved",
-      disabled: !hasSavedTabs,
-      onClick: () => {
-        void closeSavedTabs()
+      {
+        label: "Close Saved",
+        disabled: !hasSavedTabs,
+        onClick: () => {
+          void closeSavedTabs()
+        },
       },
-    },
-    {
-      label: "Close All",
-      disabled: !hasAnyOpenTabs,
-      onClick: () => {
-        void closeAllTabs()
+      {
+        label: "Close All",
+        disabled: !hasAnyOpenTabs,
+        onClick: () => {
+          void closeAllTabs()
+        },
       },
-    },
-    {},
-    {
-      label: "Copy Path",
-      disabled: !tabContextFileKey,
-      onClick: () => {
-        if (!tabContextFileKey) return
-        void copyTabPath(tabContextFileKey)
+      {},
+      {
+        label: "Copy Path",
+        disabled: contextTabIndex === -1,
+        onClick: () => {
+          if (contextTabIndex === -1) return
+          void copyTabPath(targetFileKey)
+        },
       },
-    },
-    {
-      label: "Copy Relative Path",
-      disabled: !tabContextFileKey,
-      onClick: () => {
-        if (!tabContextFileKey) return
-        void copyTabRelativePath(tabContextFileKey)
+      {
+        label: "Copy Relative Path",
+        disabled: contextTabIndex === -1,
+        onClick: () => {
+          if (contextTabIndex === -1) return
+          void copyTabRelativePath(targetFileKey)
+        },
       },
-    },
-    {},
-    {
-      label: "Reveal in File Explorer",
-      disabled: !tabContextFileKey,
-      onClick: () => {
-        if (!tabContextFileKey) return
-        void revealInFileExplorer(tabContextFileKey)
-      },
-    }
-  ]
+      {},
+      {
+        label: "Reveal in File Explorer",
+        disabled: contextTabIndex === -1,
+        onClick: () => {
+          if (contextTabIndex === -1) return
+          void revealInFileExplorer(targetFileKey)
+        },
+      }
+    ]
+  }
 
   const titlebarContextItems: MenuItem[] = [
     {
@@ -1836,17 +1826,6 @@ function CodeEditor() {
       onClick: handleQuitWithConfirm,
     },
   ]
-
-  const activeContextMenuItems = activeContextMenuKind === "titlebar"
-    ? titlebarContextItems
-    : activeContextMenuKind === "datapack"
-      ? datapackContextItems
-      : tabContextItems
-
-  const closeActiveContextMenu = () => {
-    setActiveContextMenuKind(null)
-    contextMenu.closeContextMenu()
-  }
 
   useEffect(() => {
     if (!activeFile) return
@@ -2352,11 +2331,11 @@ function CodeEditor() {
 
       {/* Shared Context Menu (single-instance) */}
       <ContextMenu
-        items={activeContextMenuItems}
-        x={contextMenu.position.x}
-        y={contextMenu.position.y}
-        isOpen={contextMenu.isOpen && activeContextMenuKind !== null}
-        onClose={closeActiveContextMenu}
+        items={contextMenuRequest.items}
+        x={contextMenuRequest.contextMenu.position.x}
+        y={contextMenuRequest.contextMenu.position.y}
+        isOpen={contextMenuRequest.isOpen}
+        onClose={contextMenuRequest.close}
       />
 
       {/* Dialog */}
