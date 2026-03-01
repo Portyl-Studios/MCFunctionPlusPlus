@@ -2299,12 +2299,12 @@ function CodeEditor() {
 
           {/* Diagnostics */}
           {showDiagnosticSummary && (
-            <div className="footer-element">
-              <span className="codicon codicon-error"></span>
-              {diagnosticSummary.errors}
-              <span className="codicon codicon-warning"></span>
-              {diagnosticSummary.warnings}
-            </div>
+            <Tooltip content={`${diagnosticSummary.errors} error${diagnosticSummary.errors === 1 ? "" : "s"}, ${diagnosticSummary.warnings} warning${diagnosticSummary.warnings === 1 ? "" : "s"}`}>
+              <div className="footer-element">
+                <span className="codicon codicon-error"></span>{diagnosticSummary.errors}
+                <span className="codicon codicon-warning"></span>{diagnosticSummary.warnings}
+              </div>
+            </Tooltip>
           )}
         
           {/* Line/Column */}
