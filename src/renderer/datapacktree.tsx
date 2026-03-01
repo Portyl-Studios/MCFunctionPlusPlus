@@ -1,8 +1,8 @@
 import React from 'react'
 import datapackSchema from '../../resources/datapackschema/94.1.json'
 import type { MenuItem } from './menuitem'
-import { Dialog, useDialog } from './dialog'
-import { Tooltip } from './tooltip'
+import { Dialog, useDialog } from './overlays/dialog'
+import { Tooltip } from './overlays/tooltip'
 
 interface DataPackTreeProps {
   paths: string[]

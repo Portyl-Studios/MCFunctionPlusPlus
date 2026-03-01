@@ -1,8 +1,8 @@
-import { useState } from "react"
-import type React from "react"
+import { useState } from 'react'
+import type React from 'react'
 
-import { useContextMenu } from "./contextmenu"
-import type { MenuItem } from "./menuitem"
+import { useContextMenu } from './contextmenu'
+import type { MenuItem } from '../menuitem'
 
 export type ContextMenuRequest = {
   items: MenuItem[]
@@ -27,11 +27,15 @@ export function useContextMenuRequest() {
     contextMenu.closeContextMenu()
   }
 
+  const hasReadyData = request !== null
+  const isVisible = contextMenu.isOpen && hasReadyData
+
   return {
     contextMenu,
     request,
     items: request?.items ?? [],
-    isOpen: contextMenu.isOpen && request !== null,
+    hasReadyData,
+    isVisible,
     openForEvent,
     openAt,
     close,

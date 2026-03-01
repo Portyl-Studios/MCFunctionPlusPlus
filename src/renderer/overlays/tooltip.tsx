@@ -9,18 +9,13 @@ interface TooltipProps {
   offset?: number
 }
 
-type TooltipPosition = {
-  x: number
-  y: number
-}
-
 export function Tooltip({ content, children, disabled = false, offset = 8 }: TooltipProps) {
   const {
     tooltipRef,
     setTriggerNode,
     shouldRender,
     position,
-    isPositionReady,
+    isVisible,
     handleMouseEnter,
     handleMouseMove,
     handleMouseLeave,
@@ -48,7 +43,7 @@ export function Tooltip({ content, children, disabled = false, offset = 8 }: Too
           style={{
             left: position.x,
             top: position.y,
-            visibility: isPositionReady ? 'visible' : 'hidden',
+            visibility: isVisible ? 'visible' : 'hidden',
           }}
           role="tooltip"
         >

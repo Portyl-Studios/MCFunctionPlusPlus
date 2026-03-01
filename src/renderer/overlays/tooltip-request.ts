@@ -23,7 +23,9 @@ export function useTooltipRequest({ content, disabled = false, offset = 8 }: Use
   const [isPositionReady, setIsPositionReady] = React.useState(false)
   const [cursorAnchor, setCursorAnchor] = React.useState<TooltipPosition | null>(null)
 
-  const shouldRender = isOpen && !disabled && !!content
+  const hasReadyData = !disabled && !!content
+  const shouldRender = isOpen && hasReadyData
+  const isVisible = shouldRender && isPositionReady
 
   const clearHoverTimer = React.useCallback(() => {
     if (hoverTimerRef.current !== null) {
@@ -38,7 +40,7 @@ export function useTooltipRequest({ content, disabled = false, offset = 8 }: Use
   }, [clearHoverTimer])
 
   const scheduleTooltipAtCursor = React.useCallback((x: number, y: number) => {
-    if (disabled || !content || isOpen) return
+    if (!hasReadyData || isOpen) return
 
     clearHoverTimer()
 
@@ -48,7 +50,7 @@ export function useTooltipRequest({ content, disabled = false, offset = 8 }: Use
       setIsOpen(true)
       hoverTimerRef.current = null
     }, TOOLTIP_MOUSE_IDLE_DELAY_MS)
-  }, [clearHoverTimer, content, disabled, isOpen])
+  }, [clearHoverTimer, hasReadyData, isOpen])
 
   React.useEffect(() => {
     return () => {
@@ -119,7 +121,7 @@ export function useTooltipRequest({ content, disabled = false, offset = 8 }: Use
   }
 
   const handleMouseMove = (event: React.MouseEvent) => {
-    if (!disabled && content) {
+    if (hasReadyData) {
       scheduleTooltipAtCursor(event.clientX, event.clientY)
     }
   }
@@ -130,7 +132,7 @@ export function useTooltipRequest({ content, disabled = false, offset = 8 }: Use
   }
 
   const handleFocus = () => {
-    if (!disabled && content) {
+    if (hasReadyData) {
       clearHoverTimer()
       setCursorAnchor(null)
       setIsPositionReady(false)
@@ -141,7 +143,9 @@ export function useTooltipRequest({ content, disabled = false, offset = 8 }: Use
   return {
     tooltipRef,
     setTriggerNode,
+    hasReadyData,
     shouldRender,
+    isVisible,
     position,
     isPositionReady,
     handleMouseEnter,

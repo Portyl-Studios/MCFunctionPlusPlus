@@ -28,10 +28,10 @@ import { DropdownMenu, type MenuItem } from "./dropdownmenu"
 import { useWorkspace } from "./use-workspace"
 import iconPath from "../../assets/icon.png"
 import { DatapackTree } from "./datapacktree"
-import { Dialog } from "./dialog"
-import { useDialogRequest } from "./dialog-request"
-import { ContextMenu } from "./contextmenu"
-import { useContextMenuRequest } from "./contextmenu-request"
+import { Dialog } from "./overlays/dialog"
+import { useDialogRequest } from "./overlays/dialog-request"
+import { ContextMenu } from "./overlays/contextmenu"
+import { useContextMenuRequest } from "./overlays/contextmenu-request"
 import { getDirFromPath, toRelativePaths, createFileKey, parseFileKey } from "./utils"
 import { mcfunctionLanguage, mcfunctionCompletionSource, loadMcfunctionCommandSchema, loadMinecraftData, mcfunctionDiagnosticSource } from "./mcfunction-language"
 
@@ -2335,7 +2335,7 @@ function CodeEditor() {
         items={contextMenuRequest.items}
         x={contextMenuRequest.contextMenu.position.x}
         y={contextMenuRequest.contextMenu.position.y}
-        isOpen={contextMenuRequest.isOpen}
+        isOpen={contextMenuRequest.isVisible}
         onClose={contextMenuRequest.close}
       />
 

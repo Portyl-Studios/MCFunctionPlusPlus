@@ -1,5 +1,5 @@
 import React, { useEffect, useRef } from 'react'
-import { MenuItems, type MenuItem } from './menuitem'
+import { MenuItems, type MenuItem } from '../menuitem'
 
 interface ContextMenuProps {
   items: MenuItem[]
