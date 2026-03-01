@@ -17,8 +17,13 @@ interface PanelPreferences {
   bottomPanelHeight?: number
 }
 
+interface WindowPreferences {
+  isFullScreen?: boolean
+}
+
 interface AppPreferences {
   panels?: PanelPreferences
+  window?: WindowPreferences
 }
 
 class PreferencesManager {
@@ -90,4 +95,4 @@ class PreferencesManager {
 }
 
 export const preferencesManager = new PreferencesManager()
-export type { AppPreferences, PanelPreferences }
+export type { AppPreferences, PanelPreferences, WindowPreferences }

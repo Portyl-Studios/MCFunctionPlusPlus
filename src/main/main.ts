@@ -222,12 +222,36 @@ app.on('ready', async () => {
     },
   })
 
+  const savedWindowPrefs = await preferencesManager.get('window')
+  if (savedWindowPrefs?.isFullScreen) {
+    mainWindow.maximize()
+  }
+
   // In development, use Vite dev server; in production, load built files
   if (process.env.VITE_DEV_SERVER_URL) {
     mainWindow.loadURL(process.env.VITE_DEV_SERVER_URL)
   } else {
     mainWindow.loadFile(path.join(__dirname, '../renderer/index.html'))
   }
+
+  const emitWindowStateChanged = () => {
+    if (!mainWindow || mainWindow.isDestroyed()) return
+    const isWindowExpanded = mainWindow.isFullScreen() || mainWindow.isMaximized()
+    mainWindow.webContents.send('fullscreen-changed', isWindowExpanded)
+    void preferencesManager.update({
+      window: {
+        isFullScreen: isWindowExpanded,
+      },
+    }).catch((error) => {
+      console.error('Failed to persist fullscreen preference:', error)
+    })
+  }
+
+  mainWindow.on('maximize', emitWindowStateChanged)
+  mainWindow.on('unmaximize', emitWindowStateChanged)
+  mainWindow.on('enter-full-screen', emitWindowStateChanged)
+  mainWindow.on('leave-full-screen', emitWindowStateChanged)
+  mainWindow.webContents.on('did-finish-load', emitWindowStateChanged)
 
   mainWindow.on('closed', () => (mainWindow = null))
 
