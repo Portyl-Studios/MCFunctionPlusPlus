@@ -20,7 +20,10 @@ interface MenuItemsProps {
 
 export function MenuItems({ items, onItemClick, maxItems = 5 }: MenuItemsProps) {
   const [openSubmenuIndex, setOpenSubmenuIndex] = React.useState<number | null>(null)
+  const [submenuPlacements, setSubmenuPlacements] = React.useState<Record<number, { openLeft: boolean; offsetY: number }>>({})
   const closeTimeoutRef = React.useRef<number | null>(null)
+  const itemRefs = React.useRef<Map<number, HTMLDivElement>>(new Map())
+  const submenuRefs = React.useRef<Map<number, HTMLDivElement>>(new Map())
 
   const clearCloseTimeout = () => {
     if (closeTimeoutRef.current !== null) {
@@ -34,6 +37,48 @@ export function MenuItems({ items, onItemClick, maxItems = 5 }: MenuItemsProps) 
       clearCloseTimeout()
     }
   }, [])
+
+  React.useEffect(() => {
+    if (openSubmenuIndex === null) return
+
+    const repositionSubmenu = () => {
+      const itemElement = itemRefs.current.get(openSubmenuIndex)
+      const submenuElement = submenuRefs.current.get(openSubmenuIndex)
+      if (!itemElement || !submenuElement) return
+
+      const margin = 8
+      const gap = 16
+      const itemRect = itemElement.getBoundingClientRect()
+      const submenuRect = submenuElement.getBoundingClientRect()
+
+      const wouldOverflowRight = itemRect.right + gap + submenuRect.width > window.innerWidth - margin
+
+      let offsetY = 0
+      const submenuBottom = itemRect.top + submenuRect.height
+      if (submenuBottom > window.innerHeight - margin) {
+        offsetY -= submenuBottom - (window.innerHeight - margin)
+      }
+
+      const submenuTop = itemRect.top + offsetY
+      if (submenuTop < margin) {
+        offsetY += margin - submenuTop
+      }
+
+      setSubmenuPlacements((prev) => ({
+        ...prev,
+        [openSubmenuIndex]: {
+          openLeft: wouldOverflowRight,
+          offsetY,
+        },
+      }))
+    }
+
+    repositionSubmenu()
+    window.addEventListener('resize', repositionSubmenu)
+    return () => {
+      window.removeEventListener('resize', repositionSubmenu)
+    }
+  }, [openSubmenuIndex, items])
 
   const shouldScroll = items.length > maxItems
   const containerHeight = shouldScroll ? `calc(${maxItems} * 36px)` : 'auto'
@@ -81,6 +126,13 @@ export function MenuItems({ items, onItemClick, maxItems = 5 }: MenuItemsProps) 
             <div
               key={index}
               className="relative"
+              ref={(element) => {
+                if (element) {
+                  itemRefs.current.set(index, element)
+                } else {
+                  itemRefs.current.delete(index)
+                }
+              }}
               onMouseEnter={() => {
                 clearCloseTimeout()
                 setOpenSubmenuIndex(index)
@@ -109,7 +161,7 @@ export function MenuItems({ items, onItemClick, maxItems = 5 }: MenuItemsProps) 
 
                 {/* Left: Check indicator + Label */}
                 <span className="flex items-center gap-2 min-w-0 flex-1">
-                  <span className="w-4 mt-0.5 flex-shrink-0 flex items-center justify-center">
+                  <span className="w-4 mt-0.5 shrink-0 flex items-center justify-center">
                     {item.toggleable && item.toggled && (
                       <i className="codicon codicon-check text-codemirror-100" />
                     )}
@@ -118,7 +170,7 @@ export function MenuItems({ items, onItemClick, maxItems = 5 }: MenuItemsProps) 
                 </span>
 
                 {/* Right: Shortcut or Submenu indicator */}
-                <span className="min-w-4 flex-shrink-0 flex items-center justify-end">
+                <span className="min-w-4 shrink-0 flex items-center justify-end">
                   {item.shortcut && (
                     <span className="pillbox px-2 py-0.5 font-mono text-xs text-codemirror-300">
                       {item.shortcut}
@@ -131,7 +183,17 @@ export function MenuItems({ items, onItemClick, maxItems = 5 }: MenuItemsProps) 
                 
               </div>
               {hasChildren && isSubmenuOpen && (
-                <div className="absolute left-full top-0 ml-4 menu-layer">
+                <div
+                  ref={(element) => {
+                    if (element) {
+                      submenuRefs.current.set(index, element)
+                    } else {
+                      submenuRefs.current.delete(index)
+                    }
+                  }}
+                  className={`absolute top-0 menu-layer ${submenuPlacements[index]?.openLeft ? 'right-full mr-4' : 'left-full ml-4'}`}
+                  style={{ transform: `translateY(${submenuPlacements[index]?.offsetY ?? 0}px)` }}
+                >
                   <MenuItems items={item.children!} onItemClick={onItemClick} maxItems={maxItems} />
                 </div>
               )}

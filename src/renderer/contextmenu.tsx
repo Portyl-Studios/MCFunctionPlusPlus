@@ -11,6 +11,40 @@ interface ContextMenuProps {
 
 export function ContextMenu({ items, x, y, isOpen, onClose }: ContextMenuProps) {
   const menuRef = useRef<HTMLDivElement>(null)
+  const [position, setPosition] = React.useState({ x, y })
+  const [isPositionReady, setIsPositionReady] = React.useState(false)
+
+  useEffect(() => {
+    if (!isOpen) return
+    setPosition({ x, y })
+    setIsPositionReady(false)
+  }, [isOpen, x, y])
+
+  useEffect(() => {
+    if (!isOpen || !menuRef.current) return
+
+    const clampPosition = () => {
+      const menuElement = menuRef.current
+      if (!menuElement) return
+
+      const menuRect = menuElement.getBoundingClientRect()
+      const margin = 8
+      const maxX = Math.max(margin, window.innerWidth - menuRect.width - margin)
+      const maxY = Math.max(margin, window.innerHeight - menuRect.height - margin)
+
+      setPosition({
+        x: Math.min(Math.max(x, margin), maxX),
+        y: Math.min(Math.max(y, margin), maxY),
+      })
+      setIsPositionReady(true)
+    }
+
+    clampPosition()
+    window.addEventListener('resize', clampPosition)
+    return () => {
+      window.removeEventListener('resize', clampPosition)
+    }
+  }, [isOpen, x, y, items])
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -41,7 +75,7 @@ export function ContextMenu({ items, x, y, isOpen, onClose }: ContextMenuProps) 
     <div
       ref={menuRef}
       className="fixed menu-layer"
-      style={{ top: y, left: x }}
+      style={{ top: position.y, left: position.x, visibility: isPositionReady ? 'visible' : 'hidden' }}
     >
       <MenuItems items={items} maxItems={10} onItemClick={onClose} />
     </div>
