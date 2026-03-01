@@ -3,6 +3,7 @@ import datapackSchema from '../../resources/datapackschema/94.1.json'
 import type { MenuItem } from './menuitem'
 import { Dialog, useDialog } from './overlays/dialog'
 import { Tooltip } from './overlays/tooltip'
+import { detectEditorLanguage } from './language-handler'
 
 interface DataPackTreeProps {
   paths: string[]
@@ -431,6 +432,9 @@ export function DatapackTree({ paths, className, folderName, rootId, rootName, r
     const isExpanded = hasChildren && effectiveExpandedPaths.has(pathKey)
     const padding = depth * 12
     const relativePath = getRelativePathFromPathKey(pathKey)
+    const languageIconClass = node.isFile
+      ? detectEditorLanguage(relativePath || node.name).codicon
+      : 'codicon-file'
     const nodeFileKey = basePath && relativePath ? `${basePath}|${relativePath}` : null
     const isSelected = node.isFile && externalSelectedFileKey && nodeFileKey
       ? externalSelectedFileKey === nodeFileKey
@@ -459,7 +463,7 @@ export function DatapackTree({ paths, className, folderName, rootId, rootName, r
                   <i className="codicon codicon-chevron-right" />
                 )
               ) : (
-                <i className="codicon codicon-file" />
+                <i className={`codicon ${languageIconClass}`} />
               )}
               {/* Datapack ID */}
               {isRoot ? (
