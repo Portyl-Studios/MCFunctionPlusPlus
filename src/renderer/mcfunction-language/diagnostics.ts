@@ -23,6 +23,12 @@ const createDiagnosticParseState = (): DiagnosticParseState => ({
   escaped: false,
 })
 
+const isCommentLine = (text: string) => /^\s*#/.test(text)
+
+const hasLineContinuation = (text: string) => !isCommentLine(text) && /\\\s*$/.test(text)
+
+const stripLineContinuation = (text: string) => (hasLineContinuation(text) ? text.replace(/\\\s*$/, "") : text)
+
 const validateBracketsAndQuotes = (
   text: string,
   lineFrom: number,
@@ -112,7 +118,7 @@ export const mcfunctionDiagnosticSource = (view: EditorView): Diagnostic[] => {
     let endLineNumber = startLineNumber
     while (endLineNumber < doc.lines) {
       const current = doc.line(endLineNumber)
-      if (!/\\\s*$/.test(current.text)) break
+      if (!hasLineContinuation(current.text)) break
       endLineNumber += 1
     }
     return endLineNumber
@@ -125,13 +131,13 @@ export const mcfunctionDiagnosticSource = (view: EditorView): Diagnostic[] => {
   for (let lineNumber = 1; lineNumber <= doc.lines; lineNumber += 1) {
     const line = doc.line(lineNumber)
     const text = line.text
-    const hasContinuation = /\\\s*$/.test(text)
-    const textForValidation = hasContinuation ? text.replace(/\\\s*$/, "") : text
+    const hasContinuation = hasLineContinuation(text)
+    const textForValidation = stripLineContinuation(text)
 
     lastProcessedLineFrom = line.from
     lastProcessedLineLength = textForValidation.length
 
-    if (!text.trim() || /^\s*#/.test(text)) {
+    if (!text.trim() || isCommentLine(text)) {
       isContinuationLine = hasContinuation
       continue
     }
@@ -143,7 +149,7 @@ export const mcfunctionDiagnosticSource = (view: EditorView): Diagnostic[] => {
 
       let blockHasMacroVariables = false
       for (let currentLine = lineNumber; currentLine <= blockEndLineNumber; currentLine += 1) {
-        const blockLineText = doc.line(currentLine).text.replace(/\\\s*$/, "")
+        const blockLineText = stripLineContinuation(doc.line(currentLine).text)
         if (/\$\([^)]+\)/.test(blockLineText)) {
           blockHasMacroVariables = true
           break
