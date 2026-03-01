@@ -71,6 +71,18 @@ type EditorLanguageInfo = {
   label: string
 }
 
+type CursorMarkerInfo = {
+  line: number
+  column: number
+  selectedCharacters: number
+}
+
+const defaultCursorMarkerInfo: CursorMarkerInfo = {
+  line: 1,
+  column: 1,
+  selectedCharacters: 0,
+}
+
 const detectEditorLanguage = (relativePath: string | null | undefined): EditorLanguageInfo => {
   if (!relativePath) {
     return { id: "plaintext", label: "Plain Text" }
@@ -87,6 +99,18 @@ const detectEditorLanguage = (relativePath: string | null | undefined): EditorLa
   }
 
   return { id: "plaintext", label: "Plain Text" }
+}
+
+const getCursorMarkerInfo = (state: EditorState): CursorMarkerInfo => {
+  const selection = state.selection.main
+  const startPosition = selection.from
+  const line = state.doc.lineAt(startPosition)
+
+  return {
+    line: line.number,
+    column: startPosition - line.from + 1,
+    selectedCharacters: selection.to - selection.from,
+  }
 }
 
 // Custom keymap to trigger autocomplete on Enter
@@ -381,6 +405,7 @@ function CodeEditor() {
   const [openedFiles, setOpenedFiles] = useState<OpenedFile[]>([])
   const [activeFile, setActiveFile] = useState<string | null>(null)
   const [modifiedFiles, setModifiedFiles] = useState<Set<string>>(new Set())
+  const [cursorMarkerInfo, setCursorMarkerInfo] = useState<CursorMarkerInfo>(defaultCursorMarkerInfo)
   const tabsRef = useRef<HTMLDivElement>(null)
   const tabElementRefs = useRef<Map<string, HTMLDivElement>>(new Map())
   const [isAutoSaveEnabled, setIsAutoSaveEnabled] = useState(false)
@@ -834,6 +859,7 @@ function CodeEditor() {
     
     if (!fileKey) {
       view.setState(createEditorState("", null))
+      setCursorMarkerInfo(getCursorMarkerInfo(view.state))
       return
     }
     
@@ -861,6 +887,7 @@ function CodeEditor() {
     const cachedState = fileEditorStatesRef.current.get(fileKey)
     if (cachedState) {
       view.setState(cachedState)
+      setCursorMarkerInfo(getCursorMarkerInfo(view.state))
       view.focus()
       return
     }
@@ -868,6 +895,7 @@ function CodeEditor() {
     const newState = createEditorState(contents, fileKey)
     fileEditorStatesRef.current.set(fileKey, newState)
     view.setState(newState)
+    setCursorMarkerInfo(getCursorMarkerInfo(view.state))
     view.focus()
   }
 
@@ -1087,6 +1115,10 @@ function CodeEditor() {
         ...codeMirrorSetupExtensions,
         EditorView.lineWrapping,
         EditorView.updateListener.of((update) => {
+          if (update.selectionSet || update.docChanged) {
+            setCursorMarkerInfo(getCursorMarkerInfo(update.state))
+          }
+
           if (update.docChanged && activeFileRef.current) {
             const fileKey = activeFileRef.current
             const newContent = update.state.doc.toString()
@@ -1317,6 +1349,7 @@ function CodeEditor() {
     })
 
     viewRef.current = view
+    setCursorMarkerInfo(getCursorMarkerInfo(view.state))
 
     return () => {
       view.destroy()
@@ -2126,12 +2159,15 @@ function CodeEditor() {
       {/* Footer */}
       <div className="h-[30px] border-t border-codemirror-600
         bg-codemirror-700 text-codemirror-100
-        flex flex-row items-center gap-4
+        flex flex-row items-center
       ">
 
         <div className="footer-element">Made by touchportyl</div>
 
         <div className="flex-1"/>
+
+        {/* Line/Column */}
+        <div className="footer-element">Ln {cursorMarkerInfo.line}, Col {cursorMarkerInfo.column} {cursorMarkerInfo.selectedCharacters ? `(${cursorMarkerInfo.selectedCharacters} selected)` : ""}</div>
 
         {/* Language */}
         <div className="footer-element footer-button">
