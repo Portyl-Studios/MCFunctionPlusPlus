@@ -1,4 +1,4 @@
-import {EditorView, hoverTooltip} from "@codemirror/view"
+import {EditorView} from "@codemirror/view"
 import {Extension} from "@codemirror/state"
 import {HighlightStyle, syntaxHighlighting} from "@codemirror/language"
 import {tags as t} from "@lezer/highlight"
@@ -157,32 +157,7 @@ export const portylDarkEditorTheme = EditorView.theme({
   ".cm-diagnostic-warning": {
     background: "#2a313d",
     borderLeft: `3px solid ${warning}`
-  },
-
-  ".cm-context": {
-    textDecorationLine: "none",
-    textDecorationStyle: "solid",
-    textDecorationColor: light,
-    textDecorationThickness: "from-font",
-    textDecorationSkipInk: "none",
-  },
-  ".cm-context:hover": {
-  },
-  ".cm-context-mcfunction-holder": {
-  },
-  ".cm-context-mcfunction-objective": {
-    fontWeight: "bold",
-  },
-  ".cm-context-mcfunction-objective:hover": {
-    textDecorationLine: "underline",
-  },
-  ".cm-context-mcfunction-resource": {
-    textDecorationLine: "underline",
-    textDecorationColor: sage,
-  },
-  ".cm-context-mcfunction-tag": {
-  },
-
+  }
 }, {dark: true})
 
 export const portylHighlightStyle = HighlightStyle.define([

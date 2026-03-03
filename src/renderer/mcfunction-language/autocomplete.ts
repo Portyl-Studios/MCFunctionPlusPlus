@@ -1,6 +1,4 @@
 import type { Completion, CompletionContext, CompletionResult } from "@codemirror/autocomplete"
-import type { McfunctionContextIndex } from "./context"
-import { getMcfunctionContextIndex } from "./context"
 import {
   CommandNode,
   CommandSchemaRoot,
@@ -97,55 +95,9 @@ const getRegistrySuggestions = (registryId: string) => {
   return Array.isArray(values) ? values : []
 }
 
-const mergeUniqueSuggestions = (...groups: string[][]) => {
-  const unique = new Set<string>()
-  for (const group of groups) {
-    for (const value of group) {
-      if (!value) continue
-      unique.add(value)
-    }
-  }
-  return [...unique]
-}
-
-const resolveParserSuggestions = (node: CommandNode, contextIndex: McfunctionContextIndex): string[] => {
+const resolveParserSuggestions = (node: CommandNode): string[] => {
   const parserId = node.parser
   if (!parserId) return []
-
-  if (parserId === "minecraft:score_holder") {
-    return mergeUniqueSuggestions(
-      [...contextIndex.holders],
-      FALLBACK_SUGGESTIONS.parser[parserId] ?? [],
-    )
-  }
-
-  if (parserId === "minecraft:objective") {
-    return [...contextIndex.objectives]
-  }
-
-  if (parserId === "minecraft:function") {
-    const localFunctionPaths = [...contextIndex.resourcePaths]
-      .filter(path => !path.startsWith("#"))
-
-    return mergeUniqueSuggestions(
-      localFunctionPaths,
-      FALLBACK_SUGGESTIONS.parserResourceFallback[parserId] ?? [],
-    )
-  }
-
-  if (parserId === "minecraft:resource_location" || parserId === "minecraft:resource" || parserId === "minecraft:resource_key") {
-    return mergeUniqueSuggestions(
-      [...contextIndex.resourcePaths],
-      FALLBACK_SUGGESTIONS.parserResourceFallback["minecraft:resource_location"] ?? [],
-    )
-  }
-
-  if (parserId === "minecraft:resource_or_tag" || parserId === "minecraft:resource_or_tag_key") {
-    return mergeUniqueSuggestions(
-      [...contextIndex.resourcePaths],
-      FALLBACK_SUGGESTIONS.parserResourceFallback[parserId] ?? [],
-    )
-  }
 
   const registryName = typeof node.properties?.registry === "string"
     ? node.properties.registry
@@ -194,12 +146,12 @@ const resolveParserSuggestions = (node: CommandNode, contextIndex: McfunctionCon
     ?? []
 }
 
-const buildArgumentCompletions = (children: Record<string, CommandNode>, contextIndex: McfunctionContextIndex): Completion[] => {
+const buildArgumentCompletions = (children: Record<string, CommandNode>): Completion[] => {
   return Object.entries(children)
     .filter(([, child]) => child.type === "argument")
     .flatMap(([argumentName, child]) => {
       const parserId = child.parser ?? "argument"
-      const parserSuggestions = resolveParserSuggestions(child, contextIndex)
+      const parserSuggestions = resolveParserSuggestions(child)
 
       const concreteSuggestions = parserSuggestions.map((label) => ({
         label,
@@ -357,7 +309,6 @@ export const loadMinecraftData = async (version: string = DEFAULT_COMMAND_SCHEMA
 }
 
 export const mcfunctionCompletionSource = (context: CompletionContext): CompletionResult | null => {
-  const contextIndex = getMcfunctionContextIndex(context.state)
   const line = context.state.doc.lineAt(context.pos)
   const beforeCursor = line.text.slice(0, context.pos - line.from)
 
@@ -367,27 +318,6 @@ export const mcfunctionCompletionSource = (context: CompletionContext): Completi
   if (entitySelectorMatch) {
     const selectorContent = entitySelectorMatch[1]
     const from = context.pos - (selectorContent.split(/[,=]/).pop()?.length ?? 0)
-
-    const selectorTagMatch = selectorContent.match(/tag=(!?)([a-z0-9_./:-]*)$/i)
-    if (selectorTagMatch) {
-      const invertPrefix = selectorTagMatch[1]
-      const partial = selectorTagMatch[2] ?? ""
-      const tagSuggestions = [...contextIndex.tags]
-      const filteredTags = partial
-        ? tagSuggestions.filter(tag => tag.toLowerCase().startsWith(partial.toLowerCase()))
-        : tagSuggestions
-
-      const valueStart = context.pos - partial.length
-      const options = filteredTags.map(tag => ({
-        label: `${invertPrefix}${tag}`,
-        type: "variable" as const,
-        info: "Entity tag",
-      }))
-
-      if (options.length > 0) {
-        return { from: valueStart, options }
-      }
-    }
 
     if (selectorContent.match(/type=\w*$/)) {
       const partial = selectorContent.match(/type=(\w*)$/)?.[1] ?? ""
@@ -420,23 +350,6 @@ export const mcfunctionCompletionSource = (context: CompletionContext): Completi
     return options.length > 0 ? { from, options } : null
   }
 
-  const tagCommandMatch = beforeCursor.match(/^\s*\/?tag\s+\S+\s+(add|remove)\s+([^\s]*)$/i)
-  if (tagCommandMatch) {
-    const partial = tagCommandMatch[2] ?? ""
-    const from = context.pos - partial.length
-    const options = [...contextIndex.tags]
-      .filter(tag => !partial || tag.toLowerCase().startsWith(partial.toLowerCase()))
-      .map(tag => ({
-        label: tag,
-        type: "variable" as const,
-        info: "Tag name",
-      }))
-
-    if (options.length > 0) {
-      return { from, options }
-    }
-  }
-
   const resourceMatch = beforeCursor.match(/\b(minecraft:|[a-z_][a-z0-9_]*:)([a-z0-9_/]*)$/i)
   if (resourceMatch) {
     const namespace = resourceMatch[1]
@@ -454,7 +367,7 @@ export const mcfunctionCompletionSource = (context: CompletionContext): Completi
     const nodeSuggestions = parentNode
       ? Object.values(getEffectiveChildren(parentNode))
         .filter(child => child.type === "argument" && isResourceLikeArgument(child))
-        .flatMap(child => resolveParserSuggestions(child, contextIndex))
+        .flatMap(child => resolveParserSuggestions(child))
       : []
 
     const suggestions = nodeSuggestions.length > 0
@@ -493,7 +406,7 @@ export const mcfunctionCompletionSource = (context: CompletionContext): Completi
   const childMap = getEffectiveChildren(parentNode)
   const options = [
     ...buildLiteralCompletions(childMap),
-    ...buildArgumentCompletions(childMap, contextIndex),
+    ...buildArgumentCompletions(childMap),
   ]
 
   const normalizedTyped = normalizeCompletionForMatch(activeToken)
