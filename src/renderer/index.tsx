@@ -31,7 +31,11 @@ import { useDialogRequest } from "./overlays/dialog-request"
 import { ContextMenu } from "./overlays/contextmenu"
 import { useContextMenuRequest } from "./overlays/contextmenu-request"
 import { getDirFromPath, toRelativePaths, createFileKey, parseFileKey } from "./utils"
-import { loadMcfunctionCommandSchema, loadMinecraftData } from "./mcfunction-language"
+import {
+  loadMcfunctionCommandSchema,
+  loadMinecraftData,
+  setWorkspaceResourcePathsFromRelativePaths,
+} from "./mcfunction-language"
 import { detectEditorLanguage, getLanguageProcessingExtensions, type DiagnosticSummary } from "./language-handler"
 import { runGlobalDiagnosticsScan } from "./diagnostics/global-diagnostics"
 import { Tooltip } from "./overlays/tooltip"
@@ -1449,6 +1453,11 @@ function CodeEditor() {
 
     loadWorkspaceDatapacks()
   }, [workspaceInfo.dir])
+
+  useEffect(() => {
+    const relativePaths = datapacks.flatMap(datapack => datapack.paths)
+    setWorkspaceResourcePathsFromRelativePaths(relativePaths)
+  }, [datapacks])
 
   const activeRelativePath = activeFile ? parseFileKey(activeFile).relativePath : null
   const activeLanguage = detectEditorLanguage(activeRelativePath)
