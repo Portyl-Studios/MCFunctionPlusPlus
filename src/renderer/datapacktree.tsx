@@ -240,6 +240,48 @@ export function DatapackTree({ paths, className, folderName, rootId, rootName, r
     return next
   }, [basePath, modifiedFileKeys, tree.name])
 
+  const diagnosticPathSummaries = React.useMemo(() => {
+    const next: Record<string, DiagnosticSummary> = {}
+    if (!basePath || !fileDiagnosticSummaries) return next
+
+    for (const [fileKey, summary] of Object.entries(fileDiagnosticSummaries)) {
+      const errors = summary?.errors ?? 0
+      const warnings = summary?.warnings ?? 0
+      if (errors <= 0 && warnings <= 0) continue
+
+      const separatorIndex = fileKey.indexOf('|')
+      if (separatorIndex === -1) continue
+
+      const datapackDir = fileKey.slice(0, separatorIndex)
+      if (datapackDir !== basePath) continue
+
+      const relativePath = fileKey
+        .slice(separatorIndex + 1)
+        .replace(/\\/g, '/')
+        .replace(/^\/+/, '')
+
+      const pathKeys = [tree.name]
+      const segments = relativePath.split('/').filter(Boolean)
+      let currentPath = tree.name
+      for (const segment of segments) {
+        currentPath = `${currentPath}/${segment}`
+        pathKeys.push(currentPath)
+      }
+
+      for (const pathKey of pathKeys) {
+        const existingSummary = next[pathKey]
+        if (existingSummary) {
+          existingSummary.errors += errors
+          existingSummary.warnings += warnings
+        } else {
+          next[pathKey] = { errors, warnings }
+        }
+      }
+    }
+
+    return next
+  }, [basePath, fileDiagnosticSummaries, tree.name])
+
   const toggleExpanded = (pathKey: string) => {
     const next = new Set(effectiveExpandedPaths)
     if (next.has(pathKey)) {
@@ -467,7 +509,7 @@ export function DatapackTree({ paths, className, folderName, rootId, rootName, r
       ? detectEditorLanguage(relativePath || node.name).codicon
       : 'codicon-file'
     const nodeFileKey = basePath && relativePath ? `${basePath}|${relativePath}` : null
-    const nodeDiagnosticSummary = nodeFileKey ? fileDiagnosticSummaries?.[nodeFileKey] : undefined
+    const nodeDiagnosticSummary = diagnosticPathSummaries[pathKey]
     const hasDiagnosticError = (nodeDiagnosticSummary?.errors ?? 0) > 0
     const hasDiagnosticWarning = !hasDiagnosticError && (nodeDiagnosticSummary?.warnings ?? 0) > 0
     const isModified = modifiedPathKeys.has(pathKey)
@@ -554,7 +596,7 @@ export function DatapackTree({ paths, className, folderName, rootId, rootName, r
                 <i className="codicon codicon-warning text-amber-400 ml-1 shrink-0" />
               )}
               {isModified && (
-                <i className="codicon codicon-diff-modified text-orange-300 ml-1 shrink-0" />
+                <i className="codicon codicon-circle-filled text-orange-300 ml-1 shrink-0" />
               )}
             </div>
 

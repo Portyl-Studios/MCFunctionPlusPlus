@@ -2198,14 +2198,19 @@ function CodeEditor() {
                 const fileKey = createFileKey(file.datapackDir, file.relativePath)
                 const isActive = activeFile === fileKey
                 const duplicateFolderLabel = getDuplicateTabFolderLabel(file)
+                const tabDiagnosticSummary = fileDiagnosticSummaries[fileKey]
+                const tabHasDiagnosticError = (tabDiagnosticSummary?.errors ?? 0) > 0
+                const tabHasDiagnosticWarning = !tabHasDiagnosticError && (tabDiagnosticSummary?.warnings ?? 0) > 0
                 const isDragging = draggingFileKey === fileKey
                 const showLeftIndicator = dragOverFileKey === fileKey && dragOverPosition === "before"
                 const showRightIndicator = dragOverFileKey === fileKey && dragOverPosition === "after"
                 return (
                   <div className="relative flex" key={fileKey}>
+
                     {showLeftIndicator && (
                       <div className="absolute left-0 top-0 bottom-0 w-[2px] bg-codemirror-100 pointer-events-none" />
                     )}
+
                     <div
                       ref={(element) => registerTabElement(fileKey, element)}
                       draggable
@@ -2243,12 +2248,6 @@ function CodeEditor() {
                           label.className = "text-xs text-codemirror-300 italic ml-1"
                           label.textContent = duplicateFolderLabel
                           ghost.appendChild(label)
-                        }
-
-                        if (modifiedFiles.has(fileKey)) {
-                          const indicator = document.createElement("div")
-                          indicator.className = `codicon codicon-circle-filled text-orange-300 ml-2`
-                          ghost.appendChild(indicator)
                         }
 
                         document.body.appendChild(ghost)
@@ -2291,44 +2290,55 @@ function CodeEditor() {
                         setDraggingFileKey(null)
                       }}
                       className={`
-                        flex items-center gap-2 px-2 py-1
+                        flex flex-row items-center gap-1 px-2 py-1
                         border-r border-codemirror-600
                         whitespace-nowrap
                         cursor-pointer
                         ${isDragging ? "opacity-10" : ""}
                         ${isActive
-                          ? "bg-codemirror-default text-codemirror-100"
+                          ? "bg-codemirror-select hover:bg-codemirror-highlight text-codemirror-50"
                           : "hover:bg-codemirror-highlight text-codemirror-300"
                         }
                       `}
                     >
-                    <span className="text-sm">{file.fileName}</span>
 
-                    {/* Duplicate Disambiguation Label */}
-                    {duplicateFolderLabel && (
-                      <span className="text-xs text-codemirror-300 italic">{duplicateFolderLabel}</span>
-                    )}
+                      <span className="text-sm">{file.fileName}</span>
 
-                    {/* Indicators */}
-                    {modifiedFiles.has(fileKey) &&
-                      <div className={`codicon codicon-circle-filled text-orange-300`}/>
-                    }
+                      {/* Duplicate Disambiguation Label */}
+                      {duplicateFolderLabel && (
+                        <span className="text-xs text-codemirror-300 italic ml-1">{duplicateFolderLabel}</span>
+                      )}
 
-                    {/* Close Button */}
-                    <div
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        closeTab(fileKey)
-                      }}
-                      className={`codicon codicon-close
-                        p-1
-                        text-codemirror-200 hover:text-codemirror-50
-                        cursor-pointer`}
-                    />
+                      <div className="flex flex-row items-center gap-0.5 ml-1">
+                        {/* Indicators */}
+                        {tabHasDiagnosticError &&
+                          <div className={`codicon codicon-error text-red-400`}/>
+                        }
+                        {tabHasDiagnosticWarning &&
+                          <div className={`codicon codicon-warning text-amber-400`}/>
+                        }
+                        {modifiedFiles.has(fileKey) &&
+                          <div className={`codicon codicon-circle-filled -mr-0.5 text-orange-300`}/>
+                        }
+                      </div>
+
+                      {/* Close Button */}
+                      <div
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          closeTab(fileKey)
+                        }}
+                        className={`codicon codicon-close p-1
+                          text-codemirror-200 hover:text-codemirror-50
+                          cursor-pointer`}
+                      />
+
                     </div>
+
                     {showRightIndicator && (
                       <div className="absolute right-0 top-0 bottom-0 w-[2px] bg-codemirror-100 pointer-events-none" />
                     )}
+
                   </div>
                 )
               })}
