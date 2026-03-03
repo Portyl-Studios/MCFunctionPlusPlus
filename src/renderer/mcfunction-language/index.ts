@@ -7,5 +7,16 @@ export {
   mcfunctionCompletionSource,
 } from "./autocomplete"
 export { mcfunctionDiagnosticSource } from "./diagnostics"
+export {
+  mcfunctionContextExtension,
+  getMcfunctionContextIndex,
+  setWorkspaceResourcePathsFromRelativePaths,
+  parseMcfunctionContextIndex,
+  mergeMcfunctionContextIndexes,
+  setDatapackContextIndex,
+  clearDatapackContextIndexes,
+  setActiveDatapackContext,
+  getActiveDatapackContextIndex,
+} from "./context"
 
 rebuildCommandIndexes()

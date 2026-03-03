@@ -43,6 +43,12 @@ export const createFileKey = (datapackDir: string, relativePath: string): string
  * @returns Object with datapackDir and relativePath
  */
 export const parseFileKey = (fileKey: string): { datapackDir: string; relativePath: string } => {
-  const [datapackDir, relativePath] = fileKey.split('|')
+  const separatorIndex = fileKey.indexOf('|')
+  if (separatorIndex === -1) {
+    return { datapackDir: fileKey, relativePath: '' }
+  }
+
+  const datapackDir = fileKey.slice(0, separatorIndex)
+  const relativePath = fileKey.slice(separatorIndex + 1)
   return { datapackDir, relativePath }
 }
