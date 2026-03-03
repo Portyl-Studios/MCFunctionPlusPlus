@@ -22,65 +22,128 @@ const buildLiteralCompletions = (children: Record<string, CommandNode>): Complet
     })
 }
 
-const getDynamicSuggestionsForParser = (parserId: string): string[] => {
-  const basicSuggestions: Record<string, string[]> = {
+const REGISTRY_STORE_MAP: Record<string, keyof typeof mcfunctionStore> = {
+  "minecraft:block": "blockIds",
+  "minecraft:item": "itemIds",
+  "minecraft:entity_type": "entityTypeIds",
+  "minecraft:biome": "biomeIds",
+  "minecraft:enchantment": "enchantmentIds",
+  "minecraft:particle_type": "particleTypeIds",
+  "minecraft:sound_event": "soundEventIds",
+  "minecraft:game_event": "gameEventIds",
+  "minecraft:potion": "potionIds",
+  "minecraft:dimension": "dimensionIds",
+}
+
+const FALLBACK_SUGGESTIONS = {
+  parser: {
     "brigadier:bool": ["true", "false"],
-    "brigadier:integer": ["0", "1", "-1"],
-    "brigadier:float": ["0.0", "0.5", "1.0"],
-    "brigadier:double": ["0.0", "0.5", "1.0"],
-    "minecraft:entity": ["@s", "@p", "@a", "@e"],
+    "brigadier:integer": ["0"],
+    "brigadier:float": ["0.0"],
+    "brigadier:double": ["0.0"],
+    "minecraft:entity": ["@a", "@e", "@p", "@s"],
     "minecraft:game_profile": ["@a"],
-    "minecraft:block_pos": ["~ ~ ~", "0 64 0"],
-    "minecraft:vec2": ["~ ~", "0 0"],
-    "minecraft:vec3": ["~ ~ ~", "0 64 0"],
-    "minecraft:rotation": ["~ ~", "0 0"],
-    "minecraft:score_holder": ["@s", "*"],
+    "minecraft:block_pos": ["~ ~ ~", "^ ^ ^", "0 64 0"],
+    "minecraft:vec2": ["~ ~", "^ ^", "0 0"],
+    "minecraft:vec3": ["~ ~ ~", "^ ^ ^", "0 64 0"],
+    "minecraft:rotation": ["~ ~", "^ ^", "0 0"],
+    "minecraft:score_holder": ["@a", "@e", "@p", "@s"],
     "minecraft:message": ["\"text\""],
     "minecraft:nbt_compound_tag": ["{}"],
     "minecraft:nbt_path": ["path"],
-    "minecraft:time": ["1s", "20t", "1d"],
+    "minecraft:time": ["1t", "1s", "1d"],
     "minecraft:gamemode": ["survival", "creative", "adventure", "spectator"],
     "minecraft:entity_anchor": ["feet", "eyes"],
+  } as Record<string, string[]>,
+  parserResourceFallback: {
+    "minecraft:block_state": ["minecraft:stone"],
+    "minecraft:block_predicate": ["minecraft:stone"],
+    "minecraft:item_stack": ["minecraft:stick"],
+    "minecraft:item_predicate": ["minecraft:stick"],
+    "minecraft:dimension": ["minecraft:overworld", "minecraft:the_nether", "minecraft:the_end"],
+    "minecraft:entity_summon": ["minecraft:pig"],
+    "minecraft:particle": ["minecraft:flame"],
+    "minecraft:resource_location": ["minecraft:"],
+    "minecraft:function": ["minecraft:"],
+    "minecraft:resource_or_tag": ["minecraft:", "#minecraft:"],
+    "minecraft:resource_or_tag_key": ["minecraft:", "#minecraft:"],
+  } as Record<string, string[]>,
+  selectorArgs: ["type=", "tag=", "name=", "distance=", "x=", "y=", "z=", "dx=", "dy=", "dz=", "scores=", "limit=", "sort=", "nbt="],
+}
+
+const RESOURCE_PARSER_IDS = new Set<string>([
+  "minecraft:resource",
+  "minecraft:resource_key",
+  "minecraft:resource_or_tag",
+  "minecraft:resource_or_tag_key",
+  "minecraft:resource_location",
+  "minecraft:function",
+  "minecraft:block_state",
+  "minecraft:block_predicate",
+  "minecraft:item_stack",
+  "minecraft:item_predicate",
+  "minecraft:entity_summon",
+  "minecraft:particle",
+  "minecraft:dimension",
+])
+
+const getRegistrySuggestions = (registryId: string) => {
+  const storeKey = REGISTRY_STORE_MAP[registryId]
+  if (!storeKey) return []
+
+  const values = mcfunctionStore[storeKey]
+  return Array.isArray(values) ? values : []
+}
+
+const resolveParserSuggestions = (node: CommandNode): string[] => {
+  const parserId = node.parser
+  if (!parserId) return []
+
+  const registryName = typeof node.properties?.registry === "string"
+    ? node.properties.registry
+    : undefined
+
+  if (registryName) {
+    const registrySuggestions = getRegistrySuggestions(registryName)
+    if (registrySuggestions.length > 0) return registrySuggestions
   }
 
   if (parserId === "minecraft:block_state" || parserId === "minecraft:block_predicate") {
-    return mcfunctionStore.blockIds.length > 0 ? mcfunctionStore.blockIds.slice(0, 100) : ["minecraft:stone"]
+    if (mcfunctionStore.blockIds.length > 0) return mcfunctionStore.blockIds
   }
 
   if (parserId === "minecraft:item_stack" || parserId === "minecraft:item_predicate") {
-    return mcfunctionStore.itemIds.length > 0 ? mcfunctionStore.itemIds.slice(0, 100) : ["minecraft:stick"]
-  }
-
-  if (parserId === "minecraft:dimension") {
-    return mcfunctionStore.dimensionIds.length > 0 ? mcfunctionStore.dimensionIds : ["minecraft:overworld", "minecraft:the_nether", "minecraft:the_end"]
+    if (mcfunctionStore.itemIds.length > 0) return mcfunctionStore.itemIds
   }
 
   if (parserId === "minecraft:entity_summon") {
-    return mcfunctionStore.entityTypeIds.length > 0 ? mcfunctionStore.entityTypeIds.slice(0, 100) : ["minecraft:pig"]
+    if (mcfunctionStore.entityTypeIds.length > 0) return mcfunctionStore.entityTypeIds
   }
 
   if (parserId === "minecraft:particle") {
-    return mcfunctionStore.particleTypeIds.length > 0 ? mcfunctionStore.particleTypeIds.slice(0, 100) : ["minecraft:flame"]
+    if (mcfunctionStore.particleTypeIds.length > 0) return mcfunctionStore.particleTypeIds
   }
 
   if (parserId === "minecraft:resource_location" || parserId === "minecraft:function") {
     const samples = [...new Set([
-      ...mcfunctionStore.itemIds.slice(0, 20),
-      ...mcfunctionStore.blockIds.slice(0, 20),
-      ...mcfunctionStore.entityTypeIds.slice(0, 20),
+      ...mcfunctionStore.itemIds,
+      ...mcfunctionStore.blockIds,
+      ...mcfunctionStore.entityTypeIds,
     ])]
-    return samples.length > 0 ? samples : ["minecraft:"]
+    if (samples.length > 0) return samples
   }
 
   if (parserId === "minecraft:resource_or_tag" || parserId === "minecraft:resource_or_tag_key") {
     const samples = [...new Set([
-      ...mcfunctionStore.itemIds.slice(0, 15),
-      ...mcfunctionStore.blockIds.slice(0, 15),
+      ...mcfunctionStore.itemIds,
+      ...mcfunctionStore.blockIds,
     ])]
-    return samples.length > 0 ? [...samples, "#minecraft:"] : ["minecraft:", "#minecraft:"]
+    if (samples.length > 0) return [...samples, "#minecraft:"]
   }
 
-  return basicSuggestions[parserId] ?? []
+  return FALLBACK_SUGGESTIONS.parserResourceFallback[parserId]
+    ?? FALLBACK_SUGGESTIONS.parser[parserId]
+    ?? []
 }
 
 const buildArgumentCompletions = (children: Record<string, CommandNode>): Completion[] => {
@@ -88,7 +151,7 @@ const buildArgumentCompletions = (children: Record<string, CommandNode>): Comple
     .filter(([, child]) => child.type === "argument")
     .flatMap(([argumentName, child]) => {
       const parserId = child.parser ?? "argument"
-      const parserSuggestions = getDynamicSuggestionsForParser(parserId)
+      const parserSuggestions = resolveParserSuggestions(child)
 
       const concreteSuggestions = parserSuggestions.map((label) => ({
         label,
@@ -115,6 +178,39 @@ const normalizeCompletionForMatch = (value: string) => {
     .replace(/^</, "")
     .replace(/>$/, "")
     .toLowerCase()
+}
+
+const isResourceLikeArgument = (node: CommandNode) => {
+  if (typeof node.properties?.registry === "string") return true
+  if (!node.parser) return false
+  return RESOURCE_PARSER_IDS.has(node.parser)
+}
+
+const normalizeExecutionPathTokens = (tokens: string[]) => {
+  const runIndex = tokens.lastIndexOf("run")
+  if (runIndex === -1) return tokens
+
+  const tokensBeforeRun = tokens.slice(0, runIndex)
+  const nodeBeforeRun = tokensBeforeRun.length === 0
+    ? ({ children: mcfunctionStore.commandSchema.children } as CommandNode)
+    : resolveNodeForTokens(tokensBeforeRun)
+
+  if (!nodeBeforeRun) return tokens
+
+  const childMap = getEffectiveChildren(nodeBeforeRun)
+  if (childMap["run"]?.type !== "literal") return tokens
+
+  return tokens.slice(runIndex + 1)
+}
+
+const getGeneralResourceSuggestions = () => {
+  return [...new Set([
+    ...mcfunctionStore.blockIds,
+    ...mcfunctionStore.itemIds,
+    ...mcfunctionStore.entityTypeIds,
+    ...mcfunctionStore.particleTypeIds,
+    ...mcfunctionStore.dimensionIds,
+  ])]
 }
 
 export const loadMcfunctionCommandSchema = async (version: string = DEFAULT_COMMAND_SCHEMA_VERSION) => {
@@ -232,7 +328,6 @@ export const mcfunctionCompletionSource = (context: CompletionContext): Completi
 
       const options = mcfunctionStore.entityTypeIds
         .filter(id => !partial || id.toLowerCase().includes(partial.toLowerCase()))
-        .slice(0, 100)
         .map(id => ({
           label: id,
           type: "variable" as const,
@@ -242,7 +337,7 @@ export const mcfunctionCompletionSource = (context: CompletionContext): Completi
       return options.length > 0 ? { from, options } : null
     }
 
-    const args = ["type=", "tag=", "name=", "distance=", "x=", "y=", "z=", "dx=", "dy=", "dz=", "scores=", "limit=", "sort=", "nbt="]
+    const args = FALLBACK_SUGGESTIONS.selectorArgs
     const partial = selectorContent.split(",").pop() ?? ""
     const options = args
       .filter(arg => arg.startsWith(partial.toLowerCase()))
@@ -261,36 +356,30 @@ export const mcfunctionCompletionSource = (context: CompletionContext): Completi
     const partial = resourceMatch[2]
     const from = context.pos - partial.length
 
-    let commandContext = beforeCursor
-    const runMatch = beforeCursor.match(/\brun\s+/)
-    if (runMatch) {
-      const runIndex = beforeCursor.lastIndexOf(runMatch[0])
-      commandContext = beforeCursor.slice(runIndex + runMatch[0].length)
-    }
+    const resourceTokens = tokenizeCommand(beforeCursor)
+    resourceTokens.pop()
+    const resourcePathTokens = normalizeExecutionPathTokens(resourceTokens)
 
-    const commandMatch = commandContext.match(/^\s*\/?([a-z_]+)/)
-    const command = commandMatch?.[1]
+    const parentNode = resourcePathTokens.length === 0
+      ? ({ children: mcfunctionStore.commandSchema.children } as CommandNode)
+      : resolveNodeForTokens(resourcePathTokens)
 
-    let suggestions: string[] = []
-    if (command === "give" || command === "item") {
-      suggestions = mcfunctionStore.itemIds
-    } else if (command === "setblock" || command === "fill") {
-      suggestions = mcfunctionStore.blockIds
-    } else if (command === "summon") {
-      suggestions = mcfunctionStore.entityTypeIds
-    } else if (command === "particle") {
-      suggestions = mcfunctionStore.particleTypeIds
-    } else {
-      suggestions = [...new Set([...mcfunctionStore.blockIds, ...mcfunctionStore.itemIds, ...mcfunctionStore.entityTypeIds])]
-    }
+    const nodeSuggestions = parentNode
+      ? Object.values(getEffectiveChildren(parentNode))
+        .filter(child => child.type === "argument" && isResourceLikeArgument(child))
+        .flatMap(child => resolveParserSuggestions(child))
+      : []
+
+    const suggestions = nodeSuggestions.length > 0
+      ? [...new Set(nodeSuggestions)]
+      : getGeneralResourceSuggestions()
 
     if (suggestions.length === 0) {
-      console.warn(`[MCFunction] Resource suggestions requested for '${command}' but no data loaded`)
+      console.warn("[MCFunction] Resource suggestions requested but no data loaded")
     }
 
     const options = suggestions
       .filter(id => id.startsWith(namespace) && (!partial || id.slice(namespace.length).toLowerCase().startsWith(partial.toLowerCase())))
-      .slice(0, 100)
       .map(id => ({
         label: id.slice(namespace.length),
         type: "constant" as const,
@@ -303,22 +392,7 @@ export const mcfunctionCompletionSource = (context: CompletionContext): Completi
   const endsWithSpace = /\s$/.test(beforeCursor)
   const tokens = tokenizeCommand(beforeCursor)
   const activeToken = endsWithSpace ? "" : (tokens.pop() ?? "")
-  let pathTokens = tokens
-
-  const runIndex = pathTokens.lastIndexOf("run")
-  if (runIndex !== -1) {
-    const tokensBeforeRun = pathTokens.slice(0, runIndex)
-    const nodeBeforeRun = tokensBeforeRun.length === 0
-      ? ({ children: mcfunctionStore.commandSchema.children } as CommandNode)
-      : resolveNodeForTokens(tokensBeforeRun)
-
-    if (nodeBeforeRun) {
-      const childMap = getEffectiveChildren(nodeBeforeRun)
-      if (childMap["run"]?.type === "literal") {
-        pathTokens = pathTokens.slice(runIndex + 1)
-      }
-    }
-  }
+  const pathTokens = normalizeExecutionPathTokens(tokens)
 
   const from = context.pos - activeToken.length
   const firstTokenIsActive = pathTokens.length === 0
@@ -344,7 +418,7 @@ export const mcfunctionCompletionSource = (context: CompletionContext): Completi
 
   return {
     from,
-    options: filteredOptions.slice(0, 100),
+    options: filteredOptions,
     validFor: /^[a-z0-9_:<>-]*$/i,
   }
 }

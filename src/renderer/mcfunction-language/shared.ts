@@ -28,6 +28,11 @@ export type CommandNode = {
   children?: Record<string, CommandNode>
   redirect?: string[]
   parser?: string
+  properties?: Record<string, unknown>
+  executable?: boolean
+  suggestions?: {
+    provider?: string
+  }
 }
 
 export type CommandSchemaRoot = {
