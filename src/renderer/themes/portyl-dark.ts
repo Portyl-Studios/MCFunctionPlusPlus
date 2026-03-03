@@ -157,7 +157,35 @@ export const portylDarkEditorTheme = EditorView.theme({
   ".cm-diagnostic-warning": {
     background: "#2a313d",
     borderLeft: `3px solid ${warning}`
-  }
+  },
+
+  ".cm-context": {
+    textDecorationLine: "none",
+    textDecorationStyle: "solid",
+    textDecorationColor: light,
+    textDecorationThickness: "from-font",
+    textDecorationSkipInk: "none",
+  },
+  ".cm-context-mcfunction-holder": {
+    color: coral,
+  },
+  ".cm-context-mcfunction-objective": {
+    fontWeight: "bold",
+    color: ivory,
+  },
+  ".cm-context-mcfunction-objective:hover": {
+    textDecorationLine: "underline",
+    textDecorationColor: ivory,
+  },
+  ".cm-context-mcfunction-resource": {
+    color: sage,
+    textDecorationLine: "underline",
+    textDecorationColor: sage,
+  },
+  ".cm-context-mcfunction-tag": {
+    fontStyle: "italic",
+  },
+  
 }, {dark: true})
 
 export const portylHighlightStyle = HighlightStyle.define([

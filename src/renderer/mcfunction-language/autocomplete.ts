@@ -10,6 +10,27 @@ import {
   resolveNodeForTokens,
   tokenizeCommand,
 } from "./shared"
+import { getActiveDatapackContextIndex, getMcfunctionContextIndex, mergeMcfunctionContextIndexes, type McfunctionContextIndex } from "./context"
+
+const SCORE_HOLDER_REGEX = /^(@[a-z](?:\[[^\]]*\])?|\*|[\$#A-Za-z0-9_+.=-]+)$/i
+const OBJECTIVE_REGEX = /^[A-Za-z0-9_.+-]{1,16}$/
+
+type CompletionContextHints = {
+  previousToken?: string
+}
+
+const isScoreHolderToken = (value: string) => SCORE_HOLDER_REGEX.test(value)
+const isObjectiveToken = (value: string) => OBJECTIVE_REGEX.test(value)
+
+const getHoldersForObjective = (index: McfunctionContextIndex, objective: string) => {
+  const holders: string[] = []
+  for (const [holder, objectives] of index.objectivesByHolder.entries()) {
+    if (objectives.has(objective)) {
+      holders.push(holder)
+    }
+  }
+  return holders
+}
 
 const buildLiteralCompletions = (children: Record<string, CommandNode>): Completion[] => {
   return Object.entries(children)
@@ -95,9 +116,37 @@ const getRegistrySuggestions = (registryId: string) => {
   return Array.isArray(values) ? values : []
 }
 
-const resolveParserSuggestions = (node: CommandNode): string[] => {
+const resolveParserSuggestions = (
+  node: CommandNode,
+  contextIndex: McfunctionContextIndex,
+  hints?: CompletionContextHints,
+): string[] => {
   const parserId = node.parser
   if (!parserId) return []
+
+  if (parserId === "minecraft:objective") {
+    const holderToken = hints?.previousToken
+    if (holderToken && isScoreHolderToken(holderToken)) {
+      const pairedObjectives = contextIndex.objectivesByHolder.get(holderToken)
+      if (pairedObjectives && pairedObjectives.size > 0) {
+        return [...pairedObjectives]
+      }
+    }
+
+    if (contextIndex.objectives.size > 0) return [...contextIndex.objectives]
+  }
+
+  if (parserId === "minecraft:score_holder") {
+    const objectiveToken = hints?.previousToken
+    if (objectiveToken && isObjectiveToken(objectiveToken)) {
+      const pairedHolders = getHoldersForObjective(contextIndex, objectiveToken)
+      if (pairedHolders.length > 0) {
+        return pairedHolders
+      }
+    }
+
+    if (contextIndex.holders.size > 0) return [...contextIndex.holders]
+  }
 
   const registryName = typeof node.properties?.registry === "string"
     ? node.properties.registry
@@ -146,12 +195,16 @@ const resolveParserSuggestions = (node: CommandNode): string[] => {
     ?? []
 }
 
-const buildArgumentCompletions = (children: Record<string, CommandNode>): Completion[] => {
+const buildArgumentCompletions = (
+  children: Record<string, CommandNode>,
+  contextIndex: McfunctionContextIndex,
+  hints?: CompletionContextHints,
+): Completion[] => {
   return Object.entries(children)
     .filter(([, child]) => child.type === "argument")
     .flatMap(([argumentName, child]) => {
       const parserId = child.parser ?? "argument"
-      const parserSuggestions = resolveParserSuggestions(child)
+      const parserSuggestions = resolveParserSuggestions(child, contextIndex, hints)
 
       const concreteSuggestions = parserSuggestions.map((label) => ({
         label,
@@ -211,6 +264,12 @@ const getGeneralResourceSuggestions = () => {
     ...mcfunctionStore.particleTypeIds,
     ...mcfunctionStore.dimensionIds,
   ])]
+}
+
+const getCompletionContextIndex = (context: CompletionContext) => {
+  const localIndex = getMcfunctionContextIndex(context.state)
+  const datapackIndex = getActiveDatapackContextIndex()
+  return mergeMcfunctionContextIndexes(datapackIndex, localIndex)
 }
 
 export const loadMcfunctionCommandSchema = async (version: string = DEFAULT_COMMAND_SCHEMA_VERSION) => {
@@ -309,6 +368,7 @@ export const loadMinecraftData = async (version: string = DEFAULT_COMMAND_SCHEMA
 }
 
 export const mcfunctionCompletionSource = (context: CompletionContext): CompletionResult | null => {
+  const contextIndex = getCompletionContextIndex(context)
   const line = context.state.doc.lineAt(context.pos)
   const beforeCursor = line.text.slice(0, context.pos - line.from)
 
@@ -318,6 +378,8 @@ export const mcfunctionCompletionSource = (context: CompletionContext): Completi
   if (entitySelectorMatch) {
     const selectorContent = entitySelectorMatch[1]
     const from = context.pos - (selectorContent.split(/[,=]/).pop()?.length ?? 0)
+
+    const selectorHolder = beforeCursor.match(/(@[apse])\[[^\]]*$/)?.[1]
 
     if (selectorContent.match(/type=\w*$/)) {
       const partial = selectorContent.match(/type=(\w*)$/)?.[1] ?? ""
@@ -332,6 +394,59 @@ export const mcfunctionCompletionSource = (context: CompletionContext): Completi
           label: id,
           type: "variable" as const,
           info: "Entity type",
+        }))
+
+      return options.length > 0 ? { from, options } : null
+    }
+
+    const scoresMatch = selectorContent.match(/scores=\{([^}]*)$/)
+    if (scoresMatch) {
+      const scoresContent = scoresMatch[1] ?? ""
+      const currentSegment = scoresContent.split(",").pop() ?? ""
+
+      if (!currentSegment.includes("=")) {
+        const leadingWhitespaceLength = (currentSegment.match(/^\s*/) ?? [""])[0].length
+        const objectivePartial = currentSegment.slice(leadingWhitespaceLength)
+        const from = context.pos - objectivePartial.length
+
+        const pairedObjectives = selectorHolder
+          ? contextIndex.objectivesByHolder.get(selectorHolder)
+          : undefined
+
+        const objectiveSuggestions = pairedObjectives && pairedObjectives.size > 0
+          ? [...pairedObjectives]
+          : [...contextIndex.objectives]
+
+        const options = objectiveSuggestions
+          .filter(objective => !objectivePartial || objective.toLowerCase().startsWith(objectivePartial.toLowerCase()))
+          .map(objective => ({
+            label: `${objective}=`,
+            type: "property" as const,
+            info: selectorHolder ? `Score objective for ${selectorHolder}` : "Score objective",
+          }))
+
+        if (options.length > 0) {
+          return {
+            from,
+            options,
+            validFor: /^[a-z0-9_.+-]*$/i,
+          }
+        }
+      }
+    }
+
+    const tagMatch = selectorContent.match(/tag=(!?)([A-Za-z0-9_./:-]*)$/)
+    if (tagMatch) {
+      const negationPrefix = tagMatch[1] ?? ""
+      const partial = tagMatch[2] ?? ""
+      const from = context.pos - partial.length
+
+      const options = [...contextIndex.tags]
+        .filter(tag => !partial || tag.toLowerCase().includes(partial.toLowerCase()))
+        .map(tag => ({
+          label: `${negationPrefix}${tag}`,
+          type: "variable" as const,
+          info: "Entity tag",
         }))
 
       return options.length > 0 ? { from, options } : null
@@ -367,7 +482,7 @@ export const mcfunctionCompletionSource = (context: CompletionContext): Completi
     const nodeSuggestions = parentNode
       ? Object.values(getEffectiveChildren(parentNode))
         .filter(child => child.type === "argument" && isResourceLikeArgument(child))
-        .flatMap(child => resolveParserSuggestions(child))
+        .flatMap(child => resolveParserSuggestions(child, contextIndex))
       : []
 
     const suggestions = nodeSuggestions.length > 0
@@ -404,9 +519,29 @@ export const mcfunctionCompletionSource = (context: CompletionContext): Completi
   if (!parentNode) return null
 
   const childMap = getEffectiveChildren(parentNode)
+  if (pathTokens[0] === "tag" && (pathTokens[2] === "add" || pathTokens[2] === "remove")) {
+    const options = [...contextIndex.tags]
+      .map((label) => ({
+        label,
+        type: "variable" as const,
+        info: "Entity tag",
+      }))
+      .filter(option => !activeToken || normalizeCompletionForMatch(option.label).startsWith(normalizeCompletionForMatch(activeToken)))
+
+    if (options.length > 0) {
+      return {
+        from,
+        options,
+        validFor: /^[a-z0-9_./:-]*$/i,
+      }
+    }
+  }
+
   const options = [
     ...buildLiteralCompletions(childMap),
-    ...buildArgumentCompletions(childMap),
+    ...buildArgumentCompletions(childMap, contextIndex, {
+      previousToken: pathTokens[pathTokens.length - 1],
+    }),
   ]
 
   const normalizedTyped = normalizeCompletionForMatch(activeToken)

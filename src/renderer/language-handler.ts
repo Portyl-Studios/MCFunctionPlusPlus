@@ -6,6 +6,7 @@ import { json, jsonParseLinter } from "@codemirror/lang-json"
 import { markdown } from "@codemirror/lang-markdown"
 
 import {
+  mcfunctionContextExtension,
   mcfunctionLanguage,
   mcfunctionCompletionSource,
   mcfunctionDiagnosticSource,
@@ -95,6 +96,7 @@ const LANGUAGE_DEFINITIONS_INTERNAL: EditorLanguageDefinition[] = [
         return diagnostics
       }),
       mcfunctionEnterAutocompleteKeymap,
+      mcfunctionContextExtension,
       mcfunctionLanguage,
     ],
   },

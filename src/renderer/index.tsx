@@ -31,7 +31,16 @@ import { useDialogRequest } from "./overlays/dialog-request"
 import { ContextMenu } from "./overlays/contextmenu"
 import { useContextMenuRequest } from "./overlays/contextmenu-request"
 import { getDirFromPath, toRelativePaths, createFileKey, parseFileKey } from "./utils"
-import { loadMcfunctionCommandSchema, loadMinecraftData } from "./mcfunction-language"
+import {
+  clearDatapackContextIndexes,
+  loadMcfunctionCommandSchema,
+  loadMinecraftData,
+  mergeMcfunctionContextIndexes,
+  parseMcfunctionContextIndex,
+  setActiveDatapackContext,
+  setDatapackContextIndex,
+  setWorkspaceResourcePathsFromRelativePaths,
+} from "./mcfunction-language"
 import { detectEditorLanguage, getLanguageProcessingExtensions, type DiagnosticSummary } from "./language-handler"
 import { runGlobalDiagnosticsScan } from "./diagnostics/global-diagnostics"
 import { Tooltip } from "./overlays/tooltip"
@@ -362,6 +371,9 @@ function CodeEditor() {
   // Track auto-save timers per file using fileKey format: "datapackDir|relativePath"
   const autoSaveTimersRef = useRef<Map<string, number>>(new Map())
   const diagnosticsScanRunIdRef = useRef(0)
+  const contextScanRunIdRef = useRef(0)
+  const contextReloadTimerRef = useRef<number | null>(null)
+  const openFileRequestIdRef = useRef(0)
   const dialog = useDialogRequest()
   const isDialogOpenRef = useRef(dialog.isOpen)
   const openedFilesRef = useRef(openedFiles)
@@ -794,9 +806,14 @@ function CodeEditor() {
     return true
   }
 
-  const openFile = async (fileKey: string | null) => {
+  const openFile = async (fileKey: string | null, options?: { initialContent?: string }) => {
+    const requestId = openFileRequestIdRef.current + 1
+    openFileRequestIdRef.current = requestId
+
     const view = viewRef.current
     if (!view) {
+      const nextDatapackDir = fileKey ? parseFileKey(fileKey).datapackDir : null
+      setActiveDatapackContext(nextDatapackDir)
       setActiveFile(fileKey)
       activeFileRef.current = fileKey
       setDiagnosticSummary(fileKey ? (fileDiagnosticSummaries[fileKey] ?? defaultDiagnosticSummary) : defaultDiagnosticSummary)
@@ -807,6 +824,8 @@ function CodeEditor() {
     persistActiveEditorState()
     setActiveFile(fileKey)
     activeFileRef.current = fileKey
+    const nextDatapackDir = fileKey ? parseFileKey(fileKey).datapackDir : null
+    setActiveDatapackContext(nextDatapackDir)
     setDiagnosticSummary(fileKey ? (fileDiagnosticSummaries[fileKey] ?? defaultDiagnosticSummary) : defaultDiagnosticSummary)
     focusFileInExplorer(fileKey)
     
@@ -820,25 +839,31 @@ function CodeEditor() {
     const { datapackDir, relativePath } = parseFileKey(fileKey)
     
     // Find the opened file to get cached content
-    const openedFile = openedFiles.find((f) => createFileKey(f.datapackDir, f.relativePath) === fileKey)
+    const openedFile = openedFilesRef.current.find((f) => createFileKey(f.datapackDir, f.relativePath) === fileKey)
     
-    let contents = ""
+    const hasInitialContent = options?.initialContent !== undefined
+    let contents = hasInitialContent ? (options?.initialContent ?? "") : ""
     
     // Use cached content if available, otherwise read from disk
-    if (openedFile?.content !== undefined) {
+    if (!hasInitialContent && openedFile?.content !== undefined) {
       contents = openedFile.content
-    } else {
+    } else if (!hasInitialContent) {
       try {
         contents = await (window as any).electron.readFile(datapackDir, relativePath)
+        if (openFileRequestIdRef.current !== requestId) return
       } catch (error) {
+        if (openFileRequestIdRef.current !== requestId) return
         console.error("Failed to read file:", error)
         await dialog.showAlert("Error", `Failed to read file: ${error instanceof Error ? error.message : "Unknown error"}`)
         return
       }
     }
+
+    if (openFileRequestIdRef.current !== requestId) return
     
     const cachedState = fileEditorStatesRef.current.get(fileKey)
     if (cachedState) {
+      if (openFileRequestIdRef.current !== requestId) return
       view.setState(cachedState)
       setCursorMarkerInfo(getCursorMarkerInfo(view.state))
       view.focus()
@@ -895,10 +920,12 @@ function CodeEditor() {
     
     // Check if file is already open
     const existingFile = openedFiles.find((f) => createFileKey(f.datapackDir, f.relativePath) === fileKey)
+    let loadedContent: string | undefined
     if (!existingFile) {
       // Load content from disk for new files
       try {
         const content = await (window as any).electron.readFile(datapackDir, trimmedRelative)
+        loadedContent = content
         setOpenedFiles((prev) => {
           const alreadyOpen = prev.some((f) => createFileKey(f.datapackDir, f.relativePath) === fileKey)
           if (alreadyOpen) return prev
@@ -912,7 +939,7 @@ function CodeEditor() {
     }
     
     // Set as active and load content
-    await openFile(fileKey)
+    await openFile(fileKey, loadedContent !== undefined ? { initialContent: loadedContent } : undefined)
   }
 
   const clearAutoSaveTimer = (fileKey: string) => {
@@ -1057,6 +1084,91 @@ function CodeEditor() {
     })()
   }, [])
 
+  useEffect(() => {
+    const relativePaths = datapacks.flatMap((datapack) => datapack.paths)
+    setWorkspaceResourcePathsFromRelativePaths(relativePaths)
+  }, [datapacks])
+
+  const reloadAllContextsAsync = () => {
+    if (datapacks.length === 0) {
+      clearDatapackContextIndexes()
+      setActiveDatapackContext(null)
+      return
+    }
+
+    const scanRunId = contextScanRunIdRef.current + 1
+    contextScanRunIdRef.current = scanRunId
+
+    void (async () => {
+      for (const datapack of datapacks) {
+        if (contextScanRunIdRef.current !== scanRunId) return
+
+        let mergedIndex = parseMcfunctionContextIndex("")
+
+        for (const relativePathRaw of datapack.paths) {
+          if (contextScanRunIdRef.current !== scanRunId) return
+
+          const relativePath = relativePathRaw.replace(/\\/g, "/").replace(/^\/+/, "")
+          if (!relativePath.toLowerCase().endsWith(".mcfunction")) continue
+
+          const fileKey = createFileKey(datapack.dir, relativePath)
+          const openedFile = openedFilesRef.current.find((file) =>
+            createFileKey(file.datapackDir, file.relativePath) === fileKey,
+          )
+
+          let content: string | null = null
+
+          if (openedFile && modifiedFilesRef.current.has(fileKey)) {
+            content = openedFile.content
+          } else {
+            try {
+              content = await (window as any).electron.readFile(datapack.dir, relativePath)
+            } catch {
+              content = null
+            }
+          }
+
+          if (!content) continue
+
+          const fileContext = parseMcfunctionContextIndex(content)
+          mergedIndex = mergeMcfunctionContextIndexes(mergedIndex, fileContext)
+        }
+
+        setDatapackContextIndex(datapack.dir, mergedIndex)
+      }
+
+      const activeDatapackDir = activeFileRef.current
+        ? parseFileKey(activeFileRef.current).datapackDir
+        : null
+      setActiveDatapackContext(activeDatapackDir)
+    })()
+  }
+
+  const clearContextReloadTimer = () => {
+    if (contextReloadTimerRef.current !== null) {
+      window.clearTimeout(contextReloadTimerRef.current)
+      contextReloadTimerRef.current = null
+    }
+  }
+
+  const scheduleContextReload = () => {
+    clearContextReloadTimer()
+
+    contextReloadTimerRef.current = window.setTimeout(() => {
+      reloadAllContextsAsync()
+      contextReloadTimerRef.current = null
+    }, 1000)
+  }
+
+  useEffect(() => {
+    clearContextReloadTimer()
+    reloadAllContextsAsync()
+
+    return () => {
+      clearContextReloadTimer()
+    }
+  }, [datapacks])
+
   const createEditorState = (doc: string, fileKey: string | null = activeFileRef.current) => {
     const relativePath = fileKey ? parseFileKey(fileKey).relativePath : null
     const language = detectEditorLanguage(relativePath)
@@ -1107,6 +1219,7 @@ function CodeEditor() {
             )
 
             scheduleAutoSave(fileKey, newContent)
+            scheduleContextReload()
           }
         }),
         EditorView.domEventHandlers({
@@ -1382,6 +1495,7 @@ function CodeEditor() {
       // Clear all autosave timers on unmount
       autoSaveTimersRef.current.forEach((timerId) => window.clearTimeout(timerId))
       autoSaveTimersRef.current.clear()
+      clearContextReloadTimer()
       fileEditorStatesRef.current.clear()
     }
   }, [])
