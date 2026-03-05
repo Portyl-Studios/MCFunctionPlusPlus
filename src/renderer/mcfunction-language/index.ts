@@ -17,6 +17,7 @@ export {
   clearDatapackContextIndexes,
   setActiveDatapackContext,
   getActiveDatapackContextIndex,
+  getDatapackContextIndex,
 } from "./context"
 
 rebuildCommandIndexes()

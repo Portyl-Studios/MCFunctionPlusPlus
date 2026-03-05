@@ -4,12 +4,14 @@ import { autocompletion, startCompletion } from "@codemirror/autocomplete"
 import { linter, type Diagnostic } from "@codemirror/lint"
 import { json, jsonParseLinter } from "@codemirror/lang-json"
 import { markdown } from "@codemirror/lang-markdown"
+import type { McfunctionContextIndex } from "./mcfunction-language/context"
 
 import {
   mcfunctionContextExtension,
   mcfunctionLanguage,
   mcfunctionCompletionSource,
   mcfunctionDiagnosticSource,
+  getActiveDatapackContextIndex,
 } from "./mcfunction-language"
 
 export type EditorLanguageId = "mcfunction" | "json" | "markdown" | "plaintext"
@@ -91,7 +93,7 @@ const LANGUAGE_DEFINITIONS_INTERNAL: EditorLanguageDefinition[] = [
         maxRenderedOptions: 100,
       }),
       linter((view) => {
-        const diagnostics = mcfunctionDiagnosticSource(view)
+        const diagnostics = mcfunctionDiagnosticSource(view, getActiveDatapackContextIndex())
         onDiagnosticSummaryChange?.(summarizeDiagnostics(diagnostics))
         return diagnostics
       }),
@@ -192,10 +194,16 @@ export const getLanguageProcessingExtensions = (
 export const computeDiagnosticSummaryForContent = (
   languageId: EditorLanguageId,
   content: string,
+  options?: {
+    mcfunctionContextIndex?: McfunctionContextIndex
+  },
 ): DiagnosticSummary => {
   if (languageId === "mcfunction") {
     const state = EditorState.create({ doc: content })
-    const diagnostics = mcfunctionDiagnosticSource({ state } as any)
+    const diagnostics = mcfunctionDiagnosticSource(
+      { state } as any,
+      options?.mcfunctionContextIndex ?? getActiveDatapackContextIndex(),
+    )
     return summarizeDiagnostics(diagnostics)
   }
 

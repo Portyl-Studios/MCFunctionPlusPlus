@@ -1,12 +1,7 @@
 import { RangeSetBuilder, StateField, StateEffect, Text, type EditorState, type Extension } from "@codemirror/state"
-import { Decoration, type DecorationSet, EditorView } from "@codemirror/view"
+import { Decoration, type DecorationSet, EditorView, ViewPlugin } from "@codemirror/view"
 import { normalizeCommandToken } from "./shared"
-
-type RangedToken = {
-  value: string
-  start: number
-  end: number
-}
+import { getQuotedRanges, getRootCommandTokens, isInQuotedRange, type RangedToken, tokenizeCommandWithRanges } from "./parse-utils"
 
 type ScoreSymbolOccurrence = {
   from: number
@@ -28,6 +23,8 @@ type McfunctionContextState = {
   decorations: DecorationSet
 }
 
+type ContextParsePass = "collect" | "resolve"
+
 const HOLDER_REGEX = /^(@[a-z](?:\[[^\]]*\])?|\*|[\$#A-Za-z0-9_+.=-]+)$/i
 const OBJECTIVE_REGEX = /^[A-Za-z0-9_.+-]{1,16}$/
 const RESOURCE_PATH_REGEX = /^#?[a-z_][a-z0-9_.-]*:[a-z0-9_./-]+$/i
@@ -35,6 +32,8 @@ const RESOURCE_PATH_GLOBAL_REGEX = /#?[a-z_][a-z0-9_.-]*:[a-z0-9_./-]+/gi
 const TAG_NAME_REGEX = /^[A-Za-z0-9_./:-]+$/
 const SELECTOR_TAG_GLOBAL_REGEX = /(?:^|[\[,])\s*tag\s*=\s*(!?)([A-Za-z0-9_./:-]+)/gi
 const FUNCTION_FILE_PATH_REGEX = /^data\/([a-z0-9_.-]+)\/functions?\/(.+)\.mcfunction$/i
+const SCORE_COMPARISON_OPERATORS = new Set(["<", "<=", "=", ">=", ">", "matches"])
+const SCOREBOARD_PLAYER_ACTIONS = new Set(["set", "add", "remove", "get", "reset", "enable"])
 
 const workspaceResourcePaths = new Set<string>()
 const workspacePathsUpdatedEffect = StateEffect.define<void>()
@@ -69,48 +68,6 @@ const isTagNameToken = (value: string) => {
   return normalized.length > 0 && TAG_NAME_REGEX.test(normalized)
 }
 
-const getQuotedRanges = (lineText: string) => {
-  const ranges: Array<{ start: number; end: number }> = []
-  let quote: "'" | '"' | null = null
-  let quoteStart = -1
-  let escaped = false
-
-  for (let i = 0; i < lineText.length; i += 1) {
-    const character = lineText[i]
-
-    if (escaped) {
-      escaped = false
-      continue
-    }
-
-    if (character === "\\") {
-      escaped = true
-      continue
-    }
-
-    if (!quote && (character === '"' || character === "'")) {
-      quote = character
-      quoteStart = i
-      continue
-    }
-
-    if (quote && character === quote) {
-      ranges.push({ start: quoteStart, end: i + 1 })
-      quote = null
-      quoteStart = -1
-    }
-  }
-
-  if (quote && quoteStart >= 0) {
-    ranges.push({ start: quoteStart, end: lineText.length })
-  }
-
-  return ranges
-}
-
-const isInQuotedRange = (index: number, ranges: Array<{ start: number; end: number }>) => {
-  return ranges.some(range => index >= range.start && index < range.end)
-}
 
 const addObjectiveByHolder = (index: McfunctionContextIndex, holder: string, objective: string) => {
   const existing = index.objectivesByHolder.get(holder)
@@ -134,12 +91,20 @@ const addOccurrence = (
   })
 }
 
-const addScorePair = (
+const handleScorePair = (
   index: McfunctionContextIndex,
   lineFrom: number,
   holderToken: RangedToken | undefined,
   objectiveToken: RangedToken | undefined,
+  pass: ContextParsePass,
 ) => {
+  if (pass === "collect") {
+    if (holderToken && isScoreHolderToken(holderToken.value)) {
+      index.holders.add(holderToken.value)
+    }
+    return
+  }
+
   if (!holderToken || !objectiveToken) return
 
   const holderIsValid = isScoreHolderToken(holderToken.value)
@@ -160,62 +125,59 @@ const addScorePair = (
   }
 }
 
-const parseScoreboardLine = (index: McfunctionContextIndex, lineFrom: number, tokens: RangedToken[]) => {
+const handleScoreboardLine = (index: McfunctionContextIndex, lineFrom: number, tokens: RangedToken[], pass: ContextParsePass) => {
   const groupToken = tokens[1]?.value
   const actionToken = tokens[2]?.value
 
   if (groupToken === "objectives") {
-    if (actionToken === "add") {
-      const objective = tokens[3]
-      if (objective && isObjectiveToken(objective.value)) {
+    const objective = tokens[3]
+    if (!objective || !isObjectiveToken(objective.value)) return
+
+    if (pass === "collect") {
+      if (actionToken === "add") {
         index.objectives.add(objective.value)
-        addOccurrence(index, lineFrom, objective, "objective")
       }
       return
     }
 
-    if (actionToken === "modify") {
-      const objective = tokens[3]
-      if (objective && isObjectiveToken(objective.value) && index.objectives.has(objective.value)) {
-        addOccurrence(index, lineFrom, objective, "objective")
-      }
+    if (actionToken === "add") {
+      index.objectives.add(objective.value)
+      addOccurrence(index, lineFrom, objective, "objective")
       return
     }
 
-    if (actionToken === "remove") {
-      const objective = tokens[3]
-      if (objective && isObjectiveToken(objective.value)) {
-        const wasRegistered = index.objectives.has(objective.value)
-        index.objectives.delete(objective.value)
-        if (wasRegistered) {
-          addOccurrence(index, lineFrom, objective, "objective")
-        }
-      }
-      return
+    if ((actionToken === "modify" || actionToken === "remove") && index.objectives.has(objective.value)) {
+      addOccurrence(index, lineFrom, objective, "objective")
     }
+    return
   }
 
   if (groupToken !== "players") return
 
   if (actionToken === "operation") {
-    addScorePair(index, lineFrom, tokens[3], tokens[4])
-    addScorePair(index, lineFrom, tokens[6], tokens[7])
+    handleScorePair(index, lineFrom, tokens[3], tokens[4], pass)
+    handleScorePair(index, lineFrom, tokens[6], tokens[7], pass)
     return
   }
 
-  if (actionToken === "set" || actionToken === "add" || actionToken === "remove" || actionToken === "get" || actionToken === "reset" || actionToken === "enable") {
-    addScorePair(index, lineFrom, tokens[3], tokens[4])
+  if (actionToken && SCOREBOARD_PLAYER_ACTIONS.has(actionToken)) {
+    handleScorePair(index, lineFrom, tokens[3], tokens[4], pass)
   }
 }
 
-const parseInlineScoreUsage = (index: McfunctionContextIndex, lineFrom: number, tokens: RangedToken[]) => {
+const handleInlineScoreUsage = (index: McfunctionContextIndex, lineFrom: number, tokens: RangedToken[], pass: ContextParsePass) => {
   for (let i = 0; i < tokens.length - 2; i += 1) {
     if (tokens[i].value !== "score") continue
-    addScorePair(index, lineFrom, tokens[i + 1], tokens[i + 2])
+    handleScorePair(index, lineFrom, tokens[i + 1], tokens[i + 2], pass)
+
+    const operationToken = tokens[i + 3]?.value
+    if (operationToken && SCORE_COMPARISON_OPERATORS.has(operationToken)) {
+      handleScorePair(index, lineFrom, tokens[i + 4], tokens[i + 5], pass)
+    }
   }
 }
 
-const parseTagCommandUsage = (index: McfunctionContextIndex, lineFrom: number, tokens: RangedToken[]) => {
+const handleTagCommandUsage = (index: McfunctionContextIndex, lineFrom: number, tokens: RangedToken[], pass: ContextParsePass) => {
   const actionToken = tokens[2]?.value
   if (actionToken !== "add" && actionToken !== "remove") return
 
@@ -223,6 +185,13 @@ const parseTagCommandUsage = (index: McfunctionContextIndex, lineFrom: number, t
   if (!tagNameToken || !isTagNameToken(tagNameToken.value)) return
 
   const tagName = normalizeTagName(tagNameToken.value)
+
+  if (pass === "collect") {
+    if (actionToken === "add") {
+      index.tags.add(tagName)
+    }
+    return
+  }
 
   if (actionToken === "add") {
     index.tags.add(tagName)
@@ -234,7 +203,6 @@ const parseTagCommandUsage = (index: McfunctionContextIndex, lineFrom: number, t
   }
 
   const wasRegistered = index.tags.has(tagName)
-  index.tags.delete(tagName)
   if (wasRegistered) {
     addOccurrence(index, lineFrom, {
       ...tagNameToken,
@@ -243,7 +211,9 @@ const parseTagCommandUsage = (index: McfunctionContextIndex, lineFrom: number, t
   }
 }
 
-const parseSelectorTagUsage = (index: McfunctionContextIndex, lineFrom: number, lineText: string) => {
+const handleSelectorTagUsage = (index: McfunctionContextIndex, lineFrom: number, lineText: string, pass: ContextParsePass) => {
+  if (pass === "collect") return
+
   const quotedRanges = getQuotedRanges(lineText)
 
   for (const match of lineText.matchAll(SELECTOR_TAG_GLOBAL_REGEX)) {
@@ -268,7 +238,9 @@ const parseSelectorTagUsage = (index: McfunctionContextIndex, lineFrom: number, 
   }
 }
 
-const parseResourcePathUsage = (index: McfunctionContextIndex, lineFrom: number, lineText: string) => {
+const handleResourcePathUsage = (index: McfunctionContextIndex, lineFrom: number, lineText: string, pass: ContextParsePass) => {
+  if (pass === "collect") return
+
   const quotedRanges = getQuotedRanges(lineText)
 
   for (const match of lineText.matchAll(RESOURCE_PATH_GLOBAL_REGEX)) {
@@ -301,6 +273,16 @@ const createResourcePathFromFilePath = (relativePath: string) => {
   return `${namespace}:${pathValue}`
 }
 
+const refreshRegisteredEditorViews = () => {
+  for (const view of editorViewsToRefresh) {
+    try {
+      view.dispatch({ effects: workspacePathsUpdatedEffect.of(undefined) })
+    } catch {
+      editorViewsToRefresh.delete(view)
+    }
+  }
+}
+
 export const setWorkspaceResourcePathsFromRelativePaths = (relativePaths: string[]) => {
   workspaceResourcePaths.clear()
 
@@ -310,92 +292,7 @@ export const setWorkspaceResourcePathsFromRelativePaths = (relativePaths: string
     workspaceResourcePaths.add(resourcePath)
   }
 
-  // Trigger refresh in all registered views
-  for (const view of editorViewsToRefresh) {
-    try {
-      view.dispatch({ effects: workspacePathsUpdatedEffect.of(undefined) })
-    } catch (e) {
-      // View might be destroyed, ignore
-    }
-  }
-}
-
-const tokenizeCommandWithRanges = (input: string): RangedToken[] => {
-  const tokens: RangedToken[] = []
-  let start = -1
-  let quote: "'" | '"' | null = null
-  let escaped = false
-  let braceDepth = 0
-  let bracketDepth = 0
-
-  for (let i = 0; i < input.length; i += 1) {
-    const character = input[i]
-
-    if (start === -1 && !/\s/.test(character)) {
-      start = i
-    }
-
-    if (start === -1) continue
-
-    if (escaped) {
-      escaped = false
-      continue
-    }
-
-    if (character === "\\") {
-      escaped = true
-      continue
-    }
-
-    if (quote) {
-      if (character === quote) quote = null
-      continue
-    }
-
-    if (character === '"' || character === "'") {
-      quote = character
-      continue
-    }
-
-    if (character === "{") {
-      braceDepth += 1
-      continue
-    }
-
-    if (character === "}") {
-      braceDepth = Math.max(0, braceDepth - 1)
-      continue
-    }
-
-    if (character === "[") {
-      bracketDepth += 1
-      continue
-    }
-
-    if (character === "]") {
-      bracketDepth = Math.max(0, bracketDepth - 1)
-      continue
-    }
-
-    if (/\s/.test(character) && braceDepth === 0 && bracketDepth === 0) {
-      tokens.push({
-        value: input.slice(start, i),
-        start,
-        end: i,
-      })
-      start = -1
-    }
-  }
-
-  if (start !== -1) {
-    tokens.push({
-      value: input.slice(start),
-      start,
-      end: input.length,
-    })
-  }
-
-  return tokens
+  refreshRegisteredEditorViews()
 }
 
 const createEmptyIndex = (): McfunctionContextIndex => ({
@@ -478,6 +375,7 @@ const parseContextIndex = (
   seedTags?: Iterable<string>,
   seedHolders?: Iterable<string>,
   seedObjectivesByHolder?: Iterable<[string, Set<string>]>,
+  performCollectPass = true,
 ): McfunctionContextIndex => {
   const index = createEmptyIndex()
 
@@ -509,6 +407,35 @@ const parseContextIndex = (
     index.resourcePaths.add(resourcePath)
   }
 
+  if (performCollectPass) {
+    for (let lineNumber = 1; lineNumber <= doc.lines; lineNumber += 1) {
+      const line = doc.line(lineNumber)
+      const text = line.text
+
+      if (!text.trim() || isCommentLine(text)) continue
+
+      const tokens = tokenizeCommandWithRanges(text)
+      if (tokens.length === 0) continue
+
+      const rootCommandTokens = getRootCommandTokens(tokens)
+      if (rootCommandTokens.length === 0) continue
+
+      const rootCommand = normalizeCommandToken(rootCommandTokens[0].value)
+
+      if (rootCommand === "scoreboard") {
+        handleScoreboardLine(index, line.from, rootCommandTokens, "collect")
+      }
+
+      if (rootCommand === "tag") {
+        handleTagCommandUsage(index, line.from, rootCommandTokens, "collect")
+      }
+
+      handleInlineScoreUsage(index, line.from, tokens, "collect")
+      handleSelectorTagUsage(index, line.from, text, "collect")
+      handleResourcePathUsage(index, line.from, text, "collect")
+    }
+  }
+
   for (let lineNumber = 1; lineNumber <= doc.lines; lineNumber += 1) {
     const line = doc.line(lineNumber)
     const text = line.text
@@ -518,20 +445,23 @@ const parseContextIndex = (
     const tokens = tokenizeCommandWithRanges(text)
     if (tokens.length === 0) continue
 
-    const rootCommand = normalizeCommandToken(tokens[0].value)
-    tokens[0] = { ...tokens[0], value: rootCommand }
+    const rootCommandTokens = getRootCommandTokens(tokens)
+    if (rootCommandTokens.length === 0) continue
+
+    const rootCommand = normalizeCommandToken(rootCommandTokens[0].value)
+    rootCommandTokens[0] = { ...rootCommandTokens[0], value: rootCommand }
 
     if (rootCommand === "scoreboard") {
-      parseScoreboardLine(index, line.from, tokens)
+      handleScoreboardLine(index, line.from, rootCommandTokens, "resolve")
     }
 
     if (rootCommand === "tag") {
-      parseTagCommandUsage(index, line.from, tokens)
+      handleTagCommandUsage(index, line.from, rootCommandTokens, "resolve")
     }
 
-    parseInlineScoreUsage(index, line.from, tokens)
-    parseSelectorTagUsage(index, line.from, text)
-    parseResourcePathUsage(index, line.from, text)
+    handleInlineScoreUsage(index, line.from, tokens, "resolve")
+    handleSelectorTagUsage(index, line.from, text, "resolve")
+    handleResourcePathUsage(index, line.from, text, "resolve")
   }
 
   return index
@@ -546,6 +476,7 @@ const parseDocContextIndex = (doc: Text): McfunctionContextState => {
     activeDatapackIndex.tags,
     activeDatapackIndex.holders,
     activeDatapackIndex.objectivesByHolder.entries(),
+    false,
   )
 
   return {
@@ -559,7 +490,6 @@ const mcfunctionContextField = StateField.define<McfunctionContextState>({
     return parseDocContextIndex(state.doc)
   },
   update(value, transaction) {
-    // Recalculate if doc changed OR workspace paths were updated
     if (transaction.docChanged || transaction.effects.some(e => e.is(workspacePathsUpdatedEffect))) {
       return parseDocContextIndex(transaction.state.doc)
     }
@@ -568,9 +498,17 @@ const mcfunctionContextField = StateField.define<McfunctionContextState>({
   provide: field => EditorView.decorations.from(field, value => value.decorations),
 })
 
-const viewTrackingExtension = EditorView.updateListener.of((update) => {
-  // Register this view for workspace path updates
-  editorViewsToRefresh.add(update.view)
+const viewTrackingExtension = ViewPlugin.fromClass(class {
+  view: EditorView
+
+  constructor(view: EditorView) {
+    this.view = view
+    editorViewsToRefresh.add(view)
+  }
+
+  destroy() {
+    editorViewsToRefresh.delete(this.view)
+  }
 })
 
 export const mcfunctionContextExtension: Extension = [
@@ -606,6 +544,10 @@ export const setActiveDatapackContext = (datapackDir: string | null) => {
 export const getActiveDatapackContextIndex = (): McfunctionContextIndex => {
   if (!activeDatapackContextKey) return EMPTY_CONTEXT_INDEX
   return datapackContextIndexes.get(activeDatapackContextKey) ?? EMPTY_CONTEXT_INDEX
+}
+
+export const getDatapackContextIndex = (datapackDir: string): McfunctionContextIndex => {
+  return datapackContextIndexes.get(datapackDir) ?? EMPTY_CONTEXT_INDEX
 }
 
 export const getMcfunctionContextIndex = (state: EditorState): McfunctionContextIndex => {

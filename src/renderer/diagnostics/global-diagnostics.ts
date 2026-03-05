@@ -1,5 +1,6 @@
 import { createFileKey } from "../utils"
 import { computeDiagnosticSummaryForContent, detectEditorLanguage, type DiagnosticSummary } from "../language-handler"
+import { getDatapackContextIndex } from "../mcfunction-language"
 
 type DiagnosticsDatapack = {
   dir: string
@@ -17,6 +18,7 @@ type RunGlobalDiagnosticsScanOptions = {
   openedFiles: readonly DiagnosticsOpenedFile[]
   modifiedFileKeys: ReadonlySet<string>
   readFile: (datapackDir: string, relativePath: string) => Promise<string>
+  targetDatapackDir?: string
   shouldCancel?: () => boolean
 }
 
@@ -31,12 +33,23 @@ export const runGlobalDiagnosticsScan = async (
     openedFiles,
     modifiedFileKeys,
     readFile,
+    targetDatapackDir,
     shouldCancel,
   } = options
 
   const nextSummaries: Record<string, DiagnosticSummary> = {}
+  const datapacksToScan = targetDatapackDir
+    ? datapacks.filter(datapack => datapack.dir === targetDatapackDir)
+    : datapacks
+  const openedModifiedContentByFileKey = new Map<string, string>()
 
-  for (const datapack of datapacks) {
+  for (const openedFile of openedFiles) {
+    const fileKey = createFileKey(openedFile.datapackDir, openedFile.relativePath)
+    if (!modifiedFileKeys.has(fileKey)) continue
+    openedModifiedContentByFileKey.set(fileKey, openedFile.content)
+  }
+
+  for (const datapack of datapacksToScan) {
     for (const relativePathRaw of datapack.paths) {
       if (shouldCancel?.()) return null
 
@@ -49,12 +62,10 @@ export const runGlobalDiagnosticsScan = async (
       const fileKey = createFileKey(datapack.dir, relativePath)
 
       let content: string | null = null
-      const openedFile = openedFiles.find((file) =>
-        createFileKey(file.datapackDir, file.relativePath) === fileKey,
-      )
+      const openedModifiedContent = openedModifiedContentByFileKey.get(fileKey)
 
-      if (openedFile && modifiedFileKeys.has(fileKey)) {
-        content = openedFile.content
+      if (openedModifiedContent !== undefined) {
+        content = openedModifiedContent
       } else {
         try {
           content = await readFile(datapack.dir, relativePath)
@@ -66,7 +77,11 @@ export const runGlobalDiagnosticsScan = async (
       if (shouldCancel?.()) return null
       if (content === null) continue
 
-      const summary = computeDiagnosticSummaryForContent(language.id, content)
+      const summary = computeDiagnosticSummaryForContent(language.id, content, {
+        mcfunctionContextIndex: language.id === "mcfunction"
+          ? getDatapackContextIndex(datapack.dir)
+          : undefined,
+      })
       if (summary.errors > 0 || summary.warnings > 0) {
         nextSummaries[fileKey] = summary
       }

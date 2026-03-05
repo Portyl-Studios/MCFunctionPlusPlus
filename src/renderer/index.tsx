@@ -17,7 +17,7 @@ import { defaultKeymap, history, historyKeymap, indentWithTab } from "@codemirro
 import { foldGutter, foldKeymap, indentOnInput, syntaxHighlighting, defaultHighlightStyle, bracketMatching } from "@codemirror/language"
 import { closeBrackets, closeBracketsKeymap, completionKeymap } from "@codemirror/autocomplete"
 import { searchKeymap, highlightSelectionMatches } from "@codemirror/search"
-import { lintKeymap } from "@codemirror/lint"
+import { forceLinting, lintKeymap } from "@codemirror/lint"
 import { portylDarkTheme } from "./themes/portyl-dark"
 import "./index.css"
 import { Section, ResizeHandle, useResizableSection } from "./section"
@@ -70,6 +70,11 @@ type WorkspaceTabSessionFile = {
 type WorkspaceTabSession = {
   openedFiles: WorkspaceTabSessionFile[]
   activeFile: string | null
+}
+
+type ParsedContextCacheEntry = {
+  content: string
+  contextIndex: ReturnType<typeof parseMcfunctionContextIndex>
 }
 
 const OPEN_TABS_PREFERENCE_KEY = "openTabs"
@@ -372,7 +377,9 @@ function CodeEditor() {
   const autoSaveTimersRef = useRef<Map<string, number>>(new Map())
   const diagnosticsScanRunIdRef = useRef(0)
   const contextScanRunIdRef = useRef(0)
+  const contextDiagnosticsPipelineRunIdRef = useRef(0)
   const contextReloadTimerRef = useRef<number | null>(null)
+  const fileContextParseCacheRef = useRef<Map<string, ParsedContextCacheEntry>>(new Map())
   const openFileRequestIdRef = useRef(0)
   const dialog = useDialogRequest()
   const isDialogOpenRef = useRef(dialog.isOpen)
@@ -1089,7 +1096,76 @@ function CodeEditor() {
     setWorkspaceResourcePathsFromRelativePaths(relativePaths)
   }, [datapacks])
 
-  const reloadAllContextsAsync = () => {
+  const buildOpenedModifiedContentMap = () => {
+    const openedModifiedContentByFileKey = new Map<string, string>()
+
+    for (const file of openedFilesRef.current) {
+      const fileKey = createFileKey(file.datapackDir, file.relativePath)
+      if (!modifiedFilesRef.current.has(fileKey)) continue
+      openedModifiedContentByFileKey.set(fileKey, file.content)
+    }
+
+    return openedModifiedContentByFileKey
+  }
+
+  const buildDatapackContextIndexAsync = async (
+    datapack: DatapackEntry,
+    scanRunId: number,
+    openedModifiedContentByFileKey: ReadonlyMap<string, string>,
+  ) => {
+    let mergedIndex = parseMcfunctionContextIndex("")
+
+    for (const relativePathRaw of datapack.paths) {
+      if (contextScanRunIdRef.current !== scanRunId) return null
+
+      const relativePath = relativePathRaw.replace(/\\/g, "/").replace(/^\/+/, "")
+      if (!relativePath.toLowerCase().endsWith(".mcfunction")) continue
+
+      const fileKey = createFileKey(datapack.dir, relativePath)
+      let content: string | null = null
+
+      const openedModifiedContent = openedModifiedContentByFileKey.get(fileKey)
+      if (openedModifiedContent !== undefined) {
+        content = openedModifiedContent
+      } else {
+        try {
+          content = await (window as any).electron.readFile(datapack.dir, relativePath)
+        } catch {
+          content = null
+        }
+      }
+
+      if (!content) continue
+
+      const cachedContext = fileContextParseCacheRef.current.get(fileKey)
+      const fileContext = cachedContext?.content === content
+        ? cachedContext.contextIndex
+        : parseMcfunctionContextIndex(content)
+
+      if (!cachedContext || cachedContext.content !== content) {
+        fileContextParseCacheRef.current.set(fileKey, {
+          content,
+          contextIndex: fileContext,
+        })
+      }
+
+      mergedIndex = mergeMcfunctionContextIndexes(mergedIndex, fileContext)
+    }
+
+    return mergedIndex
+  }
+
+  const refreshActiveEditorLint = () => {
+    if (!viewRef.current) return
+
+    window.requestAnimationFrame(() => {
+      if (viewRef.current) {
+        forceLinting(viewRef.current)
+      }
+    })
+  }
+
+  const reloadAllContextsAsync = async () => {
     if (datapacks.length === 0) {
       clearDatapackContextIndexes()
       setActiveDatapackContext(null)
@@ -1098,50 +1174,53 @@ function CodeEditor() {
 
     const scanRunId = contextScanRunIdRef.current + 1
     contextScanRunIdRef.current = scanRunId
+    const openedModifiedContentByFileKey = buildOpenedModifiedContentMap()
 
-    void (async () => {
-      for (const datapack of datapacks) {
-        if (contextScanRunIdRef.current !== scanRunId) return
+    for (const datapack of datapacks) {
+      if (contextScanRunIdRef.current !== scanRunId) return
 
-        let mergedIndex = parseMcfunctionContextIndex("")
+      const mergedIndex = await buildDatapackContextIndexAsync(datapack, scanRunId, openedModifiedContentByFileKey)
+      if (!mergedIndex) return
 
-        for (const relativePathRaw of datapack.paths) {
-          if (contextScanRunIdRef.current !== scanRunId) return
+      setDatapackContextIndex(datapack.dir, mergedIndex)
+    }
 
-          const relativePath = relativePathRaw.replace(/\\/g, "/").replace(/^\/+/, "")
-          if (!relativePath.toLowerCase().endsWith(".mcfunction")) continue
+    const activeDatapackDir = activeFileRef.current
+      ? parseFileKey(activeFileRef.current).datapackDir
+      : null
+    setActiveDatapackContext(activeDatapackDir)
 
-          const fileKey = createFileKey(datapack.dir, relativePath)
-          const openedFile = openedFilesRef.current.find((file) =>
-            createFileKey(file.datapackDir, file.relativePath) === fileKey,
-          )
+    refreshActiveEditorLint()
+  }
 
-          let content: string | null = null
+  const reloadDatapackContextAsync = async (datapackDir: string) => {
+    const scanRunId = contextScanRunIdRef.current + 1
+    contextScanRunIdRef.current = scanRunId
+    const openedModifiedContentByFileKey = buildOpenedModifiedContentMap()
 
-          if (openedFile && modifiedFilesRef.current.has(fileKey)) {
-            content = openedFile.content
-          } else {
-            try {
-              content = await (window as any).electron.readFile(datapack.dir, relativePath)
-            } catch {
-              content = null
-            }
-          }
-
-          if (!content) continue
-
-          const fileContext = parseMcfunctionContextIndex(content)
-          mergedIndex = mergeMcfunctionContextIndexes(mergedIndex, fileContext)
-        }
-
-        setDatapackContextIndex(datapack.dir, mergedIndex)
-      }
+    const datapack = datapacks.find(entry => entry.dir === datapackDir)
+    if (!datapack) {
+      setDatapackContextIndex(datapackDir, null)
 
       const activeDatapackDir = activeFileRef.current
         ? parseFileKey(activeFileRef.current).datapackDir
         : null
       setActiveDatapackContext(activeDatapackDir)
-    })()
+      refreshActiveEditorLint()
+      return
+    }
+
+    const mergedIndex = await buildDatapackContextIndexAsync(datapack, scanRunId, openedModifiedContentByFileKey)
+    if (!mergedIndex) return
+
+    setDatapackContextIndex(datapack.dir, mergedIndex)
+
+    const activeDatapackDir = activeFileRef.current
+      ? parseFileKey(activeFileRef.current).datapackDir
+      : null
+    setActiveDatapackContext(activeDatapackDir)
+
+    refreshActiveEditorLint()
   }
 
   const clearContextReloadTimer = () => {
@@ -1151,23 +1230,105 @@ function CodeEditor() {
     }
   }
 
-  const scheduleContextReload = () => {
+  const scheduleContextReload = (datapackDir?: string) => {
     clearContextReloadTimer()
 
     contextReloadTimerRef.current = window.setTimeout(() => {
-      reloadAllContextsAsync()
+      void reloadContextsThenDiagnosticsAsync(datapackDir)
       contextReloadTimerRef.current = null
     }, 1000)
   }
 
+  const reloadContextsThenDiagnosticsAsync = async (datapackDir?: string) => {
+    const pipelineRunId = contextDiagnosticsPipelineRunIdRef.current + 1
+    contextDiagnosticsPipelineRunIdRef.current = pipelineRunId
+
+    if (datapackDir) {
+      await reloadDatapackContextAsync(datapackDir)
+    } else {
+      await reloadAllContextsAsync()
+    }
+    if (contextDiagnosticsPipelineRunIdRef.current !== pipelineRunId) return
+
+    await reloadAllDiagnosticsAsync()
+  }
+
+  const reloadAllDiagnosticsAsync = async (scanDatapackDir?: string) => {
+    if (!workspaceInfo.dir || datapacks.length === 0) {
+      setFileDiagnosticSummaries((prev) => {
+        const preserved: Record<string, DiagnosticSummary> = {}
+        for (const [fileKey, summary] of Object.entries(prev)) {
+          if (modifiedFilesRef.current.has(fileKey)) {
+            preserved[fileKey] = summary
+          }
+        }
+        return preserved
+      })
+      return
+    }
+
+    const scanRunId = diagnosticsScanRunIdRef.current + 1
+    diagnosticsScanRunIdRef.current = scanRunId
+
+    const nextSummaries = await runGlobalDiagnosticsScan({
+      datapacks,
+      openedFiles: openedFilesRef.current,
+      modifiedFileKeys: modifiedFilesRef.current,
+      readFile: (datapackDir, relativePath) => (window as any).electron.readFile(datapackDir, relativePath),
+      targetDatapackDir: scanDatapackDir,
+      shouldCancel: () => diagnosticsScanRunIdRef.current !== scanRunId,
+    })
+
+    if (!nextSummaries) return
+    if (diagnosticsScanRunIdRef.current !== scanRunId) return
+
+    setFileDiagnosticSummaries((prev) => {
+      if (!scanDatapackDir) {
+        const preservedModified: Record<string, DiagnosticSummary> = {}
+        for (const [fileKey, summary] of Object.entries(prev)) {
+          if (modifiedFilesRef.current.has(fileKey)) {
+            preservedModified[fileKey] = summary
+          }
+        }
+
+        return {
+          ...nextSummaries,
+          ...preservedModified,
+        }
+      }
+
+      const next = { ...prev }
+
+      for (const fileKey of Object.keys(next)) {
+        const fileDatapackDir = parseFileKey(fileKey).datapackDir
+        if (fileDatapackDir !== scanDatapackDir) continue
+        if (modifiedFilesRef.current.has(fileKey)) continue
+        delete next[fileKey]
+      }
+
+      for (const [fileKey, summary] of Object.entries(nextSummaries)) {
+        next[fileKey] = summary
+      }
+
+      for (const [fileKey, summary] of Object.entries(prev)) {
+        if (!modifiedFilesRef.current.has(fileKey)) continue
+        const fileDatapackDir = parseFileKey(fileKey).datapackDir
+        if (fileDatapackDir === scanDatapackDir) continue
+        next[fileKey] = summary
+      }
+
+      return next
+    })
+  }
+
   useEffect(() => {
     clearContextReloadTimer()
-    reloadAllContextsAsync()
+    void reloadContextsThenDiagnosticsAsync()
 
     return () => {
       clearContextReloadTimer()
     }
-  }, [datapacks])
+  }, [workspaceInfo.dir, datapacks])
 
   const createEditorState = (doc: string, fileKey: string | null = activeFileRef.current) => {
     const relativePath = fileKey ? parseFileKey(fileKey).relativePath : null
@@ -1207,7 +1368,6 @@ function CodeEditor() {
           if (update.docChanged && activeFileRef.current) {
             const fileKey = activeFileRef.current
             const newContent = update.state.doc.toString()
-
             setModifiedFiles((prev) => new Set(prev).add(fileKey))
 
             setOpenedFiles((prev) =>
@@ -1219,7 +1379,7 @@ function CodeEditor() {
             )
 
             scheduleAutoSave(fileKey, newContent)
-            scheduleContextReload()
+            scheduleContextReload(parseFileKey(fileKey).datapackDir)
           }
         }),
         EditorView.domEventHandlers({
@@ -1266,50 +1426,6 @@ function CodeEditor() {
   useEffect(() => {
     modifiedFilesRef.current = modifiedFiles
   }, [modifiedFiles])
-
-  useEffect(() => {
-    if (!workspaceInfo.dir || datapacks.length === 0) {
-      setFileDiagnosticSummaries((prev) => {
-        const preserved: Record<string, DiagnosticSummary> = {}
-        for (const [fileKey, summary] of Object.entries(prev)) {
-          if (modifiedFilesRef.current.has(fileKey)) {
-            preserved[fileKey] = summary
-          }
-        }
-        return preserved
-      })
-      return
-    }
-
-    const scanRunId = diagnosticsScanRunIdRef.current + 1
-    diagnosticsScanRunIdRef.current = scanRunId
-
-    void (async () => {
-      const nextSummaries = await runGlobalDiagnosticsScan({
-        datapacks,
-        openedFiles: openedFilesRef.current,
-        modifiedFileKeys: modifiedFilesRef.current,
-        readFile: (datapackDir, relativePath) => (window as any).electron.readFile(datapackDir, relativePath),
-        shouldCancel: () => diagnosticsScanRunIdRef.current !== scanRunId,
-      })
-
-      if (!nextSummaries) return
-      if (diagnosticsScanRunIdRef.current !== scanRunId) return
-
-      setFileDiagnosticSummaries((prev) => {
-        const preservedModified: Record<string, DiagnosticSummary> = {}
-        for (const [fileKey, summary] of Object.entries(prev)) {
-          if (modifiedFilesRef.current.has(fileKey)) {
-            preservedModified[fileKey] = summary
-          }
-        }
-        return {
-          ...nextSummaries,
-          ...preservedModified,
-        }
-      })
-    })()
-  }, [workspaceInfo.dir, datapacks])
 
   // Handle workspace tab restoration on workspace load
   useEffect(() => {

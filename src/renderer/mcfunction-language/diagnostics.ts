@@ -1,7 +1,8 @@
 import type { EditorView } from "@codemirror/view"
 import type { Diagnostic } from "@codemirror/lint"
 import { mcfunctionStore, normalizeCommandToken } from "./shared"
-import { getActiveDatapackContextIndex } from "./context"
+import type { McfunctionContextIndex } from "./context"
+import { getQuotedRanges, getRootCommandTokens, isInQuotedRange, type RangedToken, tokenizeCommandWithRanges } from "./parse-utils"
 
 const findCommandSuggestions = (command: string) => {
   const lower = command.toLowerCase()
@@ -38,15 +39,19 @@ const createDiagnosticParseState = (): DiagnosticParseState => ({
 
 const isCommentLine = (text: string) => /^\s*#/.test(text)
 
-type RangedToken = {
-  value: string
-  start: number
-  end: number
+type DiagnosticPass = "collect" | "validate"
+
+type SymbolDiagnosticState = {
+  registeredObjectives: Set<string>
+  registeredTags: Set<string>
+  diagnostics: Diagnostic[]
 }
 
 const OBJECTIVE_REGEX = /^[A-Za-z0-9_.+-]{1,16}$/
 const TAG_NAME_REGEX = /^[A-Za-z0-9_./:-]+$/
 const SELECTOR_TAG_GLOBAL_REGEX = /(?:^|[\[,])\s*tag\s*=\s*(!?)([A-Za-z0-9_./:-]+)/gi
+const SCORE_COMPARISON_OPERATORS = new Set(["<", "<=", "=", ">=", ">", "matches"])
+const SCOREBOARD_PLAYER_ACTIONS = new Set(["set", "add", "remove", "get", "reset", "enable"])
 
 const normalizeTagName = (value: string) => value.replace(/^!/, "")
 
@@ -55,127 +60,6 @@ const isObjectiveToken = (value: string) => OBJECTIVE_REGEX.test(value)
 const isTagNameToken = (value: string) => {
   const normalized = normalizeTagName(value)
   return normalized.length > 0 && TAG_NAME_REGEX.test(normalized)
-}
-
-const tokenizeCommandWithRanges = (input: string): RangedToken[] => {
-  const tokens: RangedToken[] = []
-  let start = -1
-  let quote: "'" | '"' | null = null
-  let escaped = false
-  let braceDepth = 0
-  let bracketDepth = 0
-
-  for (let i = 0; i < input.length; i += 1) {
-    const character = input[i]
-
-    if (start === -1 && !/\s/.test(character)) {
-      start = i
-    }
-
-    if (start === -1) continue
-
-    if (escaped) {
-      escaped = false
-      continue
-    }
-
-    if (character === "\\") {
-      escaped = true
-      continue
-    }
-
-    if (quote) {
-      if (character === quote) quote = null
-      continue
-    }
-
-    if (character === '"' || character === "'") {
-      quote = character
-      continue
-    }
-
-    if (character === "{") {
-      braceDepth += 1
-      continue
-    }
-
-    if (character === "}") {
-      braceDepth = Math.max(0, braceDepth - 1)
-      continue
-    }
-
-    if (character === "[") {
-      bracketDepth += 1
-      continue
-    }
-
-    if (character === "]") {
-      bracketDepth = Math.max(0, bracketDepth - 1)
-      continue
-    }
-
-    if (/\s/.test(character) && braceDepth === 0 && bracketDepth === 0) {
-      tokens.push({
-        value: input.slice(start, i),
-        start,
-        end: i,
-      })
-      start = -1
-    }
-  }
-
-  if (start !== -1) {
-    tokens.push({
-      value: input.slice(start),
-      start,
-      end: input.length,
-    })
-  }
-
-  return tokens
-}
-
-const getQuotedRanges = (lineText: string) => {
-  const ranges: Array<{ start: number; end: number }> = []
-  let quote: "'" | '"' | null = null
-  let quoteStart = -1
-  let escaped = false
-
-  for (let i = 0; i < lineText.length; i += 1) {
-    const character = lineText[i]
-
-    if (escaped) {
-      escaped = false
-      continue
-    }
-
-    if (character === "\\") {
-      escaped = true
-      continue
-    }
-
-    if (!quote && (character === '"' || character === "'")) {
-      quote = character
-      quoteStart = i
-      continue
-    }
-
-    if (quote && character === quote) {
-      ranges.push({ start: quoteStart, end: i + 1 })
-      quote = null
-      quoteStart = -1
-    }
-  }
-
-  if (quote && quoteStart >= 0) {
-    ranges.push({ start: quoteStart, end: lineText.length })
-  }
-
-  return ranges
-}
-
-const isInQuotedRange = (index: number, ranges: Array<{ start: number; end: number }>) => {
-  return ranges.some(range => index >= range.start && index < range.end)
 }
 
 const pushUnknownObjectiveDiagnostic = (
@@ -206,16 +90,166 @@ const pushUnknownTagDiagnostic = (
   })
 }
 
+const handleObjectiveToken = (
+  state: SymbolDiagnosticState,
+  lineFrom: number,
+  objectiveToken: RangedToken | undefined,
+  pass: DiagnosticPass,
+) => {
+  if (!objectiveToken || !isObjectiveToken(objectiveToken.value)) return
+
+  if (pass === "collect") return
+
+  if (state.registeredObjectives.has(objectiveToken.value)) return
+  pushUnknownObjectiveDiagnostic(
+    state.diagnostics,
+    lineFrom + objectiveToken.start,
+    lineFrom + objectiveToken.end,
+    objectiveToken.value,
+  )
+}
+
+const handleScoreboardSymbols = (
+  state: SymbolDiagnosticState,
+  lineFrom: number,
+  rootCommandTokens: RangedToken[],
+  pass: DiagnosticPass,
+) => {
+  const groupToken = rootCommandTokens[1]?.value
+  const actionToken = rootCommandTokens[2]?.value
+
+  if (groupToken === "objectives") {
+    const objectiveToken = rootCommandTokens[3]
+    if (!objectiveToken || !isObjectiveToken(objectiveToken.value)) return
+
+    if (pass === "collect") {
+      if (actionToken === "add") {
+        state.registeredObjectives.add(objectiveToken.value)
+      }
+      return
+    }
+
+    if (actionToken === "add") {
+      state.registeredObjectives.add(objectiveToken.value)
+      return
+    }
+
+    if (actionToken === "modify" || actionToken === "remove") {
+      handleObjectiveToken(state, lineFrom, objectiveToken, "validate")
+    }
+    return
+  }
+
+  if (groupToken !== "players") return
+
+  if (actionToken === "operation") {
+    handleObjectiveToken(state, lineFrom, rootCommandTokens[4], pass)
+    handleObjectiveToken(state, lineFrom, rootCommandTokens[7], pass)
+    return
+  }
+
+  if (actionToken && SCOREBOARD_PLAYER_ACTIONS.has(actionToken)) {
+    handleObjectiveToken(state, lineFrom, rootCommandTokens[4], pass)
+  }
+}
+
+const handleInlineScoreSymbols = (
+  state: SymbolDiagnosticState,
+  lineFrom: number,
+  tokens: RangedToken[],
+  pass: DiagnosticPass,
+) => {
+  for (let i = 0; i < tokens.length - 2; i += 1) {
+    if (tokens[i].value !== "score") continue
+    handleObjectiveToken(state, lineFrom, tokens[i + 2], pass)
+
+    const operationToken = tokens[i + 3]?.value
+    if (operationToken && SCORE_COMPARISON_OPERATORS.has(operationToken)) {
+      handleObjectiveToken(state, lineFrom, tokens[i + 5], pass)
+    }
+  }
+}
+
+const handleTagCommandSymbols = (
+  state: SymbolDiagnosticState,
+  lineFrom: number,
+  rootCommandTokens: RangedToken[],
+  pass: DiagnosticPass,
+) => {
+  const actionToken = rootCommandTokens[2]?.value
+  if (actionToken !== "add" && actionToken !== "remove") return
+
+  const tagToken = rootCommandTokens[3]
+  if (!tagToken || !isTagNameToken(tagToken.value)) return
+
+  const tagName = normalizeTagName(tagToken.value)
+
+  if (pass === "collect") {
+    if (actionToken === "add") {
+      state.registeredTags.add(tagName)
+    }
+    return
+  }
+
+  if (actionToken === "add") {
+    state.registeredTags.add(tagName)
+    return
+  }
+
+  if (!state.registeredTags.has(tagName)) {
+    pushUnknownTagDiagnostic(
+      state.diagnostics,
+      lineFrom + tagToken.start,
+      lineFrom + tagToken.end,
+      tagName,
+    )
+  }
+}
+
+const handleSelectorTagSymbols = (
+  state: SymbolDiagnosticState,
+  lineFrom: number,
+  lineText: string,
+  pass: DiagnosticPass,
+) => {
+  if (pass === "collect") return
+
+  const quotedRanges = getQuotedRanges(lineText)
+  for (const match of lineText.matchAll(SELECTOR_TAG_GLOBAL_REGEX)) {
+    const rawTagName = match[2]
+    if (!rawTagName || !isTagNameToken(rawTagName)) continue
+
+    const matchStart = match.index ?? -1
+    if (matchStart < 0) continue
+    if (isInQuotedRange(matchStart, quotedRanges)) continue
+
+    const tagName = normalizeTagName(rawTagName)
+    if (state.registeredTags.has(tagName)) continue
+
+    const valueStart = lineText.indexOf(rawTagName, matchStart)
+    if (valueStart < 0) continue
+
+    pushUnknownTagDiagnostic(
+      state.diagnostics,
+      lineFrom + valueStart,
+      lineFrom + valueStart + rawTagName.length,
+      tagName,
+    )
+  }
+}
+
 const hasLineContinuation = (text: string) => !isCommentLine(text) && /\\\s*$/.test(text)
 
 const stripLineContinuation = (text: string) => (hasLineContinuation(text) ? text.replace(/\\\s*$/, "") : text)
 
-export const mcfunctionDiagnosticSource = (view: EditorView): Diagnostic[] => {
+export const mcfunctionDiagnosticSource = (view: EditorView, contextIndex?: McfunctionContextIndex): Diagnostic[] => {
   const diagnostics: Diagnostic[] = []
   const doc = view.state.doc
-  const activeDatapackContext = getActiveDatapackContextIndex()
-  const registeredObjectives = new Set(activeDatapackContext.objectives)
-  const registeredTags = new Set(activeDatapackContext.tags)
+  const symbolState: SymbolDiagnosticState = {
+    registeredObjectives: new Set(contextIndex?.objectives ?? []),
+    registeredTags: new Set(contextIndex?.tags ?? []),
+    diagnostics,
+  }
 
   const getContinuationBlockEndLine = (startLineNumber: number) => {
     let endLineNumber = startLineNumber
@@ -242,6 +276,8 @@ export const mcfunctionDiagnosticSource = (view: EditorView): Diagnostic[] => {
 
     const tokens = tokenizeCommandWithRanges(textForValidation)
     const rootCommand = tokens[0] ? normalizeCommandToken(tokens[0].value) : null
+    const rootCommandTokens = getRootCommandTokens(tokens)
+    const nestedRootCommand = rootCommandTokens[0] ? normalizeCommandToken(rootCommandTokens[0].value) : null
 
     const commandMatch = textForValidation.match(/^\s*\/?([a-z0-9_:-]+)/i)
     if (!isContinuationLine) {
@@ -287,70 +323,11 @@ export const mcfunctionDiagnosticSource = (view: EditorView): Diagnostic[] => {
       }
     }
 
-    if (rootCommand === "scoreboard") {
-      const groupToken = tokens[1]?.value
-      const actionToken = tokens[2]?.value
-
-      if (groupToken === "objectives") {
-        const objectiveToken = tokens[3]
-        if (objectiveToken && isObjectiveToken(objectiveToken.value)) {
-          if (actionToken === "add") {
-            registeredObjectives.add(objectiveToken.value)
-          } else if (actionToken === "remove") {
-            if (!registeredObjectives.has(objectiveToken.value)) {
-              pushUnknownObjectiveDiagnostic(
-                diagnostics,
-                line.from + objectiveToken.start,
-                line.from + objectiveToken.end,
-                objectiveToken.value,
-              )
-            } else {
-              registeredObjectives.delete(objectiveToken.value)
-            }
-          } else if (actionToken === "modify" && !registeredObjectives.has(objectiveToken.value)) {
-            pushUnknownObjectiveDiagnostic(
-              diagnostics,
-              line.from + objectiveToken.start,
-              line.from + objectiveToken.end,
-              objectiveToken.value,
-            )
-          }
-        }
-      }
-
-      if (groupToken === "players") {
-        const checkObjectiveToken = (objectiveToken: RangedToken | undefined) => {
-          if (!objectiveToken || !isObjectiveToken(objectiveToken.value)) return
-          if (registeredObjectives.has(objectiveToken.value)) return
-          pushUnknownObjectiveDiagnostic(
-            diagnostics,
-            line.from + objectiveToken.start,
-            line.from + objectiveToken.end,
-            objectiveToken.value,
-          )
-        }
-
-        if (actionToken === "operation") {
-          checkObjectiveToken(tokens[4])
-          checkObjectiveToken(tokens[7])
-        } else if (actionToken === "set" || actionToken === "add" || actionToken === "remove" || actionToken === "get" || actionToken === "reset" || actionToken === "enable") {
-          checkObjectiveToken(tokens[4])
-        }
-      }
+    if (nestedRootCommand === "scoreboard") {
+      handleScoreboardSymbols(symbolState, line.from, rootCommandTokens, "validate")
     }
 
-    for (let i = 0; i < tokens.length - 2; i += 1) {
-      if (tokens[i].value !== "score") continue
-      const objectiveToken = tokens[i + 2]
-      if (!objectiveToken || !isObjectiveToken(objectiveToken.value)) continue
-      if (registeredObjectives.has(objectiveToken.value)) continue
-      pushUnknownObjectiveDiagnostic(
-        diagnostics,
-        line.from + objectiveToken.start,
-        line.from + objectiveToken.end,
-        objectiveToken.value,
-      )
-    }
+    handleInlineScoreSymbols(symbolState, line.from, tokens, "validate")
 
     const scoresMatch = textForValidation.match(/scores\s*=\s*\{([^}]*)$/)
     if (scoresMatch) {
@@ -360,7 +337,7 @@ export const mcfunctionDiagnosticSource = (view: EditorView): Diagnostic[] => {
         const objectiveKeyRegex = /([A-Za-z0-9_.+-]{1,16})\s*=/g
         for (const match of scoresContent.matchAll(objectiveKeyRegex)) {
           const objective = match[1]
-          if (!objective || registeredObjectives.has(objective)) continue
+          if (!objective || symbolState.registeredObjectives.has(objective)) continue
           const relativeStart = (match.index ?? 0)
           const from = line.from + scoresContentOffset + relativeStart
           const to = from + objective.length
@@ -369,50 +346,11 @@ export const mcfunctionDiagnosticSource = (view: EditorView): Diagnostic[] => {
       }
     }
 
-    if (rootCommand === "tag") {
-      const actionToken = tokens[2]?.value
-      const tagToken = tokens[3]
-      if (tagToken && isTagNameToken(tagToken.value)) {
-        const tagName = normalizeTagName(tagToken.value)
-        if (actionToken === "add") {
-          registeredTags.add(tagName)
-        } else if (actionToken === "remove") {
-          if (!registeredTags.has(tagName)) {
-            pushUnknownTagDiagnostic(
-              diagnostics,
-              line.from + tagToken.start,
-              line.from + tagToken.end,
-              tagName,
-            )
-          } else {
-            registeredTags.delete(tagName)
-          }
-        }
-      }
+    if (nestedRootCommand === "tag") {
+      handleTagCommandSymbols(symbolState, line.from, rootCommandTokens, "validate")
     }
 
-    const quotedRanges = getQuotedRanges(textForValidation)
-    for (const match of textForValidation.matchAll(SELECTOR_TAG_GLOBAL_REGEX)) {
-      const rawTagName = match[2]
-      if (!rawTagName || !isTagNameToken(rawTagName)) continue
-
-      const matchStart = match.index ?? -1
-      if (matchStart < 0) continue
-      if (isInQuotedRange(matchStart, quotedRanges)) continue
-
-      const tagName = normalizeTagName(rawTagName)
-      if (registeredTags.has(tagName)) continue
-
-      const valueStart = textForValidation.indexOf(rawTagName, matchStart)
-      if (valueStart < 0) continue
-
-      pushUnknownTagDiagnostic(
-        diagnostics,
-        line.from + valueStart,
-        line.from + valueStart + rawTagName.length,
-        tagName,
-      )
-    }
+    handleSelectorTagSymbols(symbolState, line.from, textForValidation, "validate")
 
     isContinuationLine = hasContinuation
   }
