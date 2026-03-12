@@ -1,0 +1,78 @@
+import type { DatapackMetadata } from './datapack-parser'
+import type { AppPreferences } from './preferences'
+import type { WorkspaceData } from './workspace-parser'
+
+export type TitlebarContextMenuPosition = { x: number; y: number }
+
+export type WorkspaceFileSelection = {
+  dir: string
+  name: string
+  filePath: string
+}
+
+export type WorkspaceSaveResult = {
+  dir: string
+  name: string
+}
+
+export type WorkspaceDefaultResult = {
+  dir: string
+  name: string
+  workspace: WorkspaceData
+}
+
+export type AddDatapackExistingResult = {
+  metadataPath: string
+  metadata: DatapackMetadata
+}
+
+export type ShortcutAction = 'quit' | 'open' | 'save' | 'saveAll' | 'close' | string
+
+export type ShortcutHandler = (event: unknown, action: ShortcutAction) => void
+export type QuitRequestedHandler = () => void
+
+export interface ElectronAPI {
+  minimize: () => Promise<void>
+  toggleFullscreen: () => Promise<void>
+  isFullScreen: () => Promise<boolean>
+  onFullscreenChange: (callback: (isFullScreen: boolean) => void) => () => void
+  onTitlebarContextMenu: (callback: (position: TitlebarContextMenuPosition) => void) => () => void
+  onQuitRequested: (callback: QuitRequestedHandler) => () => void
+  quit: () => Promise<void>
+  quitCancelled: () => Promise<void>
+  pickFolder: () => Promise<string | null>
+  writeFile: (directory: string, filename: string, contents: string) => Promise<string>
+  saveFile: (directory: string, relativePath: string, contents: string) => Promise<string>
+  readFile: (directory: string, filePath: string) => Promise<string>
+  listFiles: (directory: string) => Promise<string[]>
+  workspaceLoad: (directory: string, name: string) => Promise<WorkspaceData>
+  workspaceGetOrCreateDefault: () => Promise<WorkspaceDefaultResult>
+  workspaceGet: () => Promise<WorkspaceData | null>
+  workspaceInfo: () => Promise<{ dir: string | null; name: string | null }>
+  workspaceOpenDialog: () => Promise<WorkspaceFileSelection | null>
+  workspaceSaveDialog: (defaultName: string) => Promise<string | null>
+  workspaceSaveAs: (directory: string, name: string) => Promise<WorkspaceSaveResult>
+  workspaceUpdatePreference: (key: string, value: unknown) => Promise<void>
+  workspaceGetPreference: (key: string) => Promise<unknown>
+  workspaceSave: () => Promise<void>
+  workspaceAddDatapack: (metadataPath: string) => Promise<string[]>
+  workspaceRemoveDatapack: (metadataPath: string) => Promise<string[]>
+  workspaceGetDatapacks: () => Promise<string[]>
+  workspaceNew: () => Promise<{ success: boolean }>
+  createFolder: (folderPath: string) => Promise<string>
+  addDatapackExisting: (datapackDir: string) => Promise<AddDatapackExistingResult>
+  datapackLoad: (datapackDir: string) => Promise<DatapackMetadata>
+  datapackGet: () => Promise<DatapackMetadata | null>
+  datapackUpdate: (updates: Partial<DatapackMetadata>) => Promise<DatapackMetadata | null>
+  datapackSave: () => Promise<DatapackMetadata | null>
+  datapackClear: () => Promise<void>
+  onShortcut: (callback: ShortcutHandler) => () => void
+  revealInFileExplorer: (filePath: string) => Promise<void>
+  renameFileOrFolder: (oldPath: string, newName: string) => Promise<string>
+  deleteFileOrFolder: (targetPath: string) => Promise<void>
+  preferencesGet: <K extends keyof AppPreferences>(key: K) => Promise<AppPreferences[K] | undefined>
+  preferencesSet: <K extends keyof AppPreferences>(key: K, value: AppPreferences[K]) => Promise<void>
+  preferencesUpdate: (updates: Partial<AppPreferences>) => Promise<void>
+  commandSchemaGet: (version: string) => Promise<string>
+  minecraftDataGet: (version: string, dataType: string) => Promise<string>
+}

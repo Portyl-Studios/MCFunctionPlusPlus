@@ -32,12 +32,23 @@ type TreeNode = {
   children?: Map<string, TreeNode>
   isFile?: boolean
   // Schema metadata
-  schemaNode?: any
+  schemaNode?: DatapackSchemaNode
   description?: string
   experimental?: boolean
   contentType?: string
   allowedChildren?: string[]
   // Root-level metadata
+  packFormatVersion?: string
+  minMinecraftVersion?: string
+  maxMinecraftVersion?: string
+}
+
+type DatapackSchemaNode = {
+  name?: string
+  description?: string
+  experimental?: boolean
+  contentType?: string
+  children?: DatapackSchemaNode[]
   packFormatVersion?: string
   minMinecraftVersion?: string
   maxMinecraftVersion?: string
@@ -74,7 +85,7 @@ const buildTree = (paths: string[], rootName: string = 'root'): TreeNode => {
 }
 
 // Find matching schema node for a given physical node name
-const findMatchingSchemaNode = (nodeName: string, schemaChildren: any[] | undefined): any => {
+const findMatchingSchemaNode = (nodeName: string, schemaChildren: DatapackSchemaNode[] | undefined): DatapackSchemaNode | undefined => {
   if (!schemaChildren) return undefined
 
   // Try exact name match first
@@ -86,7 +97,7 @@ const findMatchingSchemaNode = (nodeName: string, schemaChildren: any[] | undefi
 
   // Try placeholder match (like <namespace>, <registry_name>, etc.)
   for (const child of schemaChildren) {
-    if (child.name.startsWith('<') && child.name.endsWith('>')) {
+    if (typeof child.name === 'string' && child.name.startsWith('<') && child.name.endsWith('>')) {
       return child
     }
   }
@@ -95,14 +106,16 @@ const findMatchingSchemaNode = (nodeName: string, schemaChildren: any[] | undefi
 }
 
 // Enrich tree nodes with schema metadata
-const enrichTreeWithSchema = (node: TreeNode, schemaNode?: any, isRoot: boolean = false): void => {
+const enrichTreeWithSchema = (node: TreeNode, schemaNode?: DatapackSchemaNode, isRoot: boolean = false): void => {
   if (!schemaNode) return
 
   node.schemaNode = schemaNode
   node.description = schemaNode.description
   node.experimental = schemaNode.experimental ?? false
   node.contentType = schemaNode.contentType
-  node.allowedChildren = schemaNode.children?.map((child: any) => child.name)
+  node.allowedChildren = schemaNode.children
+    ?.map((child) => child.name)
+    .filter((name): name is string => typeof name === 'string')
 
   // Add root-level version metadata only for root node
   if (isRoot) {
@@ -150,7 +163,7 @@ export function DatapackTree({ paths, className, folderName, rootId, rootName, r
   const tree = React.useMemo(() => {
     const builtTree = buildTree(paths, folderName)
     // Enrich with schema starting from the root schema node
-    enrichTreeWithSchema(builtTree, datapackSchema, true)
+    enrichTreeWithSchema(builtTree, datapackSchema as DatapackSchemaNode, true)
     return builtTree
   }, [paths, folderName])
   const [selectedPath, setSelectedPath] = React.useState<string | null>(externalSelectedPath ?? null)
@@ -384,7 +397,7 @@ export function DatapackTree({ paths, className, folderName, rootId, rootName, r
     }
 
     try {
-      await (window as any).electron.renameFileOrFolder(actualPath, newName)
+      await window.electron.renameFileOrFolder(actualPath, newName)
       
       // Notify parent about the rename so it can update open files
       if (onFileRenamed && relativePath) {
@@ -432,7 +445,7 @@ export function DatapackTree({ paths, className, folderName, rootId, rootName, r
     }
 
     try {
-      await (window as any).electron.deleteFileOrFolder(actualPath)
+      await window.electron.deleteFileOrFolder(actualPath)
       if (onFolderCreated) {
         onFolderCreated() // Trigger refresh
       }
@@ -456,7 +469,7 @@ export function DatapackTree({ paths, className, folderName, rootId, rootName, r
               ? resolveTargetPath(basePath, pathKey, child)
               : `${pathKey}/${child}`
             try {
-              await (window as any).electron.createFolder(targetPath)
+              await window.electron.createFolder(targetPath)
               if (onFolderCreated) {
                 onFolderCreated()
               }

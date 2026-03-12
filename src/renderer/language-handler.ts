@@ -1,5 +1,5 @@
 import { EditorState, type Extension } from "@codemirror/state"
-import { keymap } from "@codemirror/view"
+import { keymap, type EditorView } from "@codemirror/view"
 import { autocompletion, startCompletion } from "@codemirror/autocomplete"
 import { linter, type Diagnostic } from "@codemirror/lint"
 import { json, jsonParseLinter } from "@codemirror/lang-json"
@@ -200,8 +200,9 @@ export const computeDiagnosticSummaryForContent = (
 ): DiagnosticSummary => {
   if (languageId === "mcfunction") {
     const state = EditorState.create({ doc: content })
+    const virtualView = { state } as unknown as EditorView
     const diagnostics = mcfunctionDiagnosticSource(
-      { state } as any,
+      virtualView,
       options?.mcfunctionContextIndex ?? getActiveDatapackContextIndex(),
     )
     return summarizeDiagnostics(diagnostics)
@@ -209,7 +210,8 @@ export const computeDiagnosticSummaryForContent = (
 
   if (languageId === "json") {
     const state = EditorState.create({ doc: content })
-    const diagnostics = jsonParseLinter()({ state } as any)
+    const virtualView = { state } as unknown as EditorView
+    const diagnostics = jsonParseLinter()(virtualView)
     return summarizeDiagnostics(diagnostics)
   }
 

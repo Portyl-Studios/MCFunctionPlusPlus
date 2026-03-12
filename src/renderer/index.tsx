@@ -44,6 +44,7 @@ import {
 import { detectEditorLanguage, getLanguageProcessingExtensions, type DiagnosticSummary } from "./language-handler"
 import { runGlobalDiagnosticsScan } from "./diagnostics/global-diagnostics"
 import { Tooltip } from "./overlays/tooltip"
+import type { ShortcutAction } from "../main/electron-api"
 
 type DatapackEntry = {
   dir: string
@@ -258,7 +259,7 @@ function CodeEditor() {
   useEffect(() => {
     const loadPanelPreferences = async () => {
       try {
-        const panelPrefs = await (window as any).electron.preferencesGet('panels')
+        const panelPrefs = await window.electron.preferencesGet('panels')
         if (panelPrefs) {
           if (panelPrefs.leftPanelTabOrder) setLeftPanelTabOrder(panelPrefs.leftPanelTabOrder)
           if (panelPrefs.rightPanelTabOrder) setRightPanelTabOrder(panelPrefs.rightPanelTabOrder)
@@ -286,7 +287,7 @@ function CodeEditor() {
   useEffect(() => {
     const savePanelPreferences = async () => {
       try {
-        await (window as any).electron.preferencesSet('panels', {
+        await window.electron.preferencesSet('panels', {
           leftPanelTabOrder,
           rightPanelTabOrder,
           bottomPanelTabOrder,
@@ -399,7 +400,7 @@ function CodeEditor() {
   useEffect(() => {
     const loadAutoSavePreference = async () => {
       try {
-        const savedValue = await (window as any).electron.workspaceGetPreference("autoSave")
+        const savedValue = await window.electron.workspaceGetPreference("autoSave")
         if (typeof savedValue === "boolean") {
           setIsAutoSaveEnabled(savedValue)
         }
@@ -416,7 +417,7 @@ function CodeEditor() {
   const toggleAutoSave = async (enabled: boolean) => {
     setIsAutoSaveEnabled(enabled)
     try {
-      await (window as any).electron.workspaceUpdatePreference("autoSave", enabled)
+      await window.electron.workspaceUpdatePreference("autoSave", enabled)
     } catch (error) {
       console.error("Failed to save auto-save preference:", error)
       await dialog.showAlert("Error", `Failed to save auto-save preference: ${error instanceof Error ? error.message : "Unknown error"}`)
@@ -467,14 +468,14 @@ function CodeEditor() {
 
   const loadDatapackEntry = async (datapackDir: string): Promise<DatapackEntry | null> => {
     try {
-      const files = await (window as any).electron.listFiles(datapackDir)
+      const files = await window.electron.listFiles(datapackDir)
       const paths = Array.isArray(files) ? files : []
       const name = datapackDir.split(/[\\/]/).pop() || "datapack"
       let id: string | undefined
       let displayName: string | undefined
       let packVersion: string | undefined
       try {
-        const metadataRaw = await (window as any).electron.readFile(datapackDir, ".mpp-datapack")
+        const metadataRaw = await window.electron.readFile(datapackDir, ".mpp-datapack")
         const parsed = JSON.parse(metadataRaw)
         if (parsed && typeof parsed.id === "string") {
           id = parsed.id
@@ -526,8 +527,10 @@ function CodeEditor() {
           {
             label: "Save",
             onClick: async () => {
-              await saveAllFiles()
-              await workspaceChangeAction()
+              const didSave = await saveAllFiles()
+              if (didSave) {
+                await workspaceChangeAction()
+              }
               resolve()
             },
           },
@@ -570,12 +573,19 @@ function CodeEditor() {
     })
   }
 
-  const handleQuitWithConfirm = async () => {
+  const handleQuitWithConfirm = async (isNativeQuitRequest = false) => {
+    const notifyQuitCancelled = () => {
+      if (!isNativeQuitRequest) return
+      void window.electron.quitCancelled()
+    }
+
     // If no unsaved files, double confirm quit to prevent accidental exits
     if (modifiedFiles.size === 0) {
       const confirmed = await dialog.showConfirm("Quit", "Are you sure you want to quit?")
       if (confirmed) {
-        ;(window as any).electron.quit()
+        ;window.electron.quit()
+      } else {
+        notifyQuitCancelled()
       }
       return
     }
@@ -590,21 +600,26 @@ function CodeEditor() {
           {
             label: "Save",
             onClick: async () => {
-              await saveAllFiles()
-              ;(window as any).electron.quit()
+              const didSave = await saveAllFiles()
+              if (didSave) {
+                ;window.electron.quit()
+              } else {
+                notifyQuitCancelled()
+              }
               resolve()
             },
           },
           {
             label: "Discard",
             onClick: () => {
-              ;(window as any).electron.quit()
+              ;window.electron.quit()
               resolve()
             },
           },
           {
             label: "Cancel",
             onClick: () => {
+              notifyQuitCancelled()
               resolve()
             },
           },
@@ -621,11 +636,11 @@ function CodeEditor() {
   }
 
   const handleAddDatapack = async () => {
-    const folder = await (window as any).electron.pickFolder()
+    const folder = await window.electron.pickFolder()
     if (!folder) return
 
     try {
-      await (window as any).electron.addDatapackExisting(folder)
+      await window.electron.addDatapackExisting(folder)
       const existingDirs = datapacks.map((datapack) => datapack.dir)
       await refreshDatapacks([...existingDirs, folder])
     } catch (error) {
@@ -649,7 +664,7 @@ function CodeEditor() {
       const metadataPath = `${datapackDir}/.mpp-datapack`
       
       // Remove from workspace
-      await (window as any).electron.workspaceRemoveDatapack(metadataPath)
+      await window.electron.workspaceRemoveDatapack(metadataPath)
       
       // Refresh the datapack list
       const updatedDirs = datapacks.filter((dp) => dp.dir !== datapackDir).map((dp) => dp.dir)
@@ -698,7 +713,10 @@ function CodeEditor() {
       
       const choice = await dialog.showUnsavedConfirm("Rename File?", `${fileName} has unsaved changes. What would you like to do?`)
       if (choice === "cancel") return false
-      if (choice === "save") await saveFileInternal(oldFileKey)
+      if (choice === "save") {
+        const didSave = await saveFileInternal(oldFileKey)
+        if (!didSave) return false
+      }
       if (choice === "discard") {
         removeFileFromModifiedFiles(oldFileKey)
       }
@@ -722,7 +740,7 @@ function CodeEditor() {
     clearAutoSaveTimer(oldFileKey)
     
     try {
-      const freshContents = await (window as any).electron.readFile(datapackDir, newRelativePath)
+      const freshContents = await window.electron.readFile(datapackDir, newRelativePath)
       
       setOpenedFiles((prev) => {
         const filtered = prev.filter((f) => createFileKey(f.datapackDir, f.relativePath) !== oldFileKey)
@@ -782,7 +800,10 @@ function CodeEditor() {
       const fileName = openedFiles.find((f) => createFileKey(f.datapackDir, f.relativePath) === fileKey)?.fileName || "this file"
       const choice = await dialog.showUnsavedConfirm("Delete File?", `${fileName} has unsaved changes. What would you like to do?`)
       if (choice === "cancel") return false
-      if (choice === "save") await saveFileInternal(fileKey)
+      if (choice === "save") {
+        const didSave = await saveFileInternal(fileKey)
+        if (!didSave) return false
+      }
       if (choice === "discard") {
         removeFileFromModifiedFiles(fileKey)
       }
@@ -856,7 +877,7 @@ function CodeEditor() {
       contents = openedFile.content
     } else if (!hasInitialContent) {
       try {
-        contents = await (window as any).electron.readFile(datapackDir, relativePath)
+        contents = await window.electron.readFile(datapackDir, relativePath)
         if (openFileRequestIdRef.current !== requestId) return
       } catch (error) {
         if (openFileRequestIdRef.current !== requestId) return
@@ -931,7 +952,7 @@ function CodeEditor() {
     if (!existingFile) {
       // Load content from disk for new files
       try {
-        const content = await (window as any).electron.readFile(datapackDir, trimmedRelative)
+        const content = await window.electron.readFile(datapackDir, trimmedRelative)
         loadedContent = content
         setOpenedFiles((prev) => {
           const alreadyOpen = prev.some((f) => createFileKey(f.datapackDir, f.relativePath) === fileKey)
@@ -957,11 +978,11 @@ function CodeEditor() {
     }
   }
 
-  const saveFile = async (fileKey: string, contents: string) => {
+  const saveFile = async (fileKey: string, contents: string): Promise<boolean> => {
     const { datapackDir, relativePath } = parseFileKey(fileKey)
 
     try {
-      await (window as any).electron.saveFile(datapackDir, relativePath, contents)
+      await window.electron.saveFile(datapackDir, relativePath, contents)
       
       // Update cached content
       setOpenedFiles((prev) => 
@@ -977,23 +998,26 @@ function CodeEditor() {
 
       // Clear any pending autosave
       clearAutoSaveTimer(fileKey)
+      return true
     } catch (error) {
       console.error("Failed to save file:", error)
       await dialog.showAlert("Error", `Failed to save file: ${error instanceof Error ? error.message : "Unknown error"}`)
+      return false
     }
   }
 
-  const saveCurrentFile = async () => {
-    if (!activeFile || !viewRef.current) return
+  const saveCurrentFile = async (): Promise<boolean> => {
+    if (!activeFile || !viewRef.current) return false
     const contents = viewRef.current.state.doc.toString()
-    await saveFile(activeFile, contents)
+    return await saveFile(activeFile, contents)
   }
 
-  const saveFileInternal = async (fileKey: string) => {
+  const saveFileInternal = async (fileKey: string): Promise<boolean> => {
     const openedFile = openedFiles.find((f) => createFileKey(f.datapackDir, f.relativePath) === fileKey)
     if (openedFile) {
-      await saveFile(fileKey, openedFile.content)
+      return await saveFile(fileKey, openedFile.content)
     }
+    return false
   }
 
   const scheduleAutoSave = (fileKey: string, contents: string) => {
@@ -1011,7 +1035,7 @@ function CodeEditor() {
     autoSaveTimersRef.current.set(fileKey, timerId)
   }
 
-  const saveAllFiles = async () => {
+  const saveAllFiles = async (): Promise<boolean> => {
     const filesToSave: Array<{ fileKey: string; contents: string }> = []
 
     // Collect all modified files with their cached content
@@ -1031,10 +1055,12 @@ function CodeEditor() {
     )
 
     try {
-      await Promise.all(savePromises)
+      const saveResults = await Promise.all(savePromises)
+      return saveResults.every(Boolean)
     } catch (error) {
       console.error("Failed to save all files:", error)
       await dialog.showAlert("Error", `Failed to save all files: ${error instanceof Error ? error.message : "Unknown error"}`)
+      return false
     }
   }
 
@@ -1044,7 +1070,10 @@ function CodeEditor() {
       const fileName = openedFiles.find((f) => createFileKey(f.datapackDir, f.relativePath) === fileKey)?.fileName || "this file"
       const choice = await dialog.showUnsavedConfirm("Close File?", `${fileName} has unsaved changes. What would you like to do?`)
       if (choice === "cancel") return false
-      if (choice === "save") await saveFileInternal(fileKey)
+      if (choice === "save") {
+        const didSave = await saveFileInternal(fileKey)
+        if (!didSave) return false
+      }
       if (choice === "discard") {
         removeFileFromModifiedFiles(fileKey)
       }
@@ -1129,7 +1158,7 @@ function CodeEditor() {
         content = openedModifiedContent
       } else {
         try {
-          content = await (window as any).electron.readFile(datapack.dir, relativePath)
+          content = await window.electron.readFile(datapack.dir, relativePath)
         } catch {
           content = null
         }
@@ -1274,7 +1303,7 @@ function CodeEditor() {
       datapacks,
       openedFiles: openedFilesRef.current,
       modifiedFileKeys: modifiedFilesRef.current,
-      readFile: (datapackDir, relativePath) => (window as any).electron.readFile(datapackDir, relativePath),
+      readFile: (datapackDir, relativePath) => window.electron.readFile(datapackDir, relativePath),
       targetDatapackDir: scanDatapackDir,
       shouldCancel: () => diagnosticsScanRunIdRef.current !== scanRunId,
     })
@@ -1434,7 +1463,7 @@ function CodeEditor() {
 
       isRestoringTabsRef.current = true
       try {
-        const savedValue = await (window as any).electron.workspaceGetPreference(OPEN_TABS_PREFERENCE_KEY)
+        const savedValue = await window.electron.workspaceGetPreference(OPEN_TABS_PREFERENCE_KEY)
         const session = parseWorkspaceTabSession(savedValue)
 
         if (!session || session.openedFiles.length === 0) {
@@ -1447,7 +1476,7 @@ function CodeEditor() {
         const restoredOpenedFiles: OpenedFile[] = []
         for (const file of session.openedFiles) {
           try {
-            const content = await (window as any).electron.readFile(file.datapackDir, file.relativePath)
+            const content = await window.electron.readFile(file.datapackDir, file.relativePath)
             restoredOpenedFiles.push({
               datapackDir: file.datapackDir,
               relativePath: file.relativePath,
@@ -1508,7 +1537,7 @@ function CodeEditor() {
 
       isRestoringExplorerRef.current = true
       try {
-        const savedValue = await (window as any).electron.workspaceGetPreference(EXPLORER_EXPANDED_PREFERENCE_KEY)
+        const savedValue = await window.electron.workspaceGetPreference(EXPLORER_EXPANDED_PREFERENCE_KEY)
         const parsed = parseWorkspaceExplorerExpanded(savedValue)
         setExplorerExpandedPathsByDatapack(parsed ?? {})
       } catch (error) {
@@ -1541,7 +1570,7 @@ function CodeEditor() {
 
       lastSavedTabSessionSignatureRef.current = signature
       try {
-        await (window as any).electron.workspaceUpdatePreference(OPEN_TABS_PREFERENCE_KEY, session)
+        await window.electron.workspaceUpdatePreference(OPEN_TABS_PREFERENCE_KEY, session)
       } catch (error) {
         console.error("Failed to save workspace tab session:", error)
         await dialog.showAlert("Error", `Failed to save workspace tab session: ${error instanceof Error ? error.message : "Unknown error"}`)
@@ -1562,7 +1591,7 @@ function CodeEditor() {
       }
 
       try {
-        await (window as any).electron.workspaceUpdatePreference(EXPLORER_EXPANDED_PREFERENCE_KEY, payload)
+        await window.electron.workspaceUpdatePreference(EXPLORER_EXPANDED_PREFERENCE_KEY, payload)
       } catch (error) {
         console.error("Failed to save explorer expansion state:", error)
         await dialog.showAlert("Error", `Failed to save explorer expansion state: ${error instanceof Error ? error.message : "Unknown error"}`)
@@ -1617,26 +1646,41 @@ function CodeEditor() {
   }, [])
 
   useEffect(() => {
-    ;(window as any).electron.isFullScreen().then(setIsFullScreen)
+    ;window.electron.isFullScreen().then(setIsFullScreen)
 
-    ;(window as any).electron.onFullscreenChange((isFullScreen: boolean) => {
+    const unsubscribeFullscreenChange = window.electron.onFullscreenChange((isFullScreen: boolean) => {
       setIsFullScreen(isFullScreen)
     })
 
-    const unsubscribeTitlebarContextMenu = (window as any).electron.onTitlebarContextMenu?.((position: { x: number; y: number }) => {
+    const unsubscribeTitlebarContextMenu = window.electron.onTitlebarContextMenu?.((position: { x: number; y: number }) => {
       contextMenuRequest.openAt(position.x, position.y, { items: titlebarContextItems })
     })
 
     return () => {
+      if (typeof unsubscribeFullscreenChange === "function") {
+        unsubscribeFullscreenChange()
+      }
       if (typeof unsubscribeTitlebarContextMenu === "function") {
         unsubscribeTitlebarContextMenu()
       }
     }
   }, [])
 
+  useEffect(() => {
+    const unsubscribeQuitRequested = window.electron.onQuitRequested(() => {
+      void handleQuitWithConfirm(true)
+    })
+
+    return () => {
+      if (typeof unsubscribeQuitRequested === "function") {
+        unsubscribeQuitRequested()
+      }
+    }
+  }, [handleQuitWithConfirm])
+
   // Keyboard shortcuts
   useEffect(() => {
-    const handler = (_: any, action: string) => {
+    const handler = (_event: unknown, action: ShortcutAction) => {
       switch (action) {
         case "quit":
           handleQuitWithConfirm()
@@ -1656,7 +1700,7 @@ function CodeEditor() {
       }
     }
 
-    const unsubscribe = (window as any).electron.onShortcut(handler)
+    const unsubscribe = window.electron.onShortcut(handler)
     return () => {
       if (typeof unsubscribe === "function") {
         unsubscribe()
@@ -1903,7 +1947,7 @@ function CodeEditor() {
     const { datapackDir, relativePath } = parseFileKey(fileKey)
     const fullPath = `${datapackDir}/${relativePath}`.replace(/\//g, "\\")
     try {
-      await (window as any).electron.revealInFileExplorer(fullPath)
+      await window.electron.revealInFileExplorer(fullPath)
     } catch (error) {
       console.error("Failed to reveal in file explorer:", error)
       await dialog.showAlert("Error", `Failed to reveal file in explorer: ${error instanceof Error ? error.message : "Unknown error"}`)
@@ -1993,7 +2037,7 @@ function CodeEditor() {
       label: "Restore",
       onClick: () => {
         if (isFullScreen) {
-          ;(window as any).electron.toggleFullscreen()
+          ;window.electron.toggleFullscreen()
         }
       },
       disabled: !isFullScreen,
@@ -2001,14 +2045,14 @@ function CodeEditor() {
     {
       label: "Minimize",
       onClick: () => {
-        ;(window as any).electron.minimize()
+        ;window.electron.minimize()
       },
     },
     {
       label: "Maximize",
       onClick: () => {
         if (!isFullScreen) {
-          ;(window as any).electron.toggleFullscreen()
+          ;window.electron.toggleFullscreen()
         }
       },
       disabled: isFullScreen,
@@ -2247,23 +2291,25 @@ function CodeEditor() {
           />
 
           <div className="flex-1" style={{ WebkitAppRegion: "drag" } as any} onContextMenu={handleTitlebarRightClick}></div>
-          
+
           {/* Window Control Buttons */}
           <Tooltip content="Minimize">
             <div
-              onClick={() => (window as any).electron.minimize()} 
+              onClick={() => window.electron.minimize()}
               className="header-button pt-2.5 pb-2 codicon codicon-chrome-minimize"
             />
           </Tooltip>
           <Tooltip content={`${isFullScreen ? "Restore" : "Maximize"}`}>
             <div
-              onClick={() => (window as any).electron.toggleFullscreen()}
+              onClick={() => window.electron.toggleFullscreen()}
               className={`header-button pt-2.5 pb-2 codicon ${isFullScreen ? "codicon-chrome-restore" : "codicon-chrome-maximize"}`}
             />
           </Tooltip>
           <Tooltip content="Close">
             <div
-              onClick={handleQuitWithConfirm}
+              onClick={() => {
+                void handleQuitWithConfirm()
+              }}
               className="header-button hover:bg-rose-600 pt-2.5 pb-2 codicon codicon-chrome-close"
             />
           </Tooltip>

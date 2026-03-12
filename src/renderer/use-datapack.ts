@@ -16,7 +16,7 @@ export function useDatapack() {
 
   const handleLoadDatapack = async (datapackDir: string) => {
     try {
-      const metadata = await (window as any).electron.datapackLoad(datapackDir)
+      const metadata = await window.electron.datapackLoad(datapackDir)
       const datapackName = datapackDir.split(/[\\/]/).pop() || 'datapack'
       setDatapackInfo({
         dir: datapackDir,
@@ -32,7 +32,7 @@ export function useDatapack() {
 
   const handleUpdateMetadata = async (updates: Partial<DatapackMetadata>) => {
     try {
-      const updated = await (window as any).electron.datapackUpdate(updates)
+      const updated = await window.electron.datapackUpdate(updates)
       setDatapackInfo((prev) => ({
         ...prev,
         metadata: updated
@@ -46,7 +46,7 @@ export function useDatapack() {
 
   const handleSaveDatapack = async () => {
     try {
-      const saved = await (window as any).electron.datapackSave()
+      const saved = await window.electron.datapackSave()
       setDatapackInfo((prev) => ({
         ...prev,
         metadata: saved
@@ -60,7 +60,7 @@ export function useDatapack() {
 
   const handleClearDatapack = async () => {
     try {
-      await (window as any).electron.datapackClear()
+      await window.electron.datapackClear()
       setDatapackInfo({
         dir: null,
         name: null,

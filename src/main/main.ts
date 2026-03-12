@@ -1,9 +1,9 @@
-import { app, BrowserWindow, ipcMain, shell } from 'electron'
+import { app, BrowserWindow, ipcMain } from 'electron'
 import path from 'path'
 import fs from 'fs'
 import { fileURLToPath } from 'url'
 import { registerWindowControlHandlers } from './window'
-import { readFile, writeFile, writeFileFromDirectory, readFileFromDirectory, createFolder, getAllFiles, registerPickFolderHandler, validateDatapackFolder, renameFileOrFolder, deleteFileOrFolder } from './fileops'
+import { readFile, registerFileOperationHandlers, registerPickFolderHandler, validateDatapackFolder } from './fileops'
 import { registerWorkspaceHandlers } from './workspace'
 import workspaceManager from './workspace'
 import { registerDatapackHandlers, datapackManager } from './datapack'
@@ -29,6 +29,41 @@ const getWindowIconPath = () => {
 }
 
 let mainWindow: BrowserWindow | null = null
+let isAppQuitting = false
+let isQuitRequestPending = false
+
+const getAllowedFileOperationRoots = (): string[] => {
+  const roots = new Set<string>()
+
+  const workspaceDir = workspaceManager.getWorkspaceDir()
+  const resolvedWorkspaceDir = workspaceDir && path.isAbsolute(workspaceDir)
+    ? path.resolve(workspaceDir)
+    : null
+
+  if (workspaceDir && path.isAbsolute(workspaceDir)) {
+    roots.add(resolvedWorkspaceDir!)
+  }
+
+  for (const metadataPath of workspaceManager.getDatapacks()) {
+    if (typeof metadataPath !== 'string') continue
+
+    if (path.isAbsolute(metadataPath)) {
+      roots.add(path.dirname(path.resolve(metadataPath)))
+      continue
+    }
+
+    if (resolvedWorkspaceDir) {
+      roots.add(path.dirname(path.resolve(resolvedWorkspaceDir, metadataPath)))
+    }
+  }
+
+  const currentDatapackDir = datapackManager.getDatapackDir()
+  if (currentDatapackDir && path.isAbsolute(currentDatapackDir)) {
+    roots.add(path.resolve(currentDatapackDir))
+  }
+
+  return [...roots]
+}
 
 const setupWindowShortcuts = (window: BrowserWindow): void => {
   window.webContents.on('before-input-event', (event, input) => {
@@ -70,9 +105,16 @@ const setupWindowShortcuts = (window: BrowserWindow): void => {
 }
 
 registerPickFolderHandler(() => mainWindow)
-registerWindowControlHandlers(() => mainWindow)
+registerWindowControlHandlers(() => mainWindow, {
+  onQuitCancelled: () => {
+    isQuitRequestPending = false
+  },
+})
 registerWorkspaceHandlers(() => mainWindow)
 registerDatapackHandlers()
+registerFileOperationHandlers({
+  getAllowedRoots: getAllowedFileOperationRoots,
+})
 
 // IPC handler to get or create default workspace
 ipcMain.handle('workspace-get-or-create-default', async () => {
@@ -88,35 +130,6 @@ ipcMain.handle('workspace-get-or-create-default', async () => {
   } catch (error) {
     throw new Error(`Failed to get or create default workspace: ${error instanceof Error ? error.message : 'Unknown error'}`)
   }
-})
-
-
-// IPC handler to write a file after validation
-ipcMain.handle('write-file', async (_event, { directory, filename, contents }) => {
-  return await writeFile(directory, filename, contents)
-})
-
-// IPC handler to save a file (similar to write-file but for existing files)
-ipcMain.handle('save-file', async (_event, { directory, relativePath, contents }) => {
-  return await writeFileFromDirectory(directory, relativePath, contents)
-})
-
-// IPC handler to read a file
-ipcMain.handle('read-file', async (_event, { directory, filePath }) => {
-  return await readFileFromDirectory(directory, filePath)
-})
-
-// IPC handler to list files in a directory
-ipcMain.handle('list-files', async (_event, { directory }) => {
-  if (!directory || typeof directory !== 'string') {
-    throw new Error('Invalid directory')
-  }
-  return getAllFiles(directory)
-})
-
-// IPC handler to create a folder
-ipcMain.handle('create-folder', async (_event, { folderPath }) => {
-  return await createFolder(folderPath)
 })
 
 // IPC handler to add an existing datapack
@@ -144,24 +157,6 @@ ipcMain.handle('add-datapack-existing', async (_event, { datapackDir }) => {
     metadataPath,
     metadata
   }
-})
-
-// IPC handler to reveal file in OS file explorer
-ipcMain.handle('reveal-in-file-explorer', async (_event, { filePath }) => {
-  if (!filePath || typeof filePath !== 'string') {
-    throw new Error('Invalid file path')
-  }
-  shell.showItemInFolder(filePath)
-})
-
-// IPC handler to rename file or folder
-ipcMain.handle('rename-file-or-folder', async (_event, { oldPath, newName }) => {
-  return await renameFileOrFolder(oldPath, newName)
-})
-
-// IPC handler to delete file or folder
-ipcMain.handle('delete-file-or-folder', async (_event, { targetPath }) => {
-  return await deleteFileOrFolder(targetPath)
 })
 
 // IPC handlers for preferences
@@ -273,10 +268,30 @@ app.on('ready', async () => {
   })
   mainWindow.webContents.on('did-finish-load', emitWindowStateChanged)
 
+  mainWindow.on('close', (event) => {
+    if (isAppQuitting) return
+
+    event.preventDefault()
+    if (isQuitRequestPending) return
+
+    if (mainWindow?.isDestroyed() || mainWindow?.webContents.isDestroyed()) {
+      isAppQuitting = true
+      app.quit()
+      return
+    }
+
+    isQuitRequestPending = true
+    mainWindow?.webContents.send('quit-requested')
+  })
+
   mainWindow.on('closed', () => (mainWindow = null))
 
   // Register focused-window shortcuts
   setupWindowShortcuts(mainWindow)
+})
+
+app.on('before-quit', () => {
+  isAppQuitting = true
 })
 
 app.on('window-all-closed', () => {

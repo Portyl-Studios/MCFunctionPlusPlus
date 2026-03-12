@@ -1,5 +1,9 @@
 import { BrowserWindow, ipcMain } from 'electron'
 
+type WindowControlHandlerOptions = {
+  onQuitCancelled?: () => void
+}
+
 const getIsWindowExpanded = (mainWindow: BrowserWindow) => {
   return mainWindow.isFullScreen() || mainWindow.isMaximized()
 }
@@ -9,7 +13,8 @@ const emitWindowStateChanged = (mainWindow: BrowserWindow) => {
 }
 
 export const registerWindowControlHandlers = (
-  getMainWindow: () => BrowserWindow | null
+  getMainWindow: () => BrowserWindow | null,
+  options: WindowControlHandlerOptions = {}
 ) => {
   ipcMain.handle('minimize', async () => {
     const mainWindow = getMainWindow()
@@ -44,5 +49,9 @@ export const registerWindowControlHandlers = (
     setImmediate(() => {
       mainWindow?.close()
     })
+  })
+
+  ipcMain.handle('quit-cancelled', async () => {
+    options.onQuitCancelled?.()
   })
 }

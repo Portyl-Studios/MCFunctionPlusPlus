@@ -1,8 +1,8 @@
-import { StreamLanguage } from "@codemirror/language"
+import { StreamLanguage, type StringStream } from "@codemirror/language"
 import { createInitialStreamState, McFunctionStreamState, mcfunctionStore, normalizeCommandToken } from "./shared"
 
 const streamErrorHandling = {
-  resetLineState(stream: any, state: McFunctionStreamState) {
+  resetLineState(stream: StringStream, state: McFunctionStreamState) {
     if (!stream.sol()) return
 
     if (!state.isContinuedLine) {
@@ -28,7 +28,7 @@ const streamErrorHandling = {
     state.isContinuedLine = false
   },
 
-  consumeInvalidLine(stream: any, state: McFunctionStreamState) {
+  consumeInvalidLine(stream: StringStream, state: McFunctionStreamState) {
     if (!state.isInvalidLine) return false
 
     if (/\\\s*$/.test(stream.string)) {
@@ -39,7 +39,7 @@ const streamErrorHandling = {
     return true
   },
 
-  markInvalidLine(stream: any, state: McFunctionStreamState) {
+  markInvalidLine(stream: StringStream, state: McFunctionStreamState) {
     state.isInvalidLine = true
     if (/\\\s*$/.test(stream.string)) {
       state.isContinuedLine = true
@@ -75,7 +75,7 @@ const highlighter = {
       nextExpected: state.nextExpected,
     }
   },
-  token(stream: any, state: McFunctionStreamState) {
+  token(stream: StringStream, state: McFunctionStreamState) {
     // Node: reset line-level parser flags at start-of-line.
     streamErrorHandling.resetLineState(stream, state)
 

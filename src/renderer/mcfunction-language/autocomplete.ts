@@ -273,7 +273,7 @@ const getCompletionContextIndex = (context: CompletionContext) => {
 }
 
 export const loadMcfunctionCommandSchema = async (version: string = DEFAULT_COMMAND_SCHEMA_VERSION) => {
-  const electronApi = (window as any)?.electron
+  const electronApi = window.electron
   if (!electronApi?.commandSchemaGet) {
     console.error("[MCFunction] No electron API available for command schema")
     return false
@@ -297,7 +297,7 @@ export const loadMcfunctionCommandSchema = async (version: string = DEFAULT_COMM
 }
 
 const loadMinecraftRegistry = async (version: string, registryName: string): Promise<string[]> => {
-  const electronApi = (window as any)?.electron
+  const electronApi = window.electron
   if (!electronApi?.minecraftDataGet) return []
 
   try {
@@ -312,7 +312,7 @@ const loadMinecraftRegistry = async (version: string, registryName: string): Pro
 }
 
 const loadMinecraftDataFile = async (version: string, dataType: string): Promise<string[]> => {
-  const electronApi = (window as any)?.electron
+  const electronApi = window.electron
   if (!electronApi?.minecraftDataGet) return []
 
   try {
