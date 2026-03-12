@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain } from 'electron'
+import { BrowserWindow, ipcMain } from 'electron'
 
 const getIsWindowExpanded = (mainWindow: BrowserWindow) => {
   return mainWindow.isFullScreen() || mainWindow.isMaximized()
@@ -37,6 +37,12 @@ export const registerWindowControlHandlers = (
   })
 
   ipcMain.handle('quit', async () => {
-    app.quit()
+    const mainWindow = getMainWindow()
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.hide()
+    }
+    setImmediate(() => {
+      mainWindow?.close()
+    })
   })
 }
