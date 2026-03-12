@@ -40,6 +40,15 @@
         "filter": [
           "**/*"
         ]
+      },
+      {
+        "from": "assets/",
+        "to": "assets",
+        "filter": [
+          "icon.ico",
+          "icon.png",
+          "icon.icns"
+        ]
       }
     ],
     "win": {

@@ -1,5 +1,6 @@
 import { app, BrowserWindow, ipcMain, shell } from 'electron'
 import path from 'path'
+import fs from 'fs'
 import { fileURLToPath } from 'url'
 import { registerWindowControlHandlers } from './window'
 import { readFile, writeFile, writeFileFromDirectory, readFileFromDirectory, createFolder, getAllFiles, registerPickFolderHandler, validateDatapackFolder, renameFileOrFolder, deleteFileOrFolder } from './fileops'
@@ -16,6 +17,16 @@ const __resourcepath = app.isPackaged
   ? path.join(process.resourcesPath, 'resources')
   : path.join(__dirname, '../../resources')
 const __userDataPath = app.getPath('userData')
+
+const getWindowIconPath = () => {
+  if (app.isPackaged) {
+    // Prefer a bundled resource path in packaged builds.
+    const packagedIconPath = path.join(process.resourcesPath, 'assets', 'icon.ico')
+    if (fs.existsSync(packagedIconPath)) return packagedIconPath
+  }
+
+  return path.resolve(__dirname, '../../assets/icon.ico')
+}
 
 let mainWindow: BrowserWindow | null = null
 
@@ -207,7 +218,7 @@ app.on('ready', async () => {
   // Load preferences on startup
   await preferencesManager.load()
 
-  const iconPath = path.resolve(__dirname, '../../assets/icon.ico')
+  const iconPath = getWindowIconPath()
   mainWindow = new BrowserWindow({
     width: 1600,
     height: 900,
