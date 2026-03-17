@@ -49,6 +49,7 @@ export interface ElectronAPI {
   writeFile: (directory: string, filename: string, contents: string) => Promise<string>
   saveFile: (directory: string, relativePath: string, contents: string) => Promise<string>
   readFile: (directory: string, filePath: string) => Promise<string>
+  readFileIfExists: (directory: string, filePath: string) => Promise<string | null>
   listFiles: (directory: string) => Promise<string[]>
   workspaceLoad: (directory: string, name: string) => Promise<WorkspaceData>
   workspaceGetOrCreateDefault: () => Promise<WorkspaceDefaultResult>

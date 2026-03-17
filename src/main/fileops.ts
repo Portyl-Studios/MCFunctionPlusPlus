@@ -549,6 +549,19 @@ export const registerFileOperationHandlers = (options?: FileOperationHandlerOpti
     return await readFileFromDirectory(safeDirectory, filePath)
   })
 
+  // IPC handler to read a file if it exists, returning null instead of throwing for not-found.
+  ipcMain.handle('read-file-if-exists', async (_event, { directory, filePath }) => {
+    const safeDirectory = assertPathAllowedForFileOperation(directory, 'read-file-if-exists', getAllowedRoots?.())
+    try {
+      return await readFileFromDirectory(safeDirectory, filePath)
+    } catch (error) {
+      const errno = error as NodeJS.ErrnoException
+      if (errno.code === 'ENOENT') return null
+      if (error instanceof Error && error.message === 'File not found') return null
+      throw error
+    }
+  })
+
   // IPC handler to list files in a directory
   ipcMain.handle('list-files', async (_event, { directory }) => {
     const safeDirectory = assertPathAllowedForFileOperation(directory, 'list-files', getAllowedRoots?.())

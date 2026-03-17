@@ -54,6 +54,9 @@ const electronApi: ElectronAPI = {
   readFile: (directory: string, filePath: string) => {
     return ipcRenderer.invoke('read-file', { directory, filePath })
   },
+  readFileIfExists: (directory: string, filePath: string) => {
+    return ipcRenderer.invoke('read-file-if-exists', { directory, filePath })
+  },
   listFiles: (directory: string) => {
     return ipcRenderer.invoke('list-files', { directory })
   },
