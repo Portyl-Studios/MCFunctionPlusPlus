@@ -1,6 +1,7 @@
 import { app, BrowserWindow, ipcMain } from 'electron'
 import path from 'path'
 import fs from 'fs'
+import * as parcelWatcher from '@parcel/watcher'
 import { fileURLToPath } from 'url'
 import { registerWindowControlHandlers } from './window'
 import { readFile, registerFileOperationHandlers, registerPickFolderHandler, validateDatapackFolder } from './fileops'
@@ -31,6 +32,64 @@ const getWindowIconPath = () => {
 let mainWindow: BrowserWindow | null = null
 let isAppQuitting = false
 let isQuitRequestPending = false
+const fileWatchSubscriptions = new Map<string, parcelWatcher.AsyncSubscription>()
+
+const normalizeComparablePath = (targetPath: string): string => {
+  const resolvedPath = path.resolve(targetPath)
+  return process.platform === 'win32' ? resolvedPath.toLowerCase() : resolvedPath
+}
+
+const isPathWithinRoot = (targetPath: string, rootPath: string): boolean => {
+  const comparablePath = normalizeComparablePath(targetPath)
+  const comparableRoot = normalizeComparablePath(rootPath)
+  const relativePath = path.relative(comparableRoot, comparablePath)
+  return relativePath === '' || (!relativePath.startsWith('..') && !path.isAbsolute(relativePath))
+}
+
+const assertWatchPathAllowed = (directory: string, relativePath: string): { absoluteDirectory: string; absoluteFilePath: string } => {
+  if (!directory || typeof directory !== 'string' || !path.isAbsolute(directory)) {
+    throw new Error('Invalid directory for file watch')
+  }
+
+  if (!relativePath || typeof relativePath !== 'string' || path.isAbsolute(relativePath)) {
+    throw new Error('Invalid relative file path for file watch')
+  }
+
+  const allowedRoots = getAllowedFileOperationRoots()
+  if (allowedRoots.length === 0) {
+    throw new Error('File watching is unavailable until workspace or datapack context is loaded')
+  }
+
+  const absoluteDirectory = path.resolve(directory)
+  const absoluteFilePath = path.resolve(absoluteDirectory, relativePath)
+
+  const isAllowed = allowedRoots.some((root) => isPathWithinRoot(absoluteFilePath, root))
+  if (!isAllowed) {
+    throw new Error('File watching is only allowed within active workspace or datapack directories')
+  }
+
+  if (!isPathWithinRoot(absoluteFilePath, absoluteDirectory)) {
+    throw new Error('File watch path escapes the selected datapack directory')
+  }
+
+  return {
+    absoluteDirectory,
+    absoluteFilePath,
+  }
+}
+
+const stopFileWatch = async (watchId: string): Promise<void> => {
+  const subscription = fileWatchSubscriptions.get(watchId)
+  if (!subscription) return
+
+  fileWatchSubscriptions.delete(watchId)
+  await subscription.unsubscribe()
+}
+
+const stopAllFileWatches = async (): Promise<void> => {
+  const watchIds = [...fileWatchSubscriptions.keys()]
+  await Promise.all(watchIds.map((watchId) => stopFileWatch(watchId)))
+}
 
 const getAllowedFileOperationRoots = (): string[] => {
   const roots = new Set<string>()
@@ -114,6 +173,52 @@ registerWorkspaceHandlers(() => mainWindow)
 registerDatapackHandlers()
 registerFileOperationHandlers({
   getAllowedRoots: getAllowedFileOperationRoots,
+})
+
+ipcMain.handle('watch-file-start', async (_event, { watchId, directory, relativePath }) => {
+  if (!watchId || typeof watchId !== 'string') {
+    throw new Error('Invalid file watch id')
+  }
+
+  const { absoluteFilePath } = assertWatchPathAllowed(directory, relativePath)
+  const parentDirectory = path.dirname(absoluteFilePath)
+  const comparableTargetPath = normalizeComparablePath(absoluteFilePath)
+
+  await stopFileWatch(watchId)
+
+  const subscription = await parcelWatcher.subscribe(parentDirectory, (error, events) => {
+    if (error) {
+      console.error(`File watch failed for ${watchId}:`, error)
+      return
+    }
+
+    if (!mainWindow || mainWindow.isDestroyed() || mainWindow.webContents.isDestroyed()) {
+      return
+    }
+
+    for (const event of events) {
+      const comparableEventPath = normalizeComparablePath(event.path)
+      if (comparableEventPath !== comparableTargetPath) continue
+
+      if (event.type !== 'update' && event.type !== 'create' && event.type !== 'delete') continue
+
+      mainWindow.webContents.send('file-external-change', {
+        watchId,
+        changeType: event.type,
+      })
+    }
+  })
+
+  fileWatchSubscriptions.set(watchId, subscription)
+})
+
+ipcMain.handle('watch-file-stop', async (_event, { watchId }) => {
+  if (!watchId || typeof watchId !== 'string') return
+  await stopFileWatch(watchId)
+})
+
+ipcMain.handle('watch-file-stop-all', async () => {
+  await stopAllFileWatches()
 })
 
 // IPC handler to get or create default workspace
@@ -292,6 +397,7 @@ app.on('ready', async () => {
 
 app.on('before-quit', () => {
   isAppQuitting = true
+  void stopAllFileWatches()
 })
 
 app.on('window-all-closed', () => {

@@ -44,7 +44,7 @@ import {
 import { detectEditorLanguage, getLanguageProcessingExtensions, type DiagnosticSummary } from "./language-handler"
 import { runGlobalDiagnosticsScan } from "./diagnostics/global-diagnostics"
 import { Tooltip } from "./overlays/tooltip"
-import type { ShortcutAction } from "../main/electron-api"
+import type { ExternalFileChangeEvent, ShortcutAction } from "../main/electron-api"
 
 type DatapackEntry = {
   dir: string
@@ -80,6 +80,7 @@ type ParsedContextCacheEntry = {
 
 const OPEN_TABS_PREFERENCE_KEY = "openTabs"
 const EXPLORER_EXPANDED_PREFERENCE_KEY = "explorerExpandedPaths"
+const INTERNAL_SAVE_WATCHER_SUPPRESS_MS = 1500
 
 type CursorMarkerInfo = {
   line: number
@@ -386,6 +387,11 @@ function CodeEditor() {
   const isDialogOpenRef = useRef(dialog.isOpen)
   const openedFilesRef = useRef(openedFiles)
   const modifiedFilesRef = useRef(modifiedFiles)
+  const watchedFilesRef = useRef<Map<string, { datapackDir: string; relativePath: string }>>(new Map())
+  const pendingExternalChangeQueueRef = useRef<string[]>([])
+  const pendingExternalChangeSetRef = useRef<Set<string>>(new Set())
+  const isProcessingExternalChangesRef = useRef(false)
+  const suppressExternalChangesUntilRef = useRef<Map<string, number>>(new Map())
   const {
     workspaceInfo,
     handleOpenWorkspace,
@@ -978,10 +984,27 @@ function CodeEditor() {
     }
   }
 
+  const markInternalSaveForWatcherSuppress = (fileKey: string) => {
+    suppressExternalChangesUntilRef.current.set(fileKey, Date.now() + INTERNAL_SAVE_WATCHER_SUPPRESS_MS)
+  }
+
+  const shouldIgnoreExternalChangeForFile = (fileKey: string): boolean => {
+    const suppressUntil = suppressExternalChangesUntilRef.current.get(fileKey)
+    if (!suppressUntil) return false
+
+    if (Date.now() <= suppressUntil) {
+      return true
+    }
+
+    suppressExternalChangesUntilRef.current.delete(fileKey)
+    return false
+  }
+
   const saveFile = async (fileKey: string, contents: string): Promise<boolean> => {
     const { datapackDir, relativePath } = parseFileKey(fileKey)
 
     try {
+      markInternalSaveForWatcherSuppress(fileKey)
       await window.electron.saveFile(datapackDir, relativePath, contents)
       
       // Update cached content
@@ -1062,6 +1085,132 @@ function CodeEditor() {
       await dialog.showAlert("Error", `Failed to save all files: ${error instanceof Error ? error.message : "Unknown error"}`)
       return false
     }
+  }
+
+  const refreshOpenedFileFromDisk = async (fileKey: string, clearModifiedState: boolean): Promise<boolean> => {
+    const openedFile = openedFilesRef.current.find((file) => createFileKey(file.datapackDir, file.relativePath) === fileKey)
+    if (!openedFile) return false
+
+    const { datapackDir, relativePath } = parseFileKey(fileKey)
+
+    try {
+      const diskContents = await window.electron.readFile(datapackDir, relativePath)
+      const latestOpenedFile = openedFilesRef.current.find((file) => createFileKey(file.datapackDir, file.relativePath) === fileKey)
+      if (!latestOpenedFile) return false
+
+      const shouldSkipUpdate = latestOpenedFile.content === diskContents && (!clearModifiedState || !modifiedFilesRef.current.has(fileKey))
+      if (shouldSkipUpdate) return true
+
+      setOpenedFiles((prev) =>
+        prev.map((file) =>
+          createFileKey(file.datapackDir, file.relativePath) === fileKey
+            ? { ...file, content: diskContents }
+            : file,
+        ),
+      )
+
+      if (clearModifiedState) {
+        removeFileFromModifiedFiles(fileKey)
+        clearAutoSaveTimer(fileKey)
+      }
+
+      fileEditorStatesRef.current.delete(fileKey)
+
+      if (activeFileRef.current === fileKey && viewRef.current) {
+        const refreshedState = createEditorState(diskContents, fileKey)
+        fileEditorStatesRef.current.set(fileKey, refreshedState)
+        viewRef.current.setState(refreshedState)
+        setCursorMarkerInfo(getCursorMarkerInfo(refreshedState))
+        viewRef.current.focus()
+      }
+
+      scheduleContextReload(datapackDir)
+      return true
+    } catch (error) {
+      console.error("Failed to refresh file from disk:", error)
+      await dialog.showAlert("Error", `Failed to refresh file from disk: ${error instanceof Error ? error.message : "Unknown error"}`)
+      return false
+    }
+  }
+
+  const handleExternalFileChange = async (fileKey: string) => {
+    if (shouldIgnoreExternalChangeForFile(fileKey)) return
+
+    const openedFile = openedFilesRef.current.find((file) => createFileKey(file.datapackDir, file.relativePath) === fileKey)
+    if (!openedFile) return
+
+    if (!modifiedFilesRef.current.has(fileKey)) {
+      await refreshOpenedFileFromDisk(fileKey, false)
+      return
+    }
+
+    try {
+      const { datapackDir, relativePath } = parseFileKey(fileKey)
+      const diskContents = await window.electron.readFile(datapackDir, relativePath)
+      const latestOpenedFile = openedFilesRef.current.find((file) => createFileKey(file.datapackDir, file.relativePath) === fileKey)
+      if (!latestOpenedFile) return
+
+      if (latestOpenedFile.content === diskContents) {
+        removeFileFromModifiedFiles(fileKey)
+        clearAutoSaveTimer(fileKey)
+        markInternalSaveForWatcherSuppress(fileKey)
+        return
+      }
+    } catch {
+      // Fall through to dialog when we cannot reliably compare content.
+    }
+
+    const fileName = openedFile.fileName || "This file"
+    const choice = await new Promise<"keep" | "discard">((resolve) => {
+      dialog.openDialog({
+        title: "External File Change",
+        message: `${fileName} was modified outside the app. Keep your in-app changes or discard them and refresh from disk?`,
+        buttons: [
+          {
+            label: "Keep In-App Changes",
+            onClick: () => resolve("keep"),
+          },
+          {
+            label: "Discard and Refresh",
+            onClick: () => resolve("discard"),
+          },
+        ],
+      })
+    })
+
+    if (choice === "discard") {
+      await refreshOpenedFileFromDisk(fileKey, true)
+    }
+  }
+
+  const processExternalFileChangeQueue = async () => {
+    if (isProcessingExternalChangesRef.current) return
+
+    isProcessingExternalChangesRef.current = true
+    try {
+      while (pendingExternalChangeQueueRef.current.length > 0) {
+        const nextFileKey = pendingExternalChangeQueueRef.current.shift()
+        if (!nextFileKey) continue
+
+        pendingExternalChangeSetRef.current.delete(nextFileKey)
+        await handleExternalFileChange(nextFileKey)
+      }
+    } finally {
+      isProcessingExternalChangesRef.current = false
+    }
+  }
+
+  const enqueueExternalFileChange = (fileKey: string) => {
+    if (shouldIgnoreExternalChangeForFile(fileKey)) return
+
+    const isOpen = openedFilesRef.current.some((file) => createFileKey(file.datapackDir, file.relativePath) === fileKey)
+    if (!isOpen) return
+
+    if (pendingExternalChangeSetRef.current.has(fileKey)) return
+
+    pendingExternalChangeSetRef.current.add(fileKey)
+    pendingExternalChangeQueueRef.current.push(fileKey)
+    void processExternalFileChangeQueue()
   }
 
   const closeTab = async (fileKey: string): Promise<boolean> => {
@@ -1455,6 +1604,70 @@ function CodeEditor() {
   useEffect(() => {
     modifiedFilesRef.current = modifiedFiles
   }, [modifiedFiles])
+
+  useEffect(() => {
+    let isDisposed = false
+
+    const syncFileWatches = async () => {
+      const desiredFiles = new Map<string, { datapackDir: string; relativePath: string }>()
+      for (const file of openedFiles) {
+        const fileKey = createFileKey(file.datapackDir, file.relativePath)
+        desiredFiles.set(fileKey, { datapackDir: file.datapackDir, relativePath: file.relativePath })
+      }
+
+      const currentWatchIds = [...watchedFilesRef.current.keys()]
+      for (const watchId of currentWatchIds) {
+        if (desiredFiles.has(watchId)) continue
+        try {
+          await window.electron.watchFileStop(watchId)
+        } catch (error) {
+          console.error("Failed to stop file watch:", error)
+        } finally {
+          watchedFilesRef.current.delete(watchId)
+        }
+      }
+
+      for (const [watchId, file] of desiredFiles) {
+        if (isDisposed) return
+        if (watchedFilesRef.current.has(watchId)) continue
+
+        try {
+          await window.electron.watchFileStart(watchId, file.datapackDir, file.relativePath)
+          watchedFilesRef.current.set(watchId, file)
+        } catch (error) {
+          console.error("Failed to start file watch:", error)
+        }
+      }
+    }
+
+    void syncFileWatches()
+
+    return () => {
+      isDisposed = true
+    }
+  }, [openedFiles])
+
+  useEffect(() => {
+    const unsubscribeExternalChange = window.electron.onFileExternalChange((event: ExternalFileChangeEvent) => {
+      if (!event.watchId) return
+      enqueueExternalFileChange(event.watchId)
+    })
+
+    return () => {
+      if (typeof unsubscribeExternalChange === "function") {
+        unsubscribeExternalChange()
+      }
+    }
+  }, [])
+
+  useEffect(() => {
+    return () => {
+      pendingExternalChangeQueueRef.current = []
+      pendingExternalChangeSetRef.current.clear()
+      watchedFilesRef.current.clear()
+      void window.electron.watchFileStopAll()
+    }
+  }, [])
 
   // Handle workspace tab restoration on workspace load
   useEffect(() => {

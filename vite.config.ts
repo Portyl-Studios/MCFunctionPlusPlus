@@ -53,6 +53,9 @@ export default defineConfig({
           build: {
             outDir: path.resolve(__dirname, 'out/main'),
             sourcemap: true,
+            rollupOptions: {
+              external: ['@parcel/watcher'],
+            },
           },
         },
       },

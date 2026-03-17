@@ -30,6 +30,11 @@ export type ShortcutAction = 'quit' | 'open' | 'save' | 'saveAll' | 'close' | st
 
 export type ShortcutHandler = (event: unknown, action: ShortcutAction) => void
 export type QuitRequestedHandler = () => void
+export type ExternalFileChangeType = 'create' | 'update' | 'delete'
+export type ExternalFileChangeEvent = {
+  watchId: string
+  changeType: ExternalFileChangeType
+}
 
 export interface ElectronAPI {
   minimize: () => Promise<void>
@@ -75,4 +80,8 @@ export interface ElectronAPI {
   preferencesUpdate: (updates: Partial<AppPreferences>) => Promise<void>
   commandSchemaGet: (version: string) => Promise<string>
   minecraftDataGet: (version: string, dataType: string) => Promise<string>
+  watchFileStart: (watchId: string, directory: string, relativePath: string) => Promise<void>
+  watchFileStop: (watchId: string) => Promise<void>
+  watchFileStopAll: () => Promise<void>
+  onFileExternalChange: (callback: (event: ExternalFileChangeEvent) => void) => () => void
 }

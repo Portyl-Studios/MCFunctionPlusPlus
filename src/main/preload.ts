@@ -2,7 +2,7 @@
 const { contextBridge, ipcRenderer } = require('electron')
 
 import type { IpcRendererEvent } from 'electron'
-import type { ElectronAPI, ShortcutHandler, TitlebarContextMenuPosition } from './electron-api'
+import type { ElectronAPI, ExternalFileChangeEvent, ShortcutHandler, TitlebarContextMenuPosition } from './electron-api'
 import type { AppPreferences } from './preferences'
 
 const electronApi: ElectronAPI = {
@@ -149,6 +149,22 @@ const electronApi: ElectronAPI = {
   },
   minecraftDataGet: (version: string, dataType: string) => {
     return ipcRenderer.invoke('minecraft-data-get', { version, dataType })
+  },
+  watchFileStart: (watchId: string, directory: string, relativePath: string) => {
+    return ipcRenderer.invoke('watch-file-start', { watchId, directory, relativePath })
+  },
+  watchFileStop: (watchId: string) => {
+    return ipcRenderer.invoke('watch-file-stop', { watchId })
+  },
+  watchFileStopAll: () => {
+    return ipcRenderer.invoke('watch-file-stop-all')
+  },
+  onFileExternalChange: (callback: (event: ExternalFileChangeEvent) => void) => {
+    const listener = (_event: IpcRendererEvent, payload: ExternalFileChangeEvent) => callback(payload)
+    ipcRenderer.on('file-external-change', listener)
+    return () => {
+      ipcRenderer.removeListener('file-external-change', listener)
+    }
   }
 }
 
