@@ -2134,7 +2134,7 @@ function CodeEditor() {
       visible: visibleRightPanelTabs.has("preferences"),
       content: workspaceInfo.dir ? (
         <div className="text-sm text-codemirror-300">
-          <div className="font-mono break-words">{workspaceInfo.dir}</div>
+          <div className="font-mono wrap-break-word">{workspaceInfo.dir}</div>
         </div>
       ) : (
         <div className="text-sm text-codemirror-300">No folder selected</div>
@@ -2169,7 +2169,7 @@ function CodeEditor() {
     <div className="w-full h-full flex flex-col select-none">
 
       {/* Title Bar */}
-      <div className="flex flex-row h-[36px] bg-codemirror-700 text-sm text-codemirror-100 border-b border-codemirror-600" style={{ WebkitAppRegion: "drag" } as any}>
+      <div className="flex flex-row h-9 bg-codemirror-700 text-sm text-codemirror-100 border-b border-codemirror-600" style={{ WebkitAppRegion: "drag" } as any}>
 
         {/* App Icon */}
         <div className="px-4 py-2 font-bold" onContextMenu={handleTitlebarRightClick}>
@@ -2370,7 +2370,7 @@ function CodeEditor() {
                   <div className="relative flex" key={fileKey}>
 
                     {showLeftIndicator && (
-                      <div className="absolute left-0 top-0 bottom-0 w-[2px] bg-codemirror-100 pointer-events-none" />
+                      <div className="absolute left-0 top-0 bottom-0 w-0.5 bg-codemirror-100 pointer-events-none" />
                     )}
 
                     <div
@@ -2498,7 +2498,7 @@ function CodeEditor() {
                     </div>
 
                     {showRightIndicator && (
-                      <div className="absolute right-0 top-0 bottom-0 w-[2px] bg-codemirror-100 pointer-events-none" />
+                      <div className="absolute right-0 top-0 bottom-0 w-0.5 bg-codemirror-100 pointer-events-none" />
                     )}
 
                   </div>
@@ -2572,7 +2572,7 @@ function CodeEditor() {
       </div>
       
       {/* Footer */}
-      <div className="h-[30px] border-t border-codemirror-600
+      <div className="h-7.5 border-t border-codemirror-600
         bg-codemirror-700 text-codemirror-100
         flex flex-row items-center
       ">

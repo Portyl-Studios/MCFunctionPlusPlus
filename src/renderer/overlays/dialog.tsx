@@ -81,9 +81,9 @@ export function Dialog({ isOpen, title, message, buttons, autoCloseMs, onClose, 
   if (!isOpen) return null
 
   return (<>
-    <div className="fixed inset-0 top-[36px] bottom-[30px] bg-codemirror-700 opacity-50 z-50"></div>
+    <div className="fixed inset-0 top-9 bottom-7.5 bg-codemirror-700 opacity-50 z-50"></div>
     <div
-      className="fixed inset-0 top-[36px] bottom-[30px] flex items-center justify-center z-50"
+      className="fixed inset-0 top-9 bottom-7.5 flex items-center justify-center z-50"
       style={{ backdropFilter: 'blur(2px)' }}
       onClick={onClose}
     >
