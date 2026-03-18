@@ -1816,7 +1816,15 @@ function CodeEditor() {
 
   // Keyboard shortcuts
   useEffect(() => {
+    const hasBlockingPopupOpen = () => {
+      const hasOpenMenu = document.querySelector('.menu-layer') !== null
+      const hasOpenDialog = document.querySelector('[data-popup-dialog="true"]') !== null
+      return hasOpenMenu || hasOpenDialog
+    }
+
     const handler = (_event: unknown, action: ShortcutAction) => {
+      if (hasBlockingPopupOpen()) return
+
       switch (action) {
         case "quit":
           handleQuitWithConfirm()

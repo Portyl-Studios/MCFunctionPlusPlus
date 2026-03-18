@@ -1,5 +1,6 @@
 import React, { useEffect, useRef } from 'react'
 import { MenuItems, type MenuItem } from '../menuitem'
+import { defocusActiveElement } from '../utils'
 
 interface ContextMenuProps {
   items: MenuItem[]
@@ -16,6 +17,8 @@ export function ContextMenu({ items, x, y, isOpen, onClose }: ContextMenuProps) 
 
   useEffect(() => {
     if (!isOpen) return
+
+    defocusActiveElement()
     setPosition({ x, y })
     setIsPositionReady(false)
   }, [isOpen, x, y])
@@ -73,6 +76,7 @@ export function ContextMenu({ items, x, y, isOpen, onClose }: ContextMenuProps) 
 
   return (
     <div
+      data-popup-menu="true"
       ref={menuRef}
       className="fixed menu-layer"
       style={{ top: position.y, left: position.x, visibility: isPositionReady ? 'visible' : 'hidden' }}

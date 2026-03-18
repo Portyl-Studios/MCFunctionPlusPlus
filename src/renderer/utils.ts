@@ -52,3 +52,10 @@ export const parseFileKey = (fileKey: string): { datapackDir: string; relativePa
   const relativePath = fileKey.slice(separatorIndex + 1)
   return { datapackDir, relativePath }
 }
+
+export const defocusActiveElement = () => {
+  const activeElement = document.activeElement
+  if (activeElement instanceof HTMLElement) {
+    activeElement.blur()
+  }
+}

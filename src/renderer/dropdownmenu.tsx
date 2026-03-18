@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useRef } from 'react'
 import { MenuItems, type MenuItem } from './menuitem'
+import { defocusActiveElement } from './utils'
 
 export type { MenuItem }
 
@@ -17,6 +18,12 @@ export function DropdownMenu({ label, items, isOpen, setIsOpen, buttonClassName,
   const [alignRight, setAlignRight] = useState(false)
   const buttonClass = buttonClassName ?? 'header-button'
   const disabledClass = disabled ? 'opacity-50 cursor-not-allowed pointer-events-none' : ''
+
+  useEffect(() => {
+    if (!isOpen) return
+
+    defocusActiveElement()
+  }, [isOpen])
 
   useEffect(() => {
     if (!isOpen || !menuRef.current) return
@@ -75,7 +82,7 @@ export function DropdownMenu({ label, items, isOpen, setIsOpen, buttonClassName,
         {label}
       </div>
       {isOpen && !disabled && (
-        <div className={`absolute top-full ${alignRight ? 'right-1' : 'left-1'} mt-2 menu-layer z-50`}>
+        <div data-popup-menu="true" className={`absolute top-full ${alignRight ? 'right-1' : 'left-1'} mt-2 menu-layer z-50`}>
           <MenuItems items={items} maxItems={10} onItemClick={() => setIsOpen(false)} />
         </div>
       )}
