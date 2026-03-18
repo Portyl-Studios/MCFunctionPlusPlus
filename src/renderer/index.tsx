@@ -25,6 +25,7 @@ import { Panel, type PanelTab } from "./panel"
 import { DropdownMenu, type MenuItem } from "./dropdownmenu"
 import { useWorkspace } from "./use-workspace"
 import iconPath from "../../assets/icon.png"
+import packageJson from "../../package.json"
 import { DatapackTree } from "./datapacktree"
 import { Dialog } from "./overlays/dialog"
 import { useDialogRequest } from "./overlays/dialog-request"
@@ -98,6 +99,8 @@ const defaultDiagnosticSummary: DiagnosticSummary = {
   errors: 0,
   warnings: 0,
 }
+
+const appVersionLabel = `v${packageJson.version}`
 
 const getCursorMarkerInfo = (state: EditorState): CursorMarkerInfo => {
   const selection = state.selection.main
@@ -2722,6 +2725,7 @@ function CodeEditor() {
       ">
 
         <div className="footer-element">Made by touchportyl</div>
+        <div className="footer-element">{appVersionLabel}</div>
 
         <div className="flex-1"/>
 

@@ -2,6 +2,7 @@ import { app, BrowserWindow, ipcMain } from 'electron'
 import path from 'path'
 import fs from 'fs'
 import * as parcelWatcher from '@parcel/watcher'
+import { autoUpdater } from 'electron-updater'
 import { fileURLToPath } from 'url'
 import { registerWindowControlHandlers } from './window'
 import { readFile, registerFileOperationHandlers, registerPickFolderHandler, validateDatapackFolder } from './fileops'
@@ -32,7 +33,24 @@ const getWindowIconPath = () => {
 let mainWindow: BrowserWindow | null = null
 let isAppQuitting = false
 let isQuitRequestPending = false
+let hasCheckedForUpdatesThisSession = false
 const fileWatchSubscriptions = new Map<string, parcelWatcher.AsyncSubscription>()
+
+const checkForUpdatesOncePerLaunch = async (): Promise<void> => {
+  if (hasCheckedForUpdatesThisSession) return
+  hasCheckedForUpdatesThisSession = true
+
+  if (!app.isPackaged) return
+
+  autoUpdater.autoDownload = true
+  autoUpdater.autoInstallOnAppQuit = true
+
+  try {
+    await autoUpdater.checkForUpdatesAndNotify()
+  } catch (error) {
+    console.error('Failed to check for app updates:', error)
+  }
+}
 
 const normalizeComparablePath = (targetPath: string): string => {
   const resolvedPath = path.resolve(targetPath)
@@ -393,6 +411,8 @@ app.on('ready', async () => {
 
   // Register focused-window shortcuts
   setupWindowShortcuts(mainWindow)
+
+  void checkForUpdatesOncePerLaunch()
 })
 
 app.on('before-quit', () => {

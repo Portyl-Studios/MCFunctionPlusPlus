@@ -23,7 +23,7 @@ MCFunction++ is ideal for both new and experienced developers who want to get in
 
 1. Clone the repository:
    ```bash
-   git clone https://github.com/touchportyl/MCFunctionPlusPlus.git
+   git clone https://github.com/Portyl-Studios/MCFunctionPlusPlus.git
    cd MCFunctionPlusPlus
    ```
 
@@ -77,6 +77,50 @@ This will create an installer and portable executable in the `release/` folder.
 - macOS: `npm run dist:mac` (DMG and ZIP)
 - Linux: `npm run dist:linux` (AppImage and DEB)
 - All platforms: `npm run dist`
+
+---
+
+## Desktop Auto-Update (NSIS)
+
+Desktop auto-updates use `electron-builder` + `electron-updater` with GitHub Releases.
+
+- Provider repo: `Portyl-Studios/MCFunctionPlusPlus`
+- Windows update channel: NSIS artifacts + `latest.yml`
+- Update check behavior: exactly once per app launch (no background polling until restart)
+
+This behavior is implemented in the Electron main process and only runs in packaged builds.
+
+---
+
+## Desktop CI/CD (Auto Version + Release)
+
+Two GitHub Actions workflows are used:
+
+1. `.github/workflows/desktop-version-bump.yml`
+   - Trigger: push to `main`
+   - Action: reads `major.minor` from `package.json`, computes patch from existing tags (`vMAJOR.MINOR.*`), then sets `MAJOR.MINOR.NEXT_PATCH`
+   - Behavior: patch resets to `0` automatically when you change major/minor to a new series
+   - Behavior: if your pushed commit already has the exact target version (for example `2.1.0` when starting a new series), it only creates the tag and does not create an extra bump commit
+2. `.github/workflows/desktop-release.yml`
+   - Trigger: push of `vX.Y.Z` tag
+   - Action: builds and publishes Windows NSIS artifacts to GitHub Releases (`--publish always`)
+3. `.github/workflows/desktop-version-guard.yml`
+   - Trigger: pull requests to `main` (and pushes to `main`)
+   - Action: blocks manual patch edits for the same major/minor line, and enforces patch `0` when major/minor is changed manually
+
+### Required Repository Setup
+
+1. Ensure Actions permission allows write access to repository contents.
+2. Ensure branch protection allows GitHub Actions to push version bump commits to `main`.
+3. Add `Desktop Version Guard / prevent-manual-patch-bumps` as a required status check in branch protection for `main`.
+4. No extra token is required for public-repo releases when using `${{ secrets.GITHUB_TOKEN }}`.
+5. Optional (recommended for production): configure code-signing secrets and certs for trusted Windows installers.
+
+### How to choose your major/minor
+
+1. Before pushing to `main`, set `package.json` version to the major/minor line you want, using patch `0` (example: `2.4.0`).
+2. Push to `main`.
+3. The workflow creates `v2.4.0` for the first release in that series, then `v2.4.1`, `v2.4.2`, etc. on subsequent pushes.
 
 ---
 
