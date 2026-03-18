@@ -2725,6 +2725,7 @@ function CodeEditor() {
       ">
 
         <div className="footer-element">Made by touchportyl</div>
+        
         <div className="footer-element">{appVersionLabel}</div>
 
         <div className="flex-1"/>
