@@ -15,21 +15,38 @@ import {
 } from "@codemirror/view"
 import { defaultKeymap, history, historyKeymap, indentWithTab } from "@codemirror/commands"
 import { foldGutter, foldKeymap, indentOnInput, syntaxHighlighting, defaultHighlightStyle, bracketMatching } from "@codemirror/language"
-import { autocompletion, closeBrackets, closeBracketsKeymap, completionKeymap } from "@codemirror/autocomplete"
+import { closeBrackets, closeBracketsKeymap, completionKeymap } from "@codemirror/autocomplete"
 import { searchKeymap, highlightSelectionMatches } from "@codemirror/search"
-import { lintKeymap } from "@codemirror/lint"
-import { json } from "@codemirror/lang-json"
-import { oneDark } from "@codemirror/theme-one-dark"
+import { forceLinting, lintKeymap } from "@codemirror/lint"
+import { portylDarkTheme } from "./themes/portyl-dark"
 import "./index.css"
 import { Section, ResizeHandle, useResizableSection } from "./section"
 import { Panel, type PanelTab } from "./panel"
 import { DropdownMenu, type MenuItem } from "./dropdownmenu"
 import { useWorkspace } from "./use-workspace"
 import iconPath from "../../assets/icon.png"
+import packageJson from "../../package.json"
 import { DatapackTree } from "./datapacktree"
-import { Dialog, useDialog } from "./dialog"
-import { ContextMenu, useContextMenu } from "./contextmenu"
+import { Dialog } from "./overlays/dialog"
+import { useDialogRequest } from "./overlays/dialog-request"
+import { ContextMenu } from "./overlays/contextmenu"
+import { useContextMenuRequest } from "./overlays/contextmenu-request"
 import { getDirFromPath, toRelativePaths, createFileKey, parseFileKey } from "./utils"
+import {
+  clearDatapackContextIndexes,
+  loadMcfunctionCommandSchema,
+  loadMinecraftData,
+  mergeMcfunctionContextIndexes,
+  parseMcfunctionContextIndex,
+  setActiveDatapackContext,
+  setDatapackContextIndex,
+  setWorkspaceResourcePathsFromRelativePaths,
+} from "./mcfunction-language"
+import { detectEditorLanguage, getLanguageProcessingExtensions, type DiagnosticSummary } from "./language-handler"
+import { runGlobalDiagnosticsScan } from "./diagnostics/global-diagnostics"
+import { Tooltip } from "./overlays/tooltip"
+import { useExternalFileWatcher } from "./use-external-file-watcher"
+import type { ShortcutAction } from "../main/electron-api"
 
 type DatapackEntry = {
   dir: string
@@ -58,8 +75,44 @@ type WorkspaceTabSession = {
   activeFile: string | null
 }
 
+type ParsedContextCacheEntry = {
+  content: string
+  contextIndex: ReturnType<typeof parseMcfunctionContextIndex>
+}
+
 const OPEN_TABS_PREFERENCE_KEY = "openTabs"
 const EXPLORER_EXPANDED_PREFERENCE_KEY = "explorerExpandedPaths"
+
+type CursorMarkerInfo = {
+  line: number
+  column: number
+  selectedCharacters: number
+}
+
+const defaultCursorMarkerInfo: CursorMarkerInfo = {
+  line: 1,
+  column: 1,
+  selectedCharacters: 0,
+}
+
+const defaultDiagnosticSummary: DiagnosticSummary = {
+  errors: 0,
+  warnings: 0,
+}
+
+const appVersionLabel = `v${packageJson.version}`
+
+const getCursorMarkerInfo = (state: EditorState): CursorMarkerInfo => {
+  const selection = state.selection.main
+  const startPosition = selection.from
+  const line = state.doc.lineAt(startPosition)
+
+  return {
+    line: line.number,
+    column: startPosition - line.from + 1,
+    selectedCharacters: selection.to - selection.from,
+  }
+}
 
 const codeMirrorSetupExtensions = [
   lineNumbers(),
@@ -74,7 +127,6 @@ const codeMirrorSetupExtensions = [
   syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
   bracketMatching(),
   closeBrackets(),
-  autocompletion(),
   rectangularSelection(),
   highlightActiveLine(),
   highlightSelectionMatches(),
@@ -211,7 +263,7 @@ function CodeEditor() {
   useEffect(() => {
     const loadPanelPreferences = async () => {
       try {
-        const panelPrefs = await (window as any).electron.preferencesGet('panels')
+        const panelPrefs = await window.electron.preferencesGet('panels')
         if (panelPrefs) {
           if (panelPrefs.leftPanelTabOrder) setLeftPanelTabOrder(panelPrefs.leftPanelTabOrder)
           if (panelPrefs.rightPanelTabOrder) setRightPanelTabOrder(panelPrefs.rightPanelTabOrder)
@@ -239,7 +291,7 @@ function CodeEditor() {
   useEffect(() => {
     const savePanelPreferences = async () => {
       try {
-        await (window as any).electron.preferencesSet('panels', {
+        await window.electron.preferencesSet('panels', {
           leftPanelTabOrder,
           rightPanelTabOrder,
           bottomPanelTabOrder,
@@ -294,10 +346,15 @@ function CodeEditor() {
   const [isHeaderMenuTwoOpen, setIsHeaderMenuTwoOpen] = useState(false)
   const [isHeaderMenuThreeOpen, setIsHeaderMenuThreeOpen] = useState(false)
   const [isHeaderMenuFourOpen, setIsHeaderMenuFourOpen] = useState(false)
+  const [isHeaderMenuFiveOpen, setIsHeaderMenuFiveOpen] = useState(false)
+  const [isHeaderMenuSixOpen, setIsHeaderMenuSixOpen] = useState(false)
   const [isFullScreen, setIsFullScreen] = useState(false)
   const [openedFiles, setOpenedFiles] = useState<OpenedFile[]>([])
   const [activeFile, setActiveFile] = useState<string | null>(null)
   const [modifiedFiles, setModifiedFiles] = useState<Set<string>>(new Set())
+  const [fileDiagnosticSummaries, setFileDiagnosticSummaries] = useState<Record<string, DiagnosticSummary>>({})
+  const [cursorMarkerInfo, setCursorMarkerInfo] = useState<CursorMarkerInfo>(defaultCursorMarkerInfo)
+  const [diagnosticSummary, setDiagnosticSummary] = useState<DiagnosticSummary>(defaultDiagnosticSummary)
   const tabsRef = useRef<HTMLDivElement>(null)
   const tabElementRefs = useRef<Map<string, HTMLDivElement>>(new Map())
   const [isAutoSaveEnabled, setIsAutoSaveEnabled] = useState(false)
@@ -305,8 +362,7 @@ function CodeEditor() {
   const isRestoringExplorerRef = useRef(false)
   const lastSavedTabSessionSignatureRef = useRef("")
   const fileEditorStatesRef = useRef<Map<string, EditorState>>(new Map())
-  const tabContextMenu = useContextMenu()
-  const [tabContextFileKey, setTabContextFileKey] = useState<string | null>(null)
+  const contextMenuRequest = useContextMenuRequest()
   
   // File tab drag-and-drop state
   const [draggingFileKey, setDraggingFileKey] = useState<string | null>(null)
@@ -324,8 +380,16 @@ function CodeEditor() {
   const isAutoSaveEnabledRef = useRef(isAutoSaveEnabled)
   // Track auto-save timers per file using fileKey format: "datapackDir|relativePath"
   const autoSaveTimersRef = useRef<Map<string, number>>(new Map())
-  const dialog = useDialog()
+  const diagnosticsScanRunIdRef = useRef(0)
+  const contextScanRunIdRef = useRef(0)
+  const contextDiagnosticsPipelineRunIdRef = useRef(0)
+  const contextReloadTimerRef = useRef<number | null>(null)
+  const fileContextParseCacheRef = useRef<Map<string, ParsedContextCacheEntry>>(new Map())
+  const openFileRequestIdRef = useRef(0)
+  const dialog = useDialogRequest()
   const isDialogOpenRef = useRef(dialog.isOpen)
+  const openedFilesRef = useRef(openedFiles)
+  const modifiedFilesRef = useRef(modifiedFiles)
   const {
     workspaceInfo,
     handleOpenWorkspace,
@@ -340,7 +404,7 @@ function CodeEditor() {
   useEffect(() => {
     const loadAutoSavePreference = async () => {
       try {
-        const savedValue = await (window as any).electron.workspaceGetPreference("autoSave")
+        const savedValue = await window.electron.workspaceGetPreference("autoSave")
         if (typeof savedValue === "boolean") {
           setIsAutoSaveEnabled(savedValue)
         }
@@ -357,7 +421,7 @@ function CodeEditor() {
   const toggleAutoSave = async (enabled: boolean) => {
     setIsAutoSaveEnabled(enabled)
     try {
-      await (window as any).electron.workspaceUpdatePreference("autoSave", enabled)
+      await window.electron.workspaceUpdatePreference("autoSave", enabled)
     } catch (error) {
       console.error("Failed to save auto-save preference:", error)
       await dialog.showAlert("Error", `Failed to save auto-save preference: ${error instanceof Error ? error.message : "Unknown error"}`)
@@ -408,14 +472,14 @@ function CodeEditor() {
 
   const loadDatapackEntry = async (datapackDir: string): Promise<DatapackEntry | null> => {
     try {
-      const files = await (window as any).electron.listFiles(datapackDir)
+      const files = await window.electron.listFiles(datapackDir)
       const paths = Array.isArray(files) ? files : []
       const name = datapackDir.split(/[\\/]/).pop() || "datapack"
       let id: string | undefined
       let displayName: string | undefined
       let packVersion: string | undefined
       try {
-        const metadataRaw = await (window as any).electron.readFile(datapackDir, ".mpp-datapack")
+        const metadataRaw = await window.electron.readFile(datapackDir, ".mpp-datapack")
         const parsed = JSON.parse(metadataRaw)
         if (parsed && typeof parsed.id === "string") {
           id = parsed.id
@@ -467,8 +531,10 @@ function CodeEditor() {
           {
             label: "Save",
             onClick: async () => {
-              await saveAllFiles()
-              await workspaceChangeAction()
+              const didSave = await saveAllFiles()
+              if (didSave) {
+                await workspaceChangeAction()
+              }
               resolve()
             },
           },
@@ -511,12 +577,19 @@ function CodeEditor() {
     })
   }
 
-  const handleQuitWithConfirm = async () => {
+  const handleQuitWithConfirm = async (isNativeQuitRequest = false) => {
+    const notifyQuitCancelled = () => {
+      if (!isNativeQuitRequest) return
+      void window.electron.quitCancelled()
+    }
+
     // If no unsaved files, double confirm quit to prevent accidental exits
     if (modifiedFiles.size === 0) {
       const confirmed = await dialog.showConfirm("Quit", "Are you sure you want to quit?")
       if (confirmed) {
-        ;(window as any).electron.quit()
+        ;window.electron.quit()
+      } else {
+        notifyQuitCancelled()
       }
       return
     }
@@ -531,21 +604,26 @@ function CodeEditor() {
           {
             label: "Save",
             onClick: async () => {
-              await saveAllFiles()
-              ;(window as any).electron.quit()
+              const didSave = await saveAllFiles()
+              if (didSave) {
+                ;window.electron.quit()
+              } else {
+                notifyQuitCancelled()
+              }
               resolve()
             },
           },
           {
             label: "Discard",
             onClick: () => {
-              ;(window as any).electron.quit()
+              ;window.electron.quit()
               resolve()
             },
           },
           {
             label: "Cancel",
             onClick: () => {
+              notifyQuitCancelled()
               resolve()
             },
           },
@@ -562,11 +640,11 @@ function CodeEditor() {
   }
 
   const handleAddDatapack = async () => {
-    const folder = await (window as any).electron.pickFolder()
+    const folder = await window.electron.pickFolder()
     if (!folder) return
 
     try {
-      await (window as any).electron.addDatapackExisting(folder)
+      await window.electron.addDatapackExisting(folder)
       const existingDirs = datapacks.map((datapack) => datapack.dir)
       await refreshDatapacks([...existingDirs, folder])
     } catch (error) {
@@ -590,7 +668,7 @@ function CodeEditor() {
       const metadataPath = `${datapackDir}/.mpp-datapack`
       
       // Remove from workspace
-      await (window as any).electron.workspaceRemoveDatapack(metadataPath)
+      await window.electron.workspaceRemoveDatapack(metadataPath)
       
       // Refresh the datapack list
       const updatedDirs = datapacks.filter((dp) => dp.dir !== datapackDir).map((dp) => dp.dir)
@@ -613,6 +691,15 @@ function CodeEditor() {
     })
   }
 
+  const removeFileFromDiagnosticSummaries = (fileKey: string) => {
+    setFileDiagnosticSummaries((prev) => {
+      if (!(fileKey in prev)) return prev
+      const next = { ...prev }
+      delete next[fileKey]
+      return next
+    })
+  }
+
   const removeFileFromOpenAndModified = (fileKey: string) => {
     removeFileFromOpenedFiles(fileKey)
     removeFileFromModifiedFiles(fileKey)
@@ -630,7 +717,10 @@ function CodeEditor() {
       
       const choice = await dialog.showUnsavedConfirm("Rename File?", `${fileName} has unsaved changes. What would you like to do?`)
       if (choice === "cancel") return false
-      if (choice === "save") await saveFileInternal(oldFileKey)
+      if (choice === "save") {
+        const didSave = await saveFileInternal(oldFileKey)
+        if (!didSave) return false
+      }
       if (choice === "discard") {
         removeFileFromModifiedFiles(oldFileKey)
       }
@@ -654,7 +744,7 @@ function CodeEditor() {
     clearAutoSaveTimer(oldFileKey)
     
     try {
-      const freshContents = await (window as any).electron.readFile(datapackDir, newRelativePath)
+      const freshContents = await window.electron.readFile(datapackDir, newRelativePath)
       
       setOpenedFiles((prev) => {
         const filtered = prev.filter((f) => createFileKey(f.datapackDir, f.relativePath) !== oldFileKey)
@@ -674,6 +764,15 @@ function CodeEditor() {
         if (wasModified) {
           next.add(newFileKey)
         }
+        return next
+      })
+
+      setFileDiagnosticSummaries((prev) => {
+        if (!(oldFileKey in prev)) return prev
+        const next = { ...prev }
+        const summary = next[oldFileKey]
+        delete next[oldFileKey]
+        next[newFileKey] = summary
         return next
       })
 
@@ -705,7 +804,10 @@ function CodeEditor() {
       const fileName = openedFiles.find((f) => createFileKey(f.datapackDir, f.relativePath) === fileKey)?.fileName || "this file"
       const choice = await dialog.showUnsavedConfirm("Delete File?", `${fileName} has unsaved changes. What would you like to do?`)
       if (choice === "cancel") return false
-      if (choice === "save") await saveFileInternal(fileKey)
+      if (choice === "save") {
+        const didSave = await saveFileInternal(fileKey)
+        if (!didSave) return false
+      }
       if (choice === "discard") {
         removeFileFromModifiedFiles(fileKey)
       }
@@ -718,6 +820,7 @@ function CodeEditor() {
     // Remove from opened files and modified files
     const updatedFiles = openedFiles.filter((f) => createFileKey(f.datapackDir, f.relativePath) !== fileKey)
     removeFileFromOpenAndModified(fileKey)
+    removeFileFromDiagnosticSummaries(fileKey)
 
     // If the deleted file was active, switch to another file
     if (activeFile === fileKey) {
@@ -735,11 +838,17 @@ function CodeEditor() {
     return true
   }
 
-  const openFile = async (fileKey: string | null) => {
+  const openFile = async (fileKey: string | null, options?: { initialContent?: string }) => {
+    const requestId = openFileRequestIdRef.current + 1
+    openFileRequestIdRef.current = requestId
+
     const view = viewRef.current
     if (!view) {
+      const nextDatapackDir = fileKey ? parseFileKey(fileKey).datapackDir : null
+      setActiveDatapackContext(nextDatapackDir)
       setActiveFile(fileKey)
       activeFileRef.current = fileKey
+      setDiagnosticSummary(fileKey ? (fileDiagnosticSummaries[fileKey] ?? defaultDiagnosticSummary) : defaultDiagnosticSummary)
       focusFileInExplorer(fileKey)
       return
     }
@@ -747,10 +856,14 @@ function CodeEditor() {
     persistActiveEditorState()
     setActiveFile(fileKey)
     activeFileRef.current = fileKey
+    const nextDatapackDir = fileKey ? parseFileKey(fileKey).datapackDir : null
+    setActiveDatapackContext(nextDatapackDir)
+    setDiagnosticSummary(fileKey ? (fileDiagnosticSummaries[fileKey] ?? defaultDiagnosticSummary) : defaultDiagnosticSummary)
     focusFileInExplorer(fileKey)
     
     if (!fileKey) {
-      view.setState(createEditorState(""))
+      view.setState(createEditorState("", null))
+      setCursorMarkerInfo(getCursorMarkerInfo(view.state))
       return
     }
     
@@ -758,33 +871,41 @@ function CodeEditor() {
     const { datapackDir, relativePath } = parseFileKey(fileKey)
     
     // Find the opened file to get cached content
-    const openedFile = openedFiles.find((f) => createFileKey(f.datapackDir, f.relativePath) === fileKey)
+    const openedFile = openedFilesRef.current.find((f) => createFileKey(f.datapackDir, f.relativePath) === fileKey)
     
-    let contents = ""
+    const hasInitialContent = options?.initialContent !== undefined
+    let contents = hasInitialContent ? (options?.initialContent ?? "") : ""
     
     // Use cached content if available, otherwise read from disk
-    if (openedFile?.content !== undefined) {
+    if (!hasInitialContent && openedFile?.content !== undefined) {
       contents = openedFile.content
-    } else {
+    } else if (!hasInitialContent) {
       try {
-        contents = await (window as any).electron.readFile(datapackDir, relativePath)
+        contents = await window.electron.readFile(datapackDir, relativePath)
+        if (openFileRequestIdRef.current !== requestId) return
       } catch (error) {
+        if (openFileRequestIdRef.current !== requestId) return
         console.error("Failed to read file:", error)
         await dialog.showAlert("Error", `Failed to read file: ${error instanceof Error ? error.message : "Unknown error"}`)
         return
       }
     }
+
+    if (openFileRequestIdRef.current !== requestId) return
     
     const cachedState = fileEditorStatesRef.current.get(fileKey)
     if (cachedState) {
+      if (openFileRequestIdRef.current !== requestId) return
       view.setState(cachedState)
+      setCursorMarkerInfo(getCursorMarkerInfo(view.state))
       view.focus()
       return
     }
 
-    const newState = createEditorState(contents)
+    const newState = createEditorState(contents, fileKey)
     fileEditorStatesRef.current.set(fileKey, newState)
     view.setState(newState)
+    setCursorMarkerInfo(getCursorMarkerInfo(view.state))
     view.focus()
   }
 
@@ -831,10 +952,12 @@ function CodeEditor() {
     
     // Check if file is already open
     const existingFile = openedFiles.find((f) => createFileKey(f.datapackDir, f.relativePath) === fileKey)
+    let loadedContent: string | undefined
     if (!existingFile) {
       // Load content from disk for new files
       try {
-        const content = await (window as any).electron.readFile(datapackDir, trimmedRelative)
+        const content = await window.electron.readFile(datapackDir, trimmedRelative)
+        loadedContent = content
         setOpenedFiles((prev) => {
           const alreadyOpen = prev.some((f) => createFileKey(f.datapackDir, f.relativePath) === fileKey)
           if (alreadyOpen) return prev
@@ -848,7 +971,7 @@ function CodeEditor() {
     }
     
     // Set as active and load content
-    await openFile(fileKey)
+    await openFile(fileKey, loadedContent !== undefined ? { initialContent: loadedContent } : undefined)
   }
 
   const clearAutoSaveTimer = (fileKey: string) => {
@@ -859,11 +982,20 @@ function CodeEditor() {
     }
   }
 
-  const saveFile = async (fileKey: string, contents: string) => {
+  const { markInternalSaveForWatcherSuppress } = useExternalFileWatcher({
+    openedFiles,
+    openedFilesRef,
+    onExternalFileChange: handleExternalFileChange,
+    onExternalFileDeleted: handleExternalFileDeleted,
+    onExternalStructureChanged: handleExternalStructureChanged,
+  })
+
+  const saveFile = async (fileKey: string, contents: string): Promise<boolean> => {
     const { datapackDir, relativePath } = parseFileKey(fileKey)
 
     try {
-      await (window as any).electron.saveFile(datapackDir, relativePath, contents)
+      markInternalSaveForWatcherSuppress(fileKey)
+      await window.electron.saveFile(datapackDir, relativePath, contents)
       
       // Update cached content
       setOpenedFiles((prev) => 
@@ -879,23 +1011,26 @@ function CodeEditor() {
 
       // Clear any pending autosave
       clearAutoSaveTimer(fileKey)
+      return true
     } catch (error) {
       console.error("Failed to save file:", error)
       await dialog.showAlert("Error", `Failed to save file: ${error instanceof Error ? error.message : "Unknown error"}`)
+      return false
     }
   }
 
-  const saveCurrentFile = async () => {
-    if (!activeFile || !viewRef.current) return
+  const saveCurrentFile = async (): Promise<boolean> => {
+    if (!activeFile || !viewRef.current) return false
     const contents = viewRef.current.state.doc.toString()
-    await saveFile(activeFile, contents)
+    return await saveFile(activeFile, contents)
   }
 
-  const saveFileInternal = async (fileKey: string) => {
+  const saveFileInternal = async (fileKey: string): Promise<boolean> => {
     const openedFile = openedFiles.find((f) => createFileKey(f.datapackDir, f.relativePath) === fileKey)
     if (openedFile) {
-      await saveFile(fileKey, openedFile.content)
+      return await saveFile(fileKey, openedFile.content)
     }
+    return false
   }
 
   const scheduleAutoSave = (fileKey: string, contents: string) => {
@@ -913,7 +1048,7 @@ function CodeEditor() {
     autoSaveTimersRef.current.set(fileKey, timerId)
   }
 
-  const saveAllFiles = async () => {
+  const saveAllFiles = async (): Promise<boolean> => {
     const filesToSave: Array<{ fileKey: string; contents: string }> = []
 
     // Collect all modified files with their cached content
@@ -933,10 +1068,138 @@ function CodeEditor() {
     )
 
     try {
-      await Promise.all(savePromises)
+      const saveResults = await Promise.all(savePromises)
+      return saveResults.every(Boolean)
     } catch (error) {
       console.error("Failed to save all files:", error)
       await dialog.showAlert("Error", `Failed to save all files: ${error instanceof Error ? error.message : "Unknown error"}`)
+      return false
+    }
+  }
+
+  const refreshOpenedFileFromDisk = async (fileKey: string, clearModifiedState: boolean): Promise<boolean> => {
+    const openedFile = openedFilesRef.current.find((file) => createFileKey(file.datapackDir, file.relativePath) === fileKey)
+    if (!openedFile) return false
+
+    const { datapackDir, relativePath } = parseFileKey(fileKey)
+
+    try {
+      const diskContents = await window.electron.readFile(datapackDir, relativePath)
+      const latestOpenedFile = openedFilesRef.current.find((file) => createFileKey(file.datapackDir, file.relativePath) === fileKey)
+      if (!latestOpenedFile) return false
+
+      const shouldSkipUpdate = latestOpenedFile.content === diskContents && (!clearModifiedState || !modifiedFilesRef.current.has(fileKey))
+      if (shouldSkipUpdate) return true
+
+      setOpenedFiles((prev) =>
+        prev.map((file) =>
+          createFileKey(file.datapackDir, file.relativePath) === fileKey
+            ? { ...file, content: diskContents }
+            : file,
+        ),
+      )
+
+      if (clearModifiedState) {
+        removeFileFromModifiedFiles(fileKey)
+        clearAutoSaveTimer(fileKey)
+      }
+
+      fileEditorStatesRef.current.delete(fileKey)
+
+      if (activeFileRef.current === fileKey && viewRef.current) {
+        const refreshedState = createEditorState(diskContents, fileKey)
+        fileEditorStatesRef.current.set(fileKey, refreshedState)
+        viewRef.current.setState(refreshedState)
+        setCursorMarkerInfo(getCursorMarkerInfo(refreshedState))
+        viewRef.current.focus()
+      }
+
+      scheduleContextReload(datapackDir)
+      return true
+    } catch (error) {
+      console.error("Failed to refresh file from disk:", error)
+      await dialog.showAlert("Error", `Failed to refresh file from disk: ${error instanceof Error ? error.message : "Unknown error"}`)
+      return false
+    }
+  }
+
+  async function handleExternalFileChange(fileKey: string) {
+    const openedFile = openedFilesRef.current.find((file) => createFileKey(file.datapackDir, file.relativePath) === fileKey)
+    if (!openedFile) return
+
+    if (!modifiedFilesRef.current.has(fileKey)) {
+      await refreshOpenedFileFromDisk(fileKey, false)
+      return
+    }
+
+    try {
+      const { datapackDir, relativePath } = parseFileKey(fileKey)
+      const diskContents = await window.electron.readFile(datapackDir, relativePath)
+      const latestOpenedFile = openedFilesRef.current.find((file) => createFileKey(file.datapackDir, file.relativePath) === fileKey)
+      if (!latestOpenedFile) return
+
+      if (latestOpenedFile.content === diskContents) {
+        removeFileFromModifiedFiles(fileKey)
+        clearAutoSaveTimer(fileKey)
+        markInternalSaveForWatcherSuppress(fileKey)
+        return
+      }
+    } catch {
+      // Fall through to dialog when we cannot reliably compare content.
+    }
+
+    const fileName = openedFile.fileName || "This file"
+    const choice = await new Promise<"keep" | "discard">((resolve) => {
+      dialog.openDialog({
+        title: "External File Change",
+        message: `${fileName} was modified outside the app. Keep your in-app changes or discard them and refresh from disk?`,
+        buttons: [
+          {
+            label: "Keep In-App Changes",
+            onClick: () => resolve("keep"),
+          },
+          {
+            label: "Discard and Refresh",
+            onClick: () => resolve("discard"),
+          },
+        ],
+      })
+    })
+
+    if (choice === "discard") {
+      await refreshOpenedFileFromDisk(fileKey, true)
+    }
+  }
+
+  async function handleExternalStructureChanged(datapackDir: string) {
+    const trackedDatapackDirs = datapacks.map((datapack) => datapack.dir)
+    if (trackedDatapackDirs.length === 0) return
+    if (!trackedDatapackDirs.includes(datapackDir)) return
+
+    await refreshDatapacks(trackedDatapackDirs)
+  }
+
+  async function handleExternalFileDeleted(fileKey: string) {
+    const existingOpenedFiles = openedFilesRef.current
+    const closingIndex = existingOpenedFiles.findIndex((file) => createFileKey(file.datapackDir, file.relativePath) === fileKey)
+    if (closingIndex === -1) return
+
+    clearAutoSaveTimer(fileKey)
+    fileEditorStatesRef.current.delete(fileKey)
+    removeFileFromDiagnosticSummaries(fileKey)
+
+    const updatedFiles = existingOpenedFiles.filter((file) => createFileKey(file.datapackDir, file.relativePath) !== fileKey)
+    removeFileFromOpenAndModified(fileKey)
+
+    if (activeFileRef.current === fileKey) {
+      if (updatedFiles.length > 0) {
+        const nextIndex = closingIndex < updatedFiles.length ? closingIndex : updatedFiles.length - 1
+        const nextFile = updatedFiles[nextIndex]
+        const nextFileKey = createFileKey(nextFile.datapackDir, nextFile.relativePath)
+        await openFile(nextFileKey)
+      } else {
+        await openFile(null)
+      }
     }
   }
 
@@ -946,7 +1209,10 @@ function CodeEditor() {
       const fileName = openedFiles.find((f) => createFileKey(f.datapackDir, f.relativePath) === fileKey)?.fileName || "this file"
       const choice = await dialog.showUnsavedConfirm("Close File?", `${fileName} has unsaved changes. What would you like to do?`)
       if (choice === "cancel") return false
-      if (choice === "save") await saveFileInternal(fileKey)
+      if (choice === "save") {
+        const didSave = await saveFileInternal(fileKey)
+        if (!didSave) return false
+      }
       if (choice === "discard") {
         removeFileFromModifiedFiles(fileKey)
       }
@@ -982,41 +1248,320 @@ function CodeEditor() {
     activeFileRef.current = activeFile
   }, [activeFile])
 
-  const createEditorState = (doc: string) => EditorState.create({
-    doc,
-    extensions: [
-      oneDark,
-      ...codeMirrorSetupExtensions,
-      EditorView.lineWrapping,
-      EditorView.updateListener.of((update) => {
-        if (update.docChanged && activeFileRef.current) {
-          const fileKey = activeFileRef.current
-          const newContent = update.state.doc.toString()
+  useEffect(() => {
+    void (async () => {
+      try {
+        await loadMcfunctionCommandSchema("1.21.11")
+        await loadMinecraftData("1.21.11")
+      } catch (error) {
+        console.error("Failed to load mcfunction command schema:", error)
+      }
+    })()
+  }, [])
 
-          setModifiedFiles((prev) => new Set(prev).add(fileKey))
+  useEffect(() => {
+    const relativePaths = datapacks.flatMap((datapack) => datapack.paths)
+    setWorkspaceResourcePathsFromRelativePaths(relativePaths)
+  }, [datapacks])
 
-          setOpenedFiles((prev) =>
-            prev.map((f) =>
-              createFileKey(f.datapackDir, f.relativePath) === fileKey
-                ? { ...f, content: newContent }
-                : f
-            )
-          )
+  const buildOpenedModifiedContentMap = () => {
+    const openedModifiedContentByFileKey = new Map<string, string>()
 
-          scheduleAutoSave(fileKey, newContent)
+    for (const file of openedFilesRef.current) {
+      const fileKey = createFileKey(file.datapackDir, file.relativePath)
+      if (!modifiedFilesRef.current.has(fileKey)) continue
+      openedModifiedContentByFileKey.set(fileKey, file.content)
+    }
+
+    return openedModifiedContentByFileKey
+  }
+
+  const buildDatapackContextIndexAsync = async (
+    datapack: DatapackEntry,
+    scanRunId: number,
+    openedModifiedContentByFileKey: ReadonlyMap<string, string>,
+  ) => {
+    let mergedIndex = parseMcfunctionContextIndex("")
+
+    for (const relativePathRaw of datapack.paths) {
+      if (contextScanRunIdRef.current !== scanRunId) return null
+
+      const relativePath = relativePathRaw.replace(/\\/g, "/").replace(/^\/+/, "")
+      if (!relativePath.toLowerCase().endsWith(".mcfunction")) continue
+
+      const fileKey = createFileKey(datapack.dir, relativePath)
+      let content: string | null = null
+
+      const openedModifiedContent = openedModifiedContentByFileKey.get(fileKey)
+      if (openedModifiedContent !== undefined) {
+        content = openedModifiedContent
+      } else {
+        try {
+          content = await window.electron.readFile(datapack.dir, relativePath)
+        } catch {
+          content = null
         }
-      }),
-      EditorView.domEventHandlers({
-        focus: () => {
-          window.requestAnimationFrame(() => {
-            scrollTabIntoView(activeFileRef.current, "smooth")
-            focusFileInExplorer(activeFileRef.current)
-          })
-        },
-      }),
-      json(),
-    ],
-  })
+      }
+
+      if (!content) continue
+
+      const cachedContext = fileContextParseCacheRef.current.get(fileKey)
+      const fileContext = cachedContext?.content === content
+        ? cachedContext.contextIndex
+        : parseMcfunctionContextIndex(content)
+
+      if (!cachedContext || cachedContext.content !== content) {
+        fileContextParseCacheRef.current.set(fileKey, {
+          content,
+          contextIndex: fileContext,
+        })
+      }
+
+      mergedIndex = mergeMcfunctionContextIndexes(mergedIndex, fileContext)
+    }
+
+    return mergedIndex
+  }
+
+  const refreshActiveEditorLint = () => {
+    if (!viewRef.current) return
+
+    window.requestAnimationFrame(() => {
+      if (viewRef.current) {
+        forceLinting(viewRef.current)
+      }
+    })
+  }
+
+  const reloadAllContextsAsync = async () => {
+    if (datapacks.length === 0) {
+      clearDatapackContextIndexes()
+      setActiveDatapackContext(null)
+      return
+    }
+
+    const scanRunId = contextScanRunIdRef.current + 1
+    contextScanRunIdRef.current = scanRunId
+    const openedModifiedContentByFileKey = buildOpenedModifiedContentMap()
+
+    for (const datapack of datapacks) {
+      if (contextScanRunIdRef.current !== scanRunId) return
+
+      const mergedIndex = await buildDatapackContextIndexAsync(datapack, scanRunId, openedModifiedContentByFileKey)
+      if (!mergedIndex) return
+
+      setDatapackContextIndex(datapack.dir, mergedIndex)
+    }
+
+    const activeDatapackDir = activeFileRef.current
+      ? parseFileKey(activeFileRef.current).datapackDir
+      : null
+    setActiveDatapackContext(activeDatapackDir)
+
+    refreshActiveEditorLint()
+  }
+
+  const reloadDatapackContextAsync = async (datapackDir: string) => {
+    const scanRunId = contextScanRunIdRef.current + 1
+    contextScanRunIdRef.current = scanRunId
+    const openedModifiedContentByFileKey = buildOpenedModifiedContentMap()
+
+    const datapack = datapacks.find(entry => entry.dir === datapackDir)
+    if (!datapack) {
+      setDatapackContextIndex(datapackDir, null)
+
+      const activeDatapackDir = activeFileRef.current
+        ? parseFileKey(activeFileRef.current).datapackDir
+        : null
+      setActiveDatapackContext(activeDatapackDir)
+      refreshActiveEditorLint()
+      return
+    }
+
+    const mergedIndex = await buildDatapackContextIndexAsync(datapack, scanRunId, openedModifiedContentByFileKey)
+    if (!mergedIndex) return
+
+    setDatapackContextIndex(datapack.dir, mergedIndex)
+
+    const activeDatapackDir = activeFileRef.current
+      ? parseFileKey(activeFileRef.current).datapackDir
+      : null
+    setActiveDatapackContext(activeDatapackDir)
+
+    refreshActiveEditorLint()
+  }
+
+  const clearContextReloadTimer = () => {
+    if (contextReloadTimerRef.current !== null) {
+      window.clearTimeout(contextReloadTimerRef.current)
+      contextReloadTimerRef.current = null
+    }
+  }
+
+  const scheduleContextReload = (datapackDir?: string) => {
+    clearContextReloadTimer()
+
+    contextReloadTimerRef.current = window.setTimeout(() => {
+      void reloadContextsThenDiagnosticsAsync(datapackDir)
+      contextReloadTimerRef.current = null
+    }, 1000)
+  }
+
+  const reloadContextsThenDiagnosticsAsync = async (datapackDir?: string) => {
+    const pipelineRunId = contextDiagnosticsPipelineRunIdRef.current + 1
+    contextDiagnosticsPipelineRunIdRef.current = pipelineRunId
+
+    if (datapackDir) {
+      await reloadDatapackContextAsync(datapackDir)
+    } else {
+      await reloadAllContextsAsync()
+    }
+    if (contextDiagnosticsPipelineRunIdRef.current !== pipelineRunId) return
+
+    await reloadAllDiagnosticsAsync()
+  }
+
+  const reloadAllDiagnosticsAsync = async (scanDatapackDir?: string) => {
+    if (!workspaceInfo.dir || datapacks.length === 0) {
+      setFileDiagnosticSummaries((prev) => {
+        const preserved: Record<string, DiagnosticSummary> = {}
+        for (const [fileKey, summary] of Object.entries(prev)) {
+          if (modifiedFilesRef.current.has(fileKey)) {
+            preserved[fileKey] = summary
+          }
+        }
+        return preserved
+      })
+      return
+    }
+
+    const scanRunId = diagnosticsScanRunIdRef.current + 1
+    diagnosticsScanRunIdRef.current = scanRunId
+
+    const nextSummaries = await runGlobalDiagnosticsScan({
+      datapacks,
+      openedFiles: openedFilesRef.current,
+      modifiedFileKeys: modifiedFilesRef.current,
+      readFile: (datapackDir, relativePath) => window.electron.readFile(datapackDir, relativePath),
+      targetDatapackDir: scanDatapackDir,
+      shouldCancel: () => diagnosticsScanRunIdRef.current !== scanRunId,
+    })
+
+    if (!nextSummaries) return
+    if (diagnosticsScanRunIdRef.current !== scanRunId) return
+
+    setFileDiagnosticSummaries((prev) => {
+      if (!scanDatapackDir) {
+        const preservedModified: Record<string, DiagnosticSummary> = {}
+        for (const [fileKey, summary] of Object.entries(prev)) {
+          if (modifiedFilesRef.current.has(fileKey)) {
+            preservedModified[fileKey] = summary
+          }
+        }
+
+        return {
+          ...nextSummaries,
+          ...preservedModified,
+        }
+      }
+
+      const next = { ...prev }
+
+      for (const fileKey of Object.keys(next)) {
+        const fileDatapackDir = parseFileKey(fileKey).datapackDir
+        if (fileDatapackDir !== scanDatapackDir) continue
+        if (modifiedFilesRef.current.has(fileKey)) continue
+        delete next[fileKey]
+      }
+
+      for (const [fileKey, summary] of Object.entries(nextSummaries)) {
+        next[fileKey] = summary
+      }
+
+      for (const [fileKey, summary] of Object.entries(prev)) {
+        if (!modifiedFilesRef.current.has(fileKey)) continue
+        const fileDatapackDir = parseFileKey(fileKey).datapackDir
+        if (fileDatapackDir === scanDatapackDir) continue
+        next[fileKey] = summary
+      }
+
+      return next
+    })
+  }
+
+  useEffect(() => {
+    clearContextReloadTimer()
+    void reloadContextsThenDiagnosticsAsync()
+
+    return () => {
+      clearContextReloadTimer()
+    }
+  }, [workspaceInfo.dir, datapacks])
+
+  const createEditorState = (doc: string, fileKey: string | null = activeFileRef.current) => {
+    const relativePath = fileKey ? parseFileKey(fileKey).relativePath : null
+    const language = detectEditorLanguage(relativePath)
+
+    if (!language.supportsDiagnostics) {
+      setDiagnosticSummary(defaultDiagnosticSummary)
+      if (fileKey) {
+        removeFileFromDiagnosticSummaries(fileKey)
+      }
+    }
+
+    const handleDiagnosticSummaryChange = (summary: DiagnosticSummary) => {
+      if (fileKey) {
+        setFileDiagnosticSummaries((prev) => ({
+          ...prev,
+          [fileKey]: summary,
+        }))
+      }
+
+      if (activeFileRef.current === fileKey) {
+        setDiagnosticSummary(summary)
+      }
+    }
+
+    return EditorState.create({
+      doc,
+      extensions: [
+        portylDarkTheme,
+        ...codeMirrorSetupExtensions,
+        EditorView.lineWrapping,
+        EditorView.updateListener.of((update) => {
+          if (update.selectionSet || update.docChanged) {
+            setCursorMarkerInfo(getCursorMarkerInfo(update.state))
+          }
+
+          if (update.docChanged && activeFileRef.current) {
+            const fileKey = activeFileRef.current
+            const newContent = update.state.doc.toString()
+            setModifiedFiles((prev) => new Set(prev).add(fileKey))
+
+            setOpenedFiles((prev) =>
+              prev.map((f) =>
+                createFileKey(f.datapackDir, f.relativePath) === fileKey
+                  ? { ...f, content: newContent }
+                  : f
+              )
+            )
+
+            scheduleAutoSave(fileKey, newContent)
+            scheduleContextReload(parseFileKey(fileKey).datapackDir)
+          }
+        }),
+        EditorView.domEventHandlers({
+          focus: () => {
+            window.requestAnimationFrame(() => {
+              scrollTabIntoView(activeFileRef.current, "smooth")
+              focusFileInExplorer(activeFileRef.current)
+            })
+          },
+        }),
+        ...getLanguageProcessingExtensions(language.id, handleDiagnosticSummaryChange),
+      ],
+    })
+  }
 
   const persistActiveEditorState = () => {
     const currentFileKey = activeFileRef.current
@@ -1042,6 +1587,14 @@ function CodeEditor() {
     isAutoSaveEnabledRef.current = isAutoSaveEnabled
   }, [isAutoSaveEnabled])
 
+  useEffect(() => {
+    openedFilesRef.current = openedFiles
+  }, [openedFiles])
+
+  useEffect(() => {
+    modifiedFilesRef.current = modifiedFiles
+  }, [modifiedFiles])
+
   // Handle workspace tab restoration on workspace load
   useEffect(() => {
     const restoreWorkspaceTabs = async () => {
@@ -1049,7 +1602,7 @@ function CodeEditor() {
 
       isRestoringTabsRef.current = true
       try {
-        const savedValue = await (window as any).electron.workspaceGetPreference(OPEN_TABS_PREFERENCE_KEY)
+        const savedValue = await window.electron.workspaceGetPreference(OPEN_TABS_PREFERENCE_KEY)
         const session = parseWorkspaceTabSession(savedValue)
 
         if (!session || session.openedFiles.length === 0) {
@@ -1062,7 +1615,7 @@ function CodeEditor() {
         const restoredOpenedFiles: OpenedFile[] = []
         for (const file of session.openedFiles) {
           try {
-            const content = await (window as any).electron.readFile(file.datapackDir, file.relativePath)
+            const content = await window.electron.readFile(file.datapackDir, file.relativePath)
             restoredOpenedFiles.push({
               datapackDir: file.datapackDir,
               relativePath: file.relativePath,
@@ -1083,6 +1636,7 @@ function CodeEditor() {
 
         setOpenedFiles(restoredOpenedFiles)
         setModifiedFiles(new Set())
+        setFileDiagnosticSummaries({})
 
         const availableKeys = new Set(
           restoredOpenedFiles.map((file) => createFileKey(file.datapackDir, file.relativePath))
@@ -1122,7 +1676,7 @@ function CodeEditor() {
 
       isRestoringExplorerRef.current = true
       try {
-        const savedValue = await (window as any).electron.workspaceGetPreference(EXPLORER_EXPANDED_PREFERENCE_KEY)
+        const savedValue = await window.electron.workspaceGetPreference(EXPLORER_EXPANDED_PREFERENCE_KEY)
         const parsed = parseWorkspaceExplorerExpanded(savedValue)
         setExplorerExpandedPathsByDatapack(parsed ?? {})
       } catch (error) {
@@ -1155,7 +1709,7 @@ function CodeEditor() {
 
       lastSavedTabSessionSignatureRef.current = signature
       try {
-        await (window as any).electron.workspaceUpdatePreference(OPEN_TABS_PREFERENCE_KEY, session)
+        await window.electron.workspaceUpdatePreference(OPEN_TABS_PREFERENCE_KEY, session)
       } catch (error) {
         console.error("Failed to save workspace tab session:", error)
         await dialog.showAlert("Error", `Failed to save workspace tab session: ${error instanceof Error ? error.message : "Unknown error"}`)
@@ -1176,7 +1730,7 @@ function CodeEditor() {
       }
 
       try {
-        await (window as any).electron.workspaceUpdatePreference(EXPLORER_EXPANDED_PREFERENCE_KEY, payload)
+        await window.electron.workspaceUpdatePreference(EXPLORER_EXPANDED_PREFERENCE_KEY, payload)
       } catch (error) {
         console.error("Failed to save explorer expansion state:", error)
         await dialog.showAlert("Error", `Failed to save explorer expansion state: ${error instanceof Error ? error.message : "Unknown error"}`)
@@ -1218,27 +1772,62 @@ function CodeEditor() {
     })
 
     viewRef.current = view
+    setCursorMarkerInfo(getCursorMarkerInfo(view.state))
 
     return () => {
       view.destroy()
       // Clear all autosave timers on unmount
       autoSaveTimersRef.current.forEach((timerId) => window.clearTimeout(timerId))
       autoSaveTimersRef.current.clear()
+      clearContextReloadTimer()
       fileEditorStatesRef.current.clear()
     }
   }, [])
 
   useEffect(() => {
-    ;(window as any).electron.isFullScreen().then(setIsFullScreen)
+    ;window.electron.isFullScreen().then(setIsFullScreen)
 
-    ;(window as any).electron.onFullscreenChange((isFullScreen: boolean) => {
+    const unsubscribeFullscreenChange = window.electron.onFullscreenChange((isFullScreen: boolean) => {
       setIsFullScreen(isFullScreen)
     })
+
+    const unsubscribeTitlebarContextMenu = window.electron.onTitlebarContextMenu?.((position: { x: number; y: number }) => {
+      contextMenuRequest.openAt(position.x, position.y, { items: titlebarContextItems })
+    })
+
+    return () => {
+      if (typeof unsubscribeFullscreenChange === "function") {
+        unsubscribeFullscreenChange()
+      }
+      if (typeof unsubscribeTitlebarContextMenu === "function") {
+        unsubscribeTitlebarContextMenu()
+      }
+    }
   }, [])
+
+  useEffect(() => {
+    const unsubscribeQuitRequested = window.electron.onQuitRequested(() => {
+      void handleQuitWithConfirm(true)
+    })
+
+    return () => {
+      if (typeof unsubscribeQuitRequested === "function") {
+        unsubscribeQuitRequested()
+      }
+    }
+  }, [handleQuitWithConfirm])
 
   // Keyboard shortcuts
   useEffect(() => {
-    const handler = (_: any, action: string) => {
+    const hasBlockingPopupOpen = () => {
+      const hasOpenMenu = document.querySelector('.menu-layer') !== null
+      const hasOpenDialog = document.querySelector('[data-popup-dialog="true"]') !== null
+      return hasOpenMenu || hasOpenDialog
+    }
+
+    const handler = (_event: unknown, action: ShortcutAction) => {
+      if (hasBlockingPopupOpen()) return
+
       switch (action) {
         case "quit":
           handleQuitWithConfirm()
@@ -1258,7 +1847,7 @@ function CodeEditor() {
       }
     }
 
-    const unsubscribe = (window as any).electron.onShortcut(handler)
+    const unsubscribe = window.electron.onShortcut(handler)
     return () => {
       if (typeof unsubscribe === "function") {
         unsubscribe()
@@ -1281,6 +1870,17 @@ function CodeEditor() {
 
     loadWorkspaceDatapacks()
   }, [workspaceInfo.dir])
+
+  const activeRelativePath = activeFile ? parseFileKey(activeFile).relativePath : null
+  const activeLanguage = detectEditorLanguage(activeRelativePath)
+  const showDiagnosticSummary = activeLanguage.supportsDiagnostics
+  const activeFileRelativePathLabel = activeRelativePath
+    ? activeRelativePath
+      .replace(/\\/g, "/")
+      .split("/")
+      .filter(Boolean)
+      .join(" > ")
+    : "No file open"
 
   const fileNameCounts = openedFiles.reduce((counts, file) => {
     counts.set(file.fileName, (counts.get(file.fileName) ?? 0) + 1)
@@ -1396,8 +1996,17 @@ function CodeEditor() {
   }
 
   const handleTabRightClick = (event: React.MouseEvent, fileKey: string) => {
-    setTabContextFileKey(fileKey)
-    tabContextMenu.openContextMenu(event)
+    contextMenuRequest.openForEvent(event, { items: createTabContextItems(fileKey) })
+  }
+
+  const handleTitlebarRightClick = (event: React.MouseEvent) => {
+    event.preventDefault()
+    event.stopPropagation()
+    contextMenuRequest.openForEvent(event, { items: titlebarContextItems })
+  }
+
+  const handleDatapackTreeContextMenu = (event: React.MouseEvent, items: MenuItem[]) => {
+    contextMenuRequest.openForEvent(event, { items })
   }
 
   const getOpenedFileKeys = () =>
@@ -1485,7 +2094,7 @@ function CodeEditor() {
     const { datapackDir, relativePath } = parseFileKey(fileKey)
     const fullPath = `${datapackDir}/${relativePath}`.replace(/\//g, "\\")
     try {
-      await (window as any).electron.revealInFileExplorer(fullPath)
+      await window.electron.revealInFileExplorer(fullPath)
     } catch (error) {
       console.error("Failed to reveal in file explorer:", error)
       await dialog.showAlert("Error", `Failed to reveal file in explorer: ${error instanceof Error ? error.message : "Unknown error"}`)
@@ -1493,78 +2102,114 @@ function CodeEditor() {
   }
 
   const openedFileKeys = getOpenedFileKeys()
-  const contextTabIndex = tabContextFileKey ? openedFileKeys.indexOf(tabContextFileKey) : -1
-  const hasTabsToRight = contextTabIndex >= 0 && contextTabIndex < openedFileKeys.length - 1
-  const hasOtherTabs = contextTabIndex >= 0 && openedFileKeys.length > 1
   const hasSavedTabs = openedFileKeys.some((fileKey) => !modifiedFiles.has(fileKey))
   const hasAnyOpenTabs = openedFileKeys.length > 0
 
-  const tabContextItems: MenuItem[] = [
+  const createTabContextItems = (targetFileKey: string): MenuItem[] => {
+    const contextTabIndex = openedFileKeys.indexOf(targetFileKey)
+    const hasTabsToRight = contextTabIndex >= 0 && contextTabIndex < openedFileKeys.length - 1
+    const hasOtherTabs = contextTabIndex >= 0 && openedFileKeys.length > 1
+
+    return [
+      {
+        label: "Close",
+        disabled: contextTabIndex === -1,
+        onClick: () => {
+          if (contextTabIndex === -1) return
+          void closeTab(targetFileKey)
+        },
+        shortcut: "Ctrl+W",
+      },
+      {
+        label: "Close Others",
+        disabled: !hasOtherTabs,
+        onClick: () => {
+          if (contextTabIndex === -1) return
+          void closeOtherTabs(targetFileKey)
+        },
+      },
+      {
+        label: "Close to the Right",
+        disabled: !hasTabsToRight,
+        onClick: () => {
+          if (contextTabIndex === -1) return
+          void closeTabsToTheRight(targetFileKey)
+        },
+      },
+      {
+        label: "Close Saved",
+        disabled: !hasSavedTabs,
+        onClick: () => {
+          void closeSavedTabs()
+        },
+      },
+      {
+        label: "Close All",
+        disabled: !hasAnyOpenTabs,
+        onClick: () => {
+          void closeAllTabs()
+        },
+      },
+      {},
+      {
+        label: "Copy Path",
+        disabled: contextTabIndex === -1,
+        onClick: () => {
+          if (contextTabIndex === -1) return
+          void copyTabPath(targetFileKey)
+        },
+      },
+      {
+        label: "Copy Relative Path",
+        disabled: contextTabIndex === -1,
+        onClick: () => {
+          if (contextTabIndex === -1) return
+          void copyTabRelativePath(targetFileKey)
+        },
+      },
+      {},
+      {
+        label: "Reveal in File Explorer",
+        disabled: contextTabIndex === -1,
+        onClick: () => {
+          if (contextTabIndex === -1) return
+          void revealInFileExplorer(targetFileKey)
+        },
+      }
+    ]
+  }
+
+  const titlebarContextItems: MenuItem[] = [
+    {
+      label: "Restore",
+      onClick: () => {
+        if (isFullScreen) {
+          ;window.electron.toggleFullscreen()
+        }
+      },
+      disabled: !isFullScreen,
+    },
+    {
+      label: "Minimize",
+      onClick: () => {
+        ;window.electron.minimize()
+      },
+    },
+    {
+      label: "Maximize",
+      onClick: () => {
+        if (!isFullScreen) {
+          ;window.electron.toggleFullscreen()
+        }
+      },
+      disabled: isFullScreen,
+    },
+    {},
     {
       label: "Close",
-      disabled: !tabContextFileKey,
-      onClick: () => {
-        if (!tabContextFileKey) return
-        void closeTab(tabContextFileKey)
-      },
-      shortcut: "Ctrl+W",
+      shortcut: "Alt+F4",
+      onClick: handleQuitWithConfirm,
     },
-    {
-      label: "Close Others",
-      disabled: !hasOtherTabs,
-      onClick: () => {
-        if (!tabContextFileKey) return
-        void closeOtherTabs(tabContextFileKey)
-      },
-    },
-    {
-      label: "Close to the Right",
-      disabled: !hasTabsToRight,
-      onClick: () => {
-        if (!tabContextFileKey) return
-        void closeTabsToTheRight(tabContextFileKey)
-      },
-    },
-    {
-      label: "Close Saved",
-      disabled: !hasSavedTabs,
-      onClick: () => {
-        void closeSavedTabs()
-      },
-    },
-    {
-      label: "Close All",
-      disabled: !hasAnyOpenTabs,
-      onClick: () => {
-        void closeAllTabs()
-      },
-    },
-    {},
-    {
-      label: "Copy Path",
-      disabled: !tabContextFileKey,
-      onClick: () => {
-        if (!tabContextFileKey) return
-        void copyTabPath(tabContextFileKey)
-      },
-    },
-    {
-      label: "Copy Relative Path",
-      disabled: !tabContextFileKey,
-      onClick: () => {
-        if (!tabContextFileKey) return
-        void copyTabRelativePath(tabContextFileKey)
-      },
-    },
-    {},
-    {
-      label: "Reveal in File Explorer",
-      disabled: !tabContextFileKey,
-      onClick: () => {
-        if (!tabContextFileKey) return
-        void revealInFileExplorer(tabContextFileKey)
-      },
-    }
   ]
 
   useEffect(() => {
@@ -1611,6 +2256,9 @@ function CodeEditor() {
               onSelect={(pathKey, isFile) => handleExplorerSelect(datapack.dir, pathKey, isFile)}
               onFileRenamed={(oldRelativePath, newName) => handleFileRenamed(datapack.dir, oldRelativePath, newName)}
               onFileDeleted={(relativePath) => handleFileDeleted(datapack.dir, relativePath)}
+              onContextMenuRequest={handleDatapackTreeContextMenu}
+              modifiedFileKeys={modifiedFiles}
+              fileDiagnosticSummaries={fileDiagnosticSummaries}
             />
           ))}
         </div>
@@ -1633,7 +2281,7 @@ function CodeEditor() {
       visible: visibleRightPanelTabs.has("preferences"),
       content: workspaceInfo.dir ? (
         <div className="text-sm text-codemirror-300">
-          <div className="font-mono break-words">{workspaceInfo.dir}</div>
+          <div className="font-mono wrap-break-word">{workspaceInfo.dir}</div>
         </div>
       ) : (
         <div className="text-sm text-codemirror-300">No folder selected</div>
@@ -1668,10 +2316,10 @@ function CodeEditor() {
     <div className="w-full h-full flex flex-col select-none">
 
       {/* Title Bar */}
-      <div className="flex flex-row h-[36px] bg-codemirror-700 text-sm text-codemirror-100 border-b border-codemirror-600" style={{ WebkitAppRegion: "drag" } as any}>
+      <div className="flex flex-row h-9 bg-codemirror-700 text-sm text-codemirror-100 border-b border-codemirror-600" style={{ WebkitAppRegion: "drag" } as any}>
 
         {/* App Icon */}
-        <div className="px-4 py-2 font-bold">
+        <div className="px-4 py-2 font-bold" onContextMenu={handleTitlebarRightClick}>
           <img src={iconPath} alt="MCFunction++" style={{ height: "20px", width: "20px" }} />
         </div>
         
@@ -1737,6 +2385,26 @@ function CodeEditor() {
           />
 
           <DropdownMenu 
+            label="Build"
+            items={[
+              { label: "Build Datapack", onClick: undefined, disabled: true }
+            ] as MenuItem[]}
+            isOpen={isHeaderMenuFourOpen}
+            setIsOpen={setIsHeaderMenuFourOpen}
+            disabled={dialog.isOpen}
+          />
+
+          <DropdownMenu 
+            label="Export"
+            items={[
+              { label: "Export Datapack", onClick: undefined, disabled: true }
+            ] as MenuItem[]}
+            isOpen={isHeaderMenuFiveOpen}
+            setIsOpen={setIsHeaderMenuFiveOpen}
+            disabled={dialog.isOpen}
+          />
+
+          <DropdownMenu 
             label="Panels"
             items={[
               { 
@@ -1764,26 +2432,34 @@ function CodeEditor() {
                 onToggle: (nextState) => handleToggleRightTab("settings", nextState)
               }
             ] as MenuItem[]}
-            isOpen={isHeaderMenuFourOpen}
-            setIsOpen={setIsHeaderMenuFourOpen}
+            isOpen={isHeaderMenuSixOpen}
+            setIsOpen={setIsHeaderMenuSixOpen}
             disabled={dialog.isOpen}
           />
 
-          <div className="flex-1" style={{ WebkitAppRegion: "drag" } as any}></div>
-          
+          <div className="flex-1" style={{ WebkitAppRegion: "drag" } as any} onContextMenu={handleTitlebarRightClick}></div>
+
           {/* Window Control Buttons */}
-          <div
-            onClick={() => (window as any).electron.minimize()} 
-            className="header-button-right pt-2.5 pb-2 codicon codicon-chrome-minimize"
-          />
-          <div
-            onClick={() => (window as any).electron.toggleFullscreen()}
-            className={`header-button-right pt-2.5 pb-2 codicon ${isFullScreen ? "codicon-chrome-restore" : "codicon-chrome-maximize"}`}
-          />
-          <div
-            onClick={handleQuitWithConfirm}
-            className="header-button-right hover:bg-rose-600 pt-2.5 pb-2 codicon codicon-chrome-close"
-          />
+          <Tooltip content="Minimize">
+            <div
+              onClick={() => window.electron.minimize()}
+              className="header-button pt-2.5 pb-2 codicon codicon-chrome-minimize"
+            />
+          </Tooltip>
+          <Tooltip content={`${isFullScreen ? "Restore" : "Maximize"}`}>
+            <div
+              onClick={() => window.electron.toggleFullscreen()}
+              className={`header-button pt-2.5 pb-2 codicon ${isFullScreen ? "codicon-chrome-restore" : "codicon-chrome-maximize"}`}
+            />
+          </Tooltip>
+          <Tooltip content="Close">
+            <div
+              onClick={() => {
+                void handleQuitWithConfirm()
+              }}
+              className="header-button hover:bg-rose-600 pt-2.5 pb-2 codicon codicon-chrome-close"
+            />
+          </Tooltip>
 
         </div>
       </div>
@@ -1831,14 +2507,19 @@ function CodeEditor() {
                 const fileKey = createFileKey(file.datapackDir, file.relativePath)
                 const isActive = activeFile === fileKey
                 const duplicateFolderLabel = getDuplicateTabFolderLabel(file)
+                const tabDiagnosticSummary = fileDiagnosticSummaries[fileKey]
+                const tabHasDiagnosticError = (tabDiagnosticSummary?.errors ?? 0) > 0
+                const tabHasDiagnosticWarning = !tabHasDiagnosticError && (tabDiagnosticSummary?.warnings ?? 0) > 0
                 const isDragging = draggingFileKey === fileKey
                 const showLeftIndicator = dragOverFileKey === fileKey && dragOverPosition === "before"
                 const showRightIndicator = dragOverFileKey === fileKey && dragOverPosition === "after"
                 return (
                   <div className="relative flex" key={fileKey}>
+
                     {showLeftIndicator && (
-                      <div className="absolute left-0 top-0 bottom-0 w-[2px] bg-codemirror-100 pointer-events-none" />
+                      <div className="absolute left-0 top-0 bottom-0 w-0.5 bg-codemirror-100 pointer-events-none" />
                     )}
+
                     <div
                       ref={(element) => registerTabElement(fileKey, element)}
                       draggable
@@ -1876,12 +2557,6 @@ function CodeEditor() {
                           label.className = "text-xs text-codemirror-300 italic ml-1"
                           label.textContent = duplicateFolderLabel
                           ghost.appendChild(label)
-                        }
-
-                        if (modifiedFiles.has(fileKey)) {
-                          const indicator = document.createElement("div")
-                          indicator.className = `codicon codicon-circle-filled text-amber-400 ml-2`
-                          ghost.appendChild(indicator)
                         }
 
                         document.body.appendChild(ghost)
@@ -1924,47 +2599,69 @@ function CodeEditor() {
                         setDraggingFileKey(null)
                       }}
                       className={`
-                        flex items-center gap-2 px-2 py-1
+                        flex flex-row items-center gap-1 px-2 py-1
                         border-r border-codemirror-600
                         whitespace-nowrap
                         cursor-pointer
                         ${isDragging ? "opacity-10" : ""}
                         ${isActive
-                          ? "bg-codemirror-default text-codemirror-100"
+                          ? "bg-codemirror-select hover:bg-codemirror-highlight text-codemirror-50"
                           : "hover:bg-codemirror-highlight text-codemirror-300"
                         }
                       `}
                     >
-                    <span className="text-sm">{file.fileName}</span>
 
-                    {/* Duplicate Disambiguation Label */}
-                    {duplicateFolderLabel && (
-                      <span className="text-xs text-codemirror-300 italic">{duplicateFolderLabel}</span>
-                    )}
+                      <span className="text-sm">{file.fileName}</span>
 
-                    {/* Indicators */}
-                    {modifiedFiles.has(fileKey) &&
-                      <div className={`codicon codicon-circle-filled text-amber-400`}/>
-                    }
+                      {/* Duplicate Disambiguation Label */}
+                      {duplicateFolderLabel && (
+                        <span className="text-xs text-codemirror-300 italic ml-1">{duplicateFolderLabel}</span>
+                      )}
 
-                    {/* Close Button */}
-                    <div
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        closeTab(fileKey)
-                      }}
-                      className={`codicon codicon-close
-                        p-1
-                        text-codemirror-200 hover:text-codemirror-50
-                        cursor-pointer`}
-                    />
+                      <div className="flex flex-row items-center gap-0.5 ml-1">
+                        {/* Indicators */}
+                        {tabHasDiagnosticError &&
+                          <div className={`codicon codicon-error text-red-400`}/>
+                        }
+                        {tabHasDiagnosticWarning &&
+                          <div className={`codicon codicon-warning text-amber-400`}/>
+                        }
+                        {modifiedFiles.has(fileKey) &&
+                          <div className={`codicon codicon-circle-filled -mr-0.5 text-orange-300`}/>
+                        }
+                      </div>
+
+                      {/* Close Button */}
+                      <div
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          closeTab(fileKey)
+                        }}
+                        className={`codicon codicon-close p-1
+                          text-codemirror-200 hover:text-codemirror-50
+                          cursor-pointer`}
+                      />
+
                     </div>
+
                     {showRightIndicator && (
-                      <div className="absolute right-0 top-0 bottom-0 w-[2px] bg-codemirror-100 pointer-events-none" />
+                      <div className="absolute right-0 top-0 bottom-0 w-0.5 bg-codemirror-100 pointer-events-none" />
                     )}
+
                   </div>
                 )
               })}
+            </div>
+
+            {/* Active File Path Bar */}
+            <div
+              className="h-6 px-2
+              bg-codemirror-700
+              border-b border-codemirror-600
+              text-codemirror-300 text-xs
+              flex items-center"
+            >
+              <span className="truncate">{activeFileRelativePathLabel}</span>
             </div>
 
             {/* CodeMirror Editor */}
@@ -2019,27 +2716,56 @@ function CodeEditor() {
           />
         )}
 
-      </div>      {/* Footer */}
-      <div className="flex flex-row items-center h-[30px] bg-codemirror-700 text-codemirror-100 px-2 py-1 border-t border-codemirror-600">
-        <div className="text-sm">Made by touchportyl</div>
+      </div>
+      
+      {/* Footer */}
+      <div className="h-7.5 border-t border-codemirror-600
+        bg-codemirror-700 text-codemirror-100
+        flex flex-row items-center
+      ">
+
+        <div className="footer-element">Made by touchportyl</div>
+        <div className="footer-element">{appVersionLabel}</div>
+
+        <div className="flex-1"/>
+
+        {activeFile && (<>
+
+          {/* Diagnostics */}
+          {showDiagnosticSummary && (
+            <Tooltip content={`${diagnosticSummary.errors} error${diagnosticSummary.errors === 1 ? "" : "s"}, ${diagnosticSummary.warnings} warning${diagnosticSummary.warnings === 1 ? "" : "s"}`}>
+              <div className="footer-element">
+                <span className="codicon codicon-error"></span>{diagnosticSummary.errors}
+                <span className="codicon codicon-warning"></span>{diagnosticSummary.warnings}
+              </div>
+            </Tooltip>
+          )}
+        
+          {/* Line/Column */}
+          <div className="footer-element">Ln {cursorMarkerInfo.line}, Col {cursorMarkerInfo.column} {cursorMarkerInfo.selectedCharacters ? `(${cursorMarkerInfo.selectedCharacters} selected)` : ""}</div>
+
+          {/* Language */}
+          <div className="footer-element">
+            <span className={`codicon ${activeLanguage.codicon}`}></span>
+            {activeLanguage.label}
+          </div>
+
+        </>)}
+
       </div>
 
-      {/* File Tab Floating Context Menu */}
+      {/* Shared Context Menu (single-instance) */}
       <ContextMenu
-        items={tabContextItems}
-        x={tabContextMenu.position.x}
-        y={tabContextMenu.position.y}
-        isOpen={tabContextMenu.isOpen}
-        onClose={tabContextMenu.closeContextMenu}
+        items={contextMenuRequest.items}
+        x={contextMenuRequest.contextMenu.position.x}
+        y={contextMenuRequest.contextMenu.position.y}
+        isOpen={contextMenuRequest.isVisible}
+        onClose={contextMenuRequest.close}
       />
 
       {/* Dialog */}
-      {dialog.dialogConfig && (
-        <Dialog
-          {...dialog.dialogConfig}
-          isOpen={dialog.isOpen}
-          onClose={dialog.closeDialog}
-        />
+      {dialog.dialogProps && (
+        <Dialog {...dialog.dialogProps} />
       )}
     </div>
   )

@@ -1,8 +1,9 @@
 import React from 'react'
 import datapackSchema from '../../resources/datapackschema/94.1.json'
-import { ContextMenu, useContextMenu } from './contextmenu'
 import type { MenuItem } from './menuitem'
-import { Dialog, useDialog } from './dialog'
+import { Dialog, useDialog } from './overlays/dialog'
+import { Tooltip } from './overlays/tooltip'
+import { detectEditorLanguage, type DiagnosticSummary } from './language-handler'
 
 interface DataPackTreeProps {
   paths: string[]
@@ -16,6 +17,9 @@ interface DataPackTreeProps {
   onFolderCreated?: () => void
   onFileRenamed?: (oldRelativePath: string, newName: string) => Promise<boolean>
   onFileDeleted?: (relativePath: string) => Promise<boolean>
+  onContextMenuRequest?: (event: React.MouseEvent, items: MenuItem[]) => void
+  modifiedFileKeys?: Set<string>
+  fileDiagnosticSummaries?: Record<string, DiagnosticSummary>
   externalSelectedPath?: string | null
   externalSelectedFileKey?: string | null
   externalExpandedPaths?: Set<string>
@@ -28,12 +32,23 @@ type TreeNode = {
   children?: Map<string, TreeNode>
   isFile?: boolean
   // Schema metadata
-  schemaNode?: any
+  schemaNode?: DatapackSchemaNode
   description?: string
   experimental?: boolean
   contentType?: string
   allowedChildren?: string[]
   // Root-level metadata
+  packFormatVersion?: string
+  minMinecraftVersion?: string
+  maxMinecraftVersion?: string
+}
+
+type DatapackSchemaNode = {
+  name?: string
+  description?: string
+  experimental?: boolean
+  contentType?: string
+  children?: DatapackSchemaNode[]
   packFormatVersion?: string
   minMinecraftVersion?: string
   maxMinecraftVersion?: string
@@ -70,7 +85,7 @@ const buildTree = (paths: string[], rootName: string = 'root'): TreeNode => {
 }
 
 // Find matching schema node for a given physical node name
-const findMatchingSchemaNode = (nodeName: string, schemaChildren: any[] | undefined): any => {
+const findMatchingSchemaNode = (nodeName: string, schemaChildren: DatapackSchemaNode[] | undefined): DatapackSchemaNode | undefined => {
   if (!schemaChildren) return undefined
 
   // Try exact name match first
@@ -82,7 +97,7 @@ const findMatchingSchemaNode = (nodeName: string, schemaChildren: any[] | undefi
 
   // Try placeholder match (like <namespace>, <registry_name>, etc.)
   for (const child of schemaChildren) {
-    if (child.name.startsWith('<') && child.name.endsWith('>')) {
+    if (typeof child.name === 'string' && child.name.startsWith('<') && child.name.endsWith('>')) {
       return child
     }
   }
@@ -91,14 +106,16 @@ const findMatchingSchemaNode = (nodeName: string, schemaChildren: any[] | undefi
 }
 
 // Enrich tree nodes with schema metadata
-const enrichTreeWithSchema = (node: TreeNode, schemaNode?: any, isRoot: boolean = false): void => {
+const enrichTreeWithSchema = (node: TreeNode, schemaNode?: DatapackSchemaNode, isRoot: boolean = false): void => {
   if (!schemaNode) return
 
   node.schemaNode = schemaNode
   node.description = schemaNode.description
   node.experimental = schemaNode.experimental ?? false
   node.contentType = schemaNode.contentType
-  node.allowedChildren = schemaNode.children?.map((child: any) => child.name)
+  node.allowedChildren = schemaNode.children
+    ?.map((child) => child.name)
+    .filter((name): name is string => typeof name === 'string')
 
   // Add root-level version metadata only for root node
   if (isRoot) {
@@ -142,16 +159,14 @@ const collectDirectoryPaths = (node: TreeNode, pathKey: string, output: string[]
   }
 }
 
-export function DatapackTree({ paths, className, folderName, rootId, rootName, rootPackVersion, basePath, onSelect, onFolderCreated, onFileRenamed, onFileDeleted, externalSelectedPath, externalSelectedFileKey, externalExpandedPaths, onExpandedPathsChange, treeContainerRef }: DataPackTreeProps) {
+export function DatapackTree({ paths, className, folderName, rootId, rootName, rootPackVersion, basePath, onSelect, onFolderCreated, onFileRenamed, onFileDeleted, onContextMenuRequest, modifiedFileKeys, fileDiagnosticSummaries, externalSelectedPath, externalSelectedFileKey, externalExpandedPaths, onExpandedPathsChange, treeContainerRef }: DataPackTreeProps) {
   const tree = React.useMemo(() => {
     const builtTree = buildTree(paths, folderName)
     // Enrich with schema starting from the root schema node
-    enrichTreeWithSchema(builtTree, datapackSchema, true)
+    enrichTreeWithSchema(builtTree, datapackSchema as DatapackSchemaNode, true)
     return builtTree
   }, [paths, folderName])
   const [selectedPath, setSelectedPath] = React.useState<string | null>(externalSelectedPath ?? null)
-  const [contextItems, setContextItems] = React.useState<MenuItem[]>([])
-  const contextMenu = useContextMenu()
   const dialog = useDialog()
   const [expandedPaths, setExpandedPaths] = React.useState<Set<string>>(() => {
     const dirs: string[] = []
@@ -208,6 +223,77 @@ export function DatapackTree({ paths, className, folderName, rootId, rootName, r
     setExpandedPaths(new Set(dirs))
     setSelectedPath(null)
   }, [tree, isExternalExpanded, externalSelectedPath])
+
+  const modifiedPathKeys = React.useMemo(() => {
+    const next = new Set<string>()
+    if (!basePath || !modifiedFileKeys?.size) return next
+
+    for (const fileKey of modifiedFileKeys) {
+      const separatorIndex = fileKey.indexOf('|')
+      if (separatorIndex === -1) continue
+
+      const datapackDir = fileKey.slice(0, separatorIndex)
+      if (datapackDir !== basePath) continue
+
+      const relativePath = fileKey
+        .slice(separatorIndex + 1)
+        .replace(/\\/g, '/')
+        .replace(/^\/+/, '')
+
+      next.add(tree.name)
+
+      const segments = relativePath.split('/').filter(Boolean)
+      let currentPath = tree.name
+      for (const segment of segments) {
+        currentPath = `${currentPath}/${segment}`
+        next.add(currentPath)
+      }
+    }
+
+    return next
+  }, [basePath, modifiedFileKeys, tree.name])
+
+  const diagnosticPathSummaries = React.useMemo(() => {
+    const next: Record<string, DiagnosticSummary> = {}
+    if (!basePath || !fileDiagnosticSummaries) return next
+
+    for (const [fileKey, summary] of Object.entries(fileDiagnosticSummaries)) {
+      const errors = summary?.errors ?? 0
+      const warnings = summary?.warnings ?? 0
+      if (errors <= 0 && warnings <= 0) continue
+
+      const separatorIndex = fileKey.indexOf('|')
+      if (separatorIndex === -1) continue
+
+      const datapackDir = fileKey.slice(0, separatorIndex)
+      if (datapackDir !== basePath) continue
+
+      const relativePath = fileKey
+        .slice(separatorIndex + 1)
+        .replace(/\\/g, '/')
+        .replace(/^\/+/, '')
+
+      const pathKeys = [tree.name]
+      const segments = relativePath.split('/').filter(Boolean)
+      let currentPath = tree.name
+      for (const segment of segments) {
+        currentPath = `${currentPath}/${segment}`
+        pathKeys.push(currentPath)
+      }
+
+      for (const pathKey of pathKeys) {
+        const existingSummary = next[pathKey]
+        if (existingSummary) {
+          existingSummary.errors += errors
+          existingSummary.warnings += warnings
+        } else {
+          next[pathKey] = { errors, warnings }
+        }
+      }
+    }
+
+    return next
+  }, [basePath, fileDiagnosticSummaries, tree.name])
 
   const toggleExpanded = (pathKey: string) => {
     const next = new Set(effectiveExpandedPaths)
@@ -311,7 +397,7 @@ export function DatapackTree({ paths, className, folderName, rootId, rootName, r
     }
 
     try {
-      await (window as any).electron.renameFileOrFolder(actualPath, newName)
+      await window.electron.renameFileOrFolder(actualPath, newName)
       
       // Notify parent about the rename so it can update open files
       if (onFileRenamed && relativePath) {
@@ -359,7 +445,7 @@ export function DatapackTree({ paths, className, folderName, rootId, rootName, r
     }
 
     try {
-      await (window as any).electron.deleteFileOrFolder(actualPath)
+      await window.electron.deleteFileOrFolder(actualPath)
       if (onFolderCreated) {
         onFolderCreated() // Trigger refresh
       }
@@ -383,7 +469,7 @@ export function DatapackTree({ paths, className, folderName, rootId, rootName, r
               ? resolveTargetPath(basePath, pathKey, child)
               : `${pathKey}/${child}`
             try {
-              await (window as any).electron.createFolder(targetPath)
+              await window.electron.createFolder(targetPath)
               if (onFolderCreated) {
                 onFolderCreated()
               }
@@ -401,7 +487,7 @@ export function DatapackTree({ paths, className, folderName, rootId, rootName, r
     const isRootNode = pathKey === tree.name
     const canRenameOrDelete = !isRootNode && basePath !== undefined
 
-    setContextItems([
+    const items: MenuItem[] = [
       {label: 'Cut', onClick: undefined, disabled: true},
       {label: 'Copy', onClick: undefined, disabled: true},
       {label: 'Paste', onClick: undefined, disabled: true},
@@ -422,8 +508,9 @@ export function DatapackTree({ paths, className, folderName, rootId, rootName, r
         children: submenuItems.length ? submenuItems : undefined,
         disabled: submenuItems.length === 0,
       },
-    ])
-    contextMenu.openContextMenu(e)
+    ]
+
+    onContextMenuRequest?.(e, items)
   }
 
   const renderNode = (node: TreeNode, depth: number, pathKey: string): React.ReactNode => {
@@ -431,85 +518,103 @@ export function DatapackTree({ paths, className, folderName, rootId, rootName, r
     const isExpanded = hasChildren && effectiveExpandedPaths.has(pathKey)
     const padding = depth * 12
     const relativePath = getRelativePathFromPathKey(pathKey)
+    const languageIconClass = node.isFile
+      ? detectEditorLanguage(relativePath || node.name).codicon
+      : 'codicon-file'
     const nodeFileKey = basePath && relativePath ? `${basePath}|${relativePath}` : null
+    const nodeDiagnosticSummary = diagnosticPathSummaries[pathKey]
+    const hasDiagnosticError = (nodeDiagnosticSummary?.errors ?? 0) > 0
+    const hasDiagnosticWarning = !hasDiagnosticError && (nodeDiagnosticSummary?.warnings ?? 0) > 0
+    const isModified = modifiedPathKeys.has(pathKey)
     const isSelected = node.isFile && externalSelectedFileKey && nodeFileKey
       ? externalSelectedFileKey === nodeFileKey
       : effectiveSelectedPath === pathKey
     const isRoot = depth === 0
+    const nodeNameWeightClass = node.isFile ? 'font-normal' : (isRoot ? 'font-bold' : 'font-semibold')
+    const nodeNameColorClass = node.schemaNode
+      ? 'text-emerald-300'
+      : isModified
+        ? 'text-orange-300'
+        : 'text-codemirror-100'
+    const nodeNameStyleClass = node.experimental ? 'italic' : ''
 
     return (
       <li key={pathKey}>
-        <div
-          ref={isSelected ? (el) => {
-            if (el && treeContainerRef?.current) {
-              el.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'nearest' })
-            }
-          } : null}
-          className={`flex items-center cursor-pointer rounded px-1  ${isSelected ? 'bg-codemirror-select' : 'hover:bg-codemirror-highlight'} ${isRoot ? 'py-2' : ''}`}
-          style={{ paddingLeft: padding }}
-          onClick={() => handleSelect(pathKey, !!node.isFile, !!hasChildren)}
-          onContextMenu={(e) => handleRightClick(e, node, pathKey)}
-          title={node.description || ''}
-        >
-          <span className={`mr-2 flex items-center text-codemirror-100 h-4 ${isRoot ? 'w-auto' : 'w-4'}`}>
-            {hasChildren ? (
-              isExpanded ? (
-                <i className="codicon codicon-chevron-down" />
+        <Tooltip content={node.description} disabled={!node.description}>
+          <div
+            ref={isSelected ? (el) => {
+              if (el && treeContainerRef?.current) {
+                el.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'nearest' })
+              }
+            } : null}
+            className={`flex min-w-0 items-center cursor-pointer rounded px-1  ${isSelected ? 'bg-codemirror-select' : 'hover:bg-codemirror-highlight'} ${isRoot ? 'py-2' : ''}`}
+            style={{ paddingLeft: padding }}
+            onClick={() => handleSelect(pathKey, !!node.isFile, !!hasChildren)}
+            onContextMenu={(e) => handleRightClick(e, node, pathKey)}
+          >
+            <span className={`mr-2 flex items-center text-codemirror-100 h-4 ${isRoot ? 'w-auto' : 'w-4'}`}>
+              {hasChildren ? (
+                isExpanded ? (
+                  <i className="codicon codicon-chevron-down" />
+                ) : (
+                  <i className="codicon codicon-chevron-right" />
+                )
               ) : (
-                <i className="codicon codicon-chevron-right" />
-              )
-            ) : (
-              <i className="codicon codicon-file" />
-            )}
-            {/* Datapack ID */}
-            {isRoot ? (
-              <span className="pillbox px-2 pt-1 pb-0.5 bg-emerald-800 text-sm font-mono font-bold text-codemirror-50">
-                {rootId || 'ID'}
+                <i className={`codicon ${languageIconClass}`} />
+              )}
+              {/* Datapack ID */}
+              {isRoot ? (
+                <span className="pillbox px-2 pt-1 pb-0.5 bg-emerald-800 text-sm font-mono font-bold text-codemirror-50">
+                  {rootId || 'ID'}
+                </span>
+              ) : (<div></div>)}
+            </span>
+
+            <div className="flex min-w-0 flex-1 items-center overflow-hidden">
+              {/* Name */}
+              <span className={`min-w-0 truncate
+                ${nodeNameWeightClass} ${nodeNameColorClass} ${nodeNameStyleClass}`}
+              >
+                {isRoot ? rootName || node.name : node.name}
               </span>
-            ) : (<div></div>)}
-          </span>
 
-          {/* Name */}
-          <span className={`
-            ${node.isFile ? 'font-normal' : (isRoot ? 'font-bold' : 'font-semibold')}
-            ${node.schemaNode ? 'text-emerald-300' : 'text-codemirror-100'}
-            ${node.experimental ? 'italic' : ''}
-          `}>
-            {isRoot ? rootName || node.name : node.name}
-          </span>
+              {/* Pillboxes */}
+              {isRoot && rootPackVersion && (
+                <span className="pillbox bg-indigo-800 text-indigo-100">
+                  v{rootPackVersion}
+                </span>
+              )}
+              {isRoot && node.packFormatVersion && (
+                <span className="pillbox">
+                  {node.packFormatVersion}
+                </span>
+              )}
+              {node.contentType && (
+                <span className="pillbox">
+                  {node.contentType}
+                </span>
+              )}
+              {node.experimental && (
+                <span className="pillbox bg-amber-900 text-amber-400">
+                  exp
+                </span>
+              )}
+            </div>
 
-          {/* Pillboxes */}
-          {isRoot && rootPackVersion && (
-            <span className="pillbox bg-indigo-800 text-indigo-100">
-              v{rootPackVersion}
-            </span>
-          )}
-          {isRoot && node.packFormatVersion && (
-            <span className="pillbox">
-              {node.packFormatVersion}
-            </span>
-          )}
-          {/*isRoot && node.minMinecraftVersion && (
-            <span className="pillbox">
-              {node.minMinecraftVersion}
-            </span>
-          )*/}
-          {/*isRoot && node.maxMinecraftVersion && (
-            <span className="pillbox">
-              {node.maxMinecraftVersion}
-            </span>
-          )*/}
-          {node.contentType && (
-            <span className="pillbox">
-              {node.contentType}
-            </span>
-          )}
-          {node.experimental && (
-            <span className="pillbox bg-amber-900 text-amber-400">
-              exp
-            </span>
-          )}
-        </div>
+            <div className="ml-auto flex shrink-0 items-center">
+              {hasDiagnosticError && (
+                <i className="codicon codicon-error text-red-400 ml-1 shrink-0" />
+              )}
+              {hasDiagnosticWarning && (
+                <i className="codicon codicon-warning text-amber-400 ml-1 shrink-0" />
+              )}
+              {isModified && (
+                <i className="codicon codicon-circle-filled text-orange-300 ml-1 shrink-0" />
+              )}
+            </div>
+
+          </div>
+        </Tooltip>
         {hasChildren && isExpanded && (
           <ul className="mt-1 space-y-1">
             {sortChildren(node.children!).map((child) =>
@@ -527,13 +632,6 @@ export function DatapackTree({ paths, className, folderName, rootId, rootName, r
         <ul className="space-y-1">
           {renderNode(tree, 0, tree.name)}
         </ul>
-        <ContextMenu
-          items={contextItems}
-          x={contextMenu.position.x}
-          y={contextMenu.position.y}
-          isOpen={contextMenu.isOpen}
-          onClose={contextMenu.closeContextMenu}
-        />
       </div>
       {dialog.dialogConfig && (
         <Dialog

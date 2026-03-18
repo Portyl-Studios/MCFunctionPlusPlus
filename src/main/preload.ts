@@ -1,7 +1,11 @@
 // !!! must use commonjs syntax for electron's preload script
 const { contextBridge, ipcRenderer } = require('electron')
 
-contextBridge.exposeInMainWorld('electron', {
+import type { IpcRendererEvent } from 'electron'
+import type { ElectronAPI, ExternalFileChangeEvent, ShortcutHandler, TitlebarContextMenuPosition } from './electron-api'
+import type { AppPreferences } from './preferences'
+
+const electronApi: ElectronAPI = {
   minimize: () => {
     return ipcRenderer.invoke('minimize')
   },
@@ -12,10 +16,31 @@ contextBridge.exposeInMainWorld('electron', {
     return ipcRenderer.invoke('is-fullscreen')
   },
   onFullscreenChange: (callback: (isFullScreen: boolean) => void) => {
-    ipcRenderer.on('fullscreen-changed', (_event: any, isFullScreen: boolean) => callback(isFullScreen))
+    const listener = (_event: IpcRendererEvent, isFullScreen: boolean) => callback(isFullScreen)
+    ipcRenderer.on('fullscreen-changed', listener)
+    return () => {
+      ipcRenderer.removeListener('fullscreen-changed', listener)
+    }
+  },
+  onTitlebarContextMenu: (callback: (position: TitlebarContextMenuPosition) => void) => {
+    const listener = (_event: IpcRendererEvent, position: TitlebarContextMenuPosition) => callback(position)
+    ipcRenderer.on('titlebar-context-menu', listener)
+    return () => {
+      ipcRenderer.removeListener('titlebar-context-menu', listener)
+    }
+  },
+  onQuitRequested: (callback: () => void) => {
+    const listener = () => callback()
+    ipcRenderer.on('quit-requested', listener)
+    return () => {
+      ipcRenderer.removeListener('quit-requested', listener)
+    }
   },
   quit: () => {
     return ipcRenderer.invoke('quit')
+  },
+  quitCancelled: () => {
+    return ipcRenderer.invoke('quit-cancelled')
   },
   pickFolder: () => {
     return ipcRenderer.invoke('pick-folder')
@@ -28,6 +53,9 @@ contextBridge.exposeInMainWorld('electron', {
   },
   readFile: (directory: string, filePath: string) => {
     return ipcRenderer.invoke('read-file', { directory, filePath })
+  },
+  readFileIfExists: (directory: string, filePath: string) => {
+    return ipcRenderer.invoke('read-file-if-exists', { directory, filePath })
   },
   listFiles: (directory: string) => {
     return ipcRenderer.invoke('list-files', { directory })
@@ -86,7 +114,7 @@ contextBridge.exposeInMainWorld('electron', {
   datapackGet: () => {
     return ipcRenderer.invoke('datapack-get')
   },
-  datapackUpdate: (updates: Record<string, unknown>) => {
+  datapackUpdate: (updates) => {
     return ipcRenderer.invoke('datapack-update', { updates })
   },
   datapackSave: () => {
@@ -95,7 +123,7 @@ contextBridge.exposeInMainWorld('electron', {
   datapackClear: () => {
     return ipcRenderer.invoke('datapack-clear')
   },
-  onShortcut: (callback: any) => {
+  onShortcut: (callback: ShortcutHandler) => {
     ipcRenderer.on('shortcut', callback)
     return () => {
       ipcRenderer.removeListener('shortcut', callback)
@@ -110,13 +138,37 @@ contextBridge.exposeInMainWorld('electron', {
   deleteFileOrFolder: (targetPath: string) => {
     return ipcRenderer.invoke('delete-file-or-folder', { targetPath })
   },
-  preferencesGet: (key: string) => {
-    return ipcRenderer.invoke('preferences-get', { key })
+  preferencesGet: <K extends keyof AppPreferences>(key: K) => {
+    return ipcRenderer.invoke('preferences-get', { key }) as Promise<AppPreferences[K] | undefined>
   },
-  preferencesSet: (key: string, value: unknown) => {
+  preferencesSet: <K extends keyof AppPreferences>(key: K, value: AppPreferences[K]) => {
     return ipcRenderer.invoke('preferences-set', { key, value })
   },
-  preferencesUpdate: (updates: Record<string, unknown>) => {
+  preferencesUpdate: (updates: Partial<AppPreferences>) => {
     return ipcRenderer.invoke('preferences-update', { updates })
+  },
+  commandSchemaGet: (version: string) => {
+    return ipcRenderer.invoke('command-schema-get', { version })
+  },
+  minecraftDataGet: (version: string, dataType: string) => {
+    return ipcRenderer.invoke('minecraft-data-get', { version, dataType })
+  },
+  watchFileStart: (watchId: string, directory: string, relativePath: string) => {
+    return ipcRenderer.invoke('watch-file-start', { watchId, directory, relativePath })
+  },
+  watchFileStop: (watchId: string) => {
+    return ipcRenderer.invoke('watch-file-stop', { watchId })
+  },
+  watchFileStopAll: () => {
+    return ipcRenderer.invoke('watch-file-stop-all')
+  },
+  onFileExternalChange: (callback: (event: ExternalFileChangeEvent) => void) => {
+    const listener = (_event: IpcRendererEvent, payload: ExternalFileChangeEvent) => callback(payload)
+    ipcRenderer.on('file-external-change', listener)
+    return () => {
+      ipcRenderer.removeListener('file-external-change', listener)
+    }
   }
-})
+}
+
+contextBridge.exposeInMainWorld('electron', electronApi)

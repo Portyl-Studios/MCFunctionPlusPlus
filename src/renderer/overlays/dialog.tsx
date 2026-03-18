@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react'
-import { CircleTimer } from './circletimer'
+import { CircleTimer } from '../circletimer'
+import { defocusActiveElement } from '../utils'
 
 export interface DialogButton {
   label: string
@@ -22,7 +23,6 @@ export function Dialog({ isOpen, title, message, buttons, autoCloseMs, onClose, 
   const [elapsedMs, setElapsedMs] = useState(0)
   const [localInputValue, setLocalInputValue] = useState(inputValue || '')
 
-  // Reset local input value when dialog opens with new inputValue
   useEffect(() => {
     if (isOpen) {
       setLocalInputValue(inputValue || '')
@@ -34,7 +34,6 @@ export function Dialog({ isOpen, title, message, buttons, autoCloseMs, onClose, 
     onInputChange?.(value)
   }
 
-  // Auto-close timer: closes dialog after specified duration
   useEffect(() => {
     if (!isOpen || !autoCloseMs) return
 
@@ -47,14 +46,12 @@ export function Dialog({ isOpen, title, message, buttons, autoCloseMs, onClose, 
     }
   }, [isOpen, autoCloseMs, onClose])
 
-  // Reset elapsed time when dialog opens
   useEffect(() => {
     if (isOpen) {
       setElapsedMs(0)
     }
   }, [isOpen])
 
-  // Track elapsed time for visual timer indicator (updates every 50ms)
   useEffect(() => {
     if (!isOpen || !autoCloseMs) return
 
@@ -69,6 +66,8 @@ export function Dialog({ isOpen, title, message, buttons, autoCloseMs, onClose, 
 
   useEffect(() => {
     if (!isOpen) return
+
+    defocusActiveElement()
 
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
@@ -85,17 +84,17 @@ export function Dialog({ isOpen, title, message, buttons, autoCloseMs, onClose, 
   if (!isOpen) return null
 
   return (<>
-    <div className="fixed inset-0 top-[36px] bottom-[30px] bg-codemirror-700 opacity-50 z-50"></div>
+    <div className="fixed inset-0 top-9 bottom-7.5 bg-codemirror-700 opacity-50 z-50"></div>
     <div
-      className="fixed inset-0 top-[36px] bottom-[30px] flex items-center justify-center z-50"
+      data-popup-dialog="true"
+      className="fixed inset-0 top-9 bottom-7.5 flex items-center justify-center z-50"
       style={{ backdropFilter: 'blur(2px)' }}
       onClick={onClose}
     >
       <div
         className="flex flex-col min-w-sm max-w-xl min-h-auto max-h-[42%] p-2 bg-codemirror-700 border border-codemirror-400 rounded shadow-2xl"
-        onClick={(e) => e.stopPropagation()} // Prevent clicks inside dialog from closing it
+        onClick={(e) => e.stopPropagation()}
       >
-        {/* Title Bar */}
         <div className="flex flex-row items-center justify-between p-2">
           <span className="text-md font-semibold text-codemirror-100">{title}</span>
           <div
@@ -106,7 +105,6 @@ export function Dialog({ isOpen, title, message, buttons, autoCloseMs, onClose, 
 
         <div className="h-px m-2 bg-codemirror-600" />
 
-        {/* Content Panel */}
         <div className="flex-1 p-2 text-sm text-codemirror-100 text-wrap overflow-y-auto">
           {message}
           {onInputChange !== undefined && (
@@ -128,7 +126,6 @@ export function Dialog({ isOpen, title, message, buttons, autoCloseMs, onClose, 
 
         <div className="h-px m-2 bg-codemirror-600" />
 
-        {/* Footer with Buttons */}
         <div className="flex items-center justify-end gap-3 p-2">
           {autoCloseMs && (
             <div className="flex items-center mr-auto">
@@ -187,8 +184,6 @@ export function useDialog(): UseDialogResult {
     setIsOpen(false)
   }
 
-  // Promise-based alert/confirm helpers that mimic native browser dialogs
-  // but use the custom dialog component for consistent styling
   const showAlert = (title: string, message: string): Promise<void> => {
     return new Promise((resolve) => {
       openDialog({
