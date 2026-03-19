@@ -45,9 +45,7 @@
         "from": "assets/",
         "to": "assets",
         "filter": [
-          "icon.ico",
-          "icon.png",
-          "icon.icns"
+          "**/*"
         ]
       }
     ],
@@ -75,6 +73,7 @@
     },
     "nsis": {
       "oneClick": false,
+      "perMachine": true,
       "allowElevation": true,
       "allowToChangeInstallationDirectory": true,
       "installerIcon": "assets/icon.ico",
@@ -83,7 +82,7 @@
       "installerSidebar": "assets/installer-sidebar.bmp",
       "uninstallerSidebar": "assets/installer-sidebar.bmp",
       "runAfterFinish": true,
-      "artifactName": "${productName} ${version} Installer.${ext}"
+      "artifactName": "${name}-setup-${version}.${ext}"
     },
     "publish": [
       {

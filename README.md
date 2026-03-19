@@ -28,11 +28,11 @@ MCFunction++ is built for developers who want a faster, more reliable Minecraft 
 ### Installing from GitHub Releases
 
 1. Open the latest release in `Portyl-Studios/MCFunctionPlusPlus`.
-2. Download the Windows installer file ending with `Installer.exe`.
+2. Download the Windows installer file matching `mcfunctionplusplus-setup-<version>.exe`.
 3. Run the installer and choose your installation directory.
 4. Launch MCFunction++ after installation.
 
-For normal installation, you only need the `Installer.exe` file.
+For normal installation, you only need the `mcfunctionplusplus-setup-<version>.exe` file.
 
 ### Desktop Auto-Update (NSIS)
 
@@ -116,6 +116,25 @@ This will create an NSIS installer in the `release/` folder.
 - macOS: `npm run dist:mac` (DMG and ZIP)
 - Linux: `npm run dist:linux` (AppImage and DEB)
 - All platforms: `npm run dist`
+
+### App Icon And Installer Art Assets
+
+Required app icon files:
+
+- Windows: `assets/icon.ico` (256x256 or multi-size ICO)
+- macOS: `assets/icon.icns` (512x512@2x recommended)
+- Linux: `assets/icon.png` (512x512 recommended)
+
+Required NSIS installer art files:
+
+- Installer header: `assets/installer-header.bmp` (150x57)
+- Installer sidebar: `assets/installer-sidebar.bmp` (164x314)
+
+You can generate icon formats from a single PNG using:
+
+- https://www.icoconverter.com/
+- https://cloudconvert.com/png-to-icns
+- https://www.img2go.com/convert-to-icon
 
 ### Desktop CI/CD (Auto Version + Release)
 
