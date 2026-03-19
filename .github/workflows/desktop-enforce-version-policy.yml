@@ -1,4 +1,4 @@
-name: Desktop Version Guard
+name: Desktop Enforce Version Policy
 
 on:
   pull_request:

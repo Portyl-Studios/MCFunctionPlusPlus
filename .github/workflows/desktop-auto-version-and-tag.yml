@@ -1,4 +1,4 @@
-name: Desktop Version Bump
+name: Desktop Auto Version And Tag
 
 on:
   push:

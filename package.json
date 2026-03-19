@@ -1,7 +1,8 @@
 {
   "name": "mcfunctionplusplus",
+  "productName": "MCFunction++",
   "version": "1.0.0",
-  "description": "MCFunction++ is a Minecraft datapack IDE + build system, split into desktop + web, with a shared core.",
+  "description": "MCFunction++ streamlines professional datapack workflows with a unified IDE for authoring, validation, and release-ready packaging.",
   "type": "module",
   "main": "./out/main/main.js",
   "scripts": {
@@ -10,7 +11,7 @@
     "electron": "npm run build && electron .",
     "start": "electron .",
     "dist": "npm run build && electron-builder",
-    "dist:win": "npm run build && electron-builder --win",
+    "dist:win": "npm run build && electron-builder --win nsis",
     "dist:mac": "npm run build && electron-builder --mac",
     "dist:linux": "npm run build && electron-builder --linux"
   },
@@ -25,7 +26,6 @@
   "license": "GPL-3.0",
   "build": {
     "appId": "com.portylstudios.mcfunctionplusplus",
-    "productName": "MCFunction++",
     "directories": {
       "output": "release"
     },
@@ -53,8 +53,7 @@
     ],
     "win": {
       "target": [
-        "nsis",
-        "portable"
+        "nsis"
       ],
       "icon": "assets/icon.ico"
     },
@@ -76,9 +75,15 @@
     },
     "nsis": {
       "oneClick": false,
+      "allowElevation": true,
       "allowToChangeInstallationDirectory": true,
-      "createDesktopShortcut": true,
-      "createStartMenuShortcut": true
+      "installerIcon": "assets/icon.ico",
+      "uninstallerIcon": "assets/icon.ico",
+      "installerHeader": "assets/installer-header.bmp",
+      "installerSidebar": "assets/installer-sidebar.bmp",
+      "uninstallerSidebar": "assets/installer-sidebar.bmp",
+      "runAfterFinish": true,
+      "artifactName": "${productName} ${version} Installer.${ext}"
     },
     "publish": [
       {
