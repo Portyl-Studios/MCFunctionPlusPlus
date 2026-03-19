@@ -25,6 +25,15 @@ MCFunction++ is built for developers who want a faster, more reliable Minecraft 
 3. Author datapack files, use validation feedback, and package for release.
 4. Receive update checks once per app launch when using packaged desktop builds.
 
+### Installing from GitHub Releases
+
+1. Open the latest release in `Portyl-Studios/MCFunctionPlusPlus`.
+2. Download the Windows installer file ending with `Installer.exe`.
+3. Run the installer and choose your installation directory.
+4. Launch MCFunction++ after installation.
+
+For normal installation, you only need the `Installer.exe` file.
+
 ### Desktop Auto-Update (NSIS)
 
 Desktop auto-updates use `electron-builder` + `electron-updater` with GitHub Releases.
@@ -127,6 +136,7 @@ Four GitHub Actions workflows are used:
 4. `.github/workflows/desktop-ensure-github-release.yml`
    - Trigger: automatic on successful `Desktop Auto Version And Tag` run for `main`
    - Action: creates or updates the GitHub Release for the tag created by version bumping
+   - Reliability: resolves tags from the triggering commit SHA to avoid `main` branch race conditions
 
 ### Tip: Push Without Triggering Release Workflows
 
