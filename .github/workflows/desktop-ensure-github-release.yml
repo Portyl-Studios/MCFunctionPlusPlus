@@ -8,6 +8,7 @@ on:
       - completed
 
 permissions:
+  actions: read
   contents: write
 
 jobs:
@@ -16,32 +17,34 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout triggering commit
-        uses: actions/checkout@v4
+      - name: Download release tag artifact
+        uses: actions/download-artifact@v4
         with:
-          ref: ${{ github.event.workflow_run.head_sha }}
-          fetch-depth: 0
-          fetch-tags: true
+          name: release-tag
+          path: .
+          run-id: ${{ github.event.workflow_run.id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Resolve release tag from triggering commit
+      - name: Resolve release tag
         id: resolve-tag
         shell: bash
         run: |
           set -euo pipefail
-          git fetch --tags
 
-          TAG=$(git tag --points-at HEAD --list 'v*.*.*' | sort -V | tail -n1)
-          if [ -z "$TAG" ]; then
-            echo "No vX.Y.Z tag found on triggering commit; skipping release creation"
-            echo "skip=true" >> $GITHUB_OUTPUT
-            exit 0
+          if [ ! -f release-tag.txt ]; then
+            echo "release-tag artifact not found"
+            exit 1
+          fi
+
+          TAG=$(tr -d '\r\n' < release-tag.txt)
+          if [[ ! "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Resolved tag is invalid: $TAG"
+            exit 1
           fi
 
           echo "tag=$TAG" >> $GITHUB_OUTPUT
-          echo "skip=false" >> $GITHUB_OUTPUT
 
       - name: Create or update GitHub release
-        if: steps.resolve-tag.outputs.skip != 'true'
         uses: actions/github-script@v7
         with:
           script: |
@@ -84,7 +87,6 @@ jobs:
             }
 
       - name: Summary
-        if: steps.resolve-tag.outputs.skip != 'true'
         run: |
           echo "Release ensured for ${{ steps.resolve-tag.outputs.tag }}"
           echo "Desktop Build And Publish NSIS Installer publishes installer assets to that release."

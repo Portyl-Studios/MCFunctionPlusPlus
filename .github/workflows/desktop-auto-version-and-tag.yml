@@ -65,8 +65,11 @@ jobs:
           git push origin main
 
       - name: Create and push tag
+        id: release-tag
         run: |
           TAG="v${{ steps.bump.outputs.version }}"
+          echo "tag=$TAG" >> $GITHUB_OUTPUT
+
           if git rev-parse "$TAG" >/dev/null 2>&1; then
             echo "Tag $TAG already exists, skipping"
             exit 0
@@ -74,3 +77,13 @@ jobs:
 
           git tag "$TAG"
           git push origin "v${{ steps.bump.outputs.version }}"
+
+      - name: Export release tag artifact
+        run: echo "${{ steps.release-tag.outputs.tag }}" > release-tag.txt
+
+      - name: Upload release tag artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-tag
+          path: release-tag.txt
+          retention-days: 1
