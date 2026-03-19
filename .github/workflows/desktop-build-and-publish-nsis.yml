@@ -1,5 +1,8 @@
 name: Desktop Build And Publish NSIS Installer
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
+
 on:
   push:
     tags:
@@ -22,7 +25,7 @@ jobs:
     steps:
       - name: Download release tag artifact
         if: github.event_name == 'workflow_run'
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: release-tag
           path: .
@@ -54,7 +57,7 @@ jobs:
           echo "ref=refs/tags/$TAG" >> $GITHUB_OUTPUT
 
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: ${{ steps.resolve-tag.outputs.ref }}
           fetch-depth: 0
@@ -62,7 +65,7 @@ jobs:
 
       - name: Check existing release assets
         id: release-assets
-        uses: actions/github-script@v7
+        uses: actions/github-script@v8
         with:
           script: |
             const tag = `${{ steps.resolve-tag.outputs.tag }}`;
@@ -88,7 +91,7 @@ jobs:
 
       - name: Setup Node.js
         if: steps.release-assets.outputs.should_publish == 'true'
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: 20
           cache: npm

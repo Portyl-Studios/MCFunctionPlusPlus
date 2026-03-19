@@ -1,5 +1,8 @@
 name: Desktop Ensure GitHub Release
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
+
 on:
   workflow_run:
     workflows:
@@ -18,7 +21,7 @@ jobs:
 
     steps:
       - name: Download release tag artifact
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: release-tag
           path: .
@@ -45,7 +48,7 @@ jobs:
           echo "tag=$TAG" >> $GITHUB_OUTPUT
 
       - name: Create or update GitHub release
-        uses: actions/github-script@v7
+        uses: actions/github-script@v8
         with:
           script: |
             const tag = `${{ steps.resolve-tag.outputs.tag }}`;
