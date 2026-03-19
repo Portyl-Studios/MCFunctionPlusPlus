@@ -1,4 +1,5 @@
-import { BrowserWindow, ipcMain } from 'electron'
+import { app, BrowserWindow, ipcMain } from 'electron'
+import { wait } from './utils'
 
 type WindowControlHandlerOptions = {
   onQuitCancelled?: () => void
@@ -44,11 +45,18 @@ export const registerWindowControlHandlers = (
   ipcMain.handle('quit', async () => {
     const mainWindow = getMainWindow()
     if (mainWindow && !mainWindow.isDestroyed()) {
-      mainWindow.hide()
+      if (!mainWindow.webContents.isDestroyed()) {
+        mainWindow.webContents.send('quit-confirmed')
+      }
+
+      await wait(500)
+
+      if (!mainWindow.isDestroyed()) {
+        mainWindow.destroy()
+      }
     }
-    setImmediate(() => {
-      mainWindow?.close()
-    })
+
+    app.quit()
   })
 
   ipcMain.handle('quit-cancelled', async () => {

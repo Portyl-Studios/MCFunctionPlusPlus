@@ -1,15 +1,12 @@
 import { BrowserWindow, dialog, ipcMain, shell } from 'electron'
 import { promises as fs } from 'fs'
 import path from 'path'
+import { wait } from './utils'
 
 const FILE_BUSY_RETRY_ATTEMPTS = 4
 const FILE_BUSY_RETRY_BASE_DELAY_MS = 120
 const RETRIABLE_FILE_BUSY_CODES = new Set(['EBUSY', 'EMFILE', 'ENFILE', 'EAGAIN'])
 const MAYBE_RETRIABLE_FILE_BUSY_CODES = new Set(['EPERM', 'EACCES'])
-
-const wait = async (milliseconds: number): Promise<void> => {
-  await new Promise((resolve) => setTimeout(resolve, milliseconds))
-}
 
 const isRetriableFileBusyError = (error: unknown): error is NodeJS.ErrnoException => {
   if (!error || typeof error !== 'object') return false
