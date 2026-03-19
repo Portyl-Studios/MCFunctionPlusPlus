@@ -136,7 +136,7 @@ Four GitHub Actions workflows are used:
 4. `.github/workflows/desktop-ensure-github-release.yml`
    - Trigger: automatic on successful `Desktop Auto Version And Tag` run for `main`
    - Action: creates or updates the GitHub Release for the tag created by version bumping
-   - Reliability: resolves tags from the triggering commit SHA to avoid `main` branch race conditions
+   - Reliability: uses the exact tag artifact exported by the versioning workflow to avoid tag-resolution race conditions
 
 ### Tip: Push Without Triggering Release Workflows
 
