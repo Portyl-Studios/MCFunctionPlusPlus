@@ -24,7 +24,7 @@ jobs:
         shell: bash
         run: |
           if [ "${{ github.event_name }}" = "workflow_run" ]; then
-            echo "ref=main" >> $GITHUB_OUTPUT
+            echo "ref=${{ github.event.workflow_run.head_sha }}" >> $GITHUB_OUTPUT
           else
             echo "ref=${GITHUB_REF}" >> $GITHUB_OUTPUT
           fi
