@@ -15,6 +15,7 @@ export {
   mergeMcfunctionContextIndexes,
   setDatapackContextIndex,
   clearDatapackContextIndexes,
+  pruneDatapackContextIndexes,
   setActiveDatapackContext,
   getActiveDatapackContextIndex,
   getDatapackContextIndex,

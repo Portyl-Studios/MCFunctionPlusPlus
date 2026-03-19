@@ -537,6 +537,20 @@ export const clearDatapackContextIndexes = () => {
   datapackContextIndexes.clear()
 }
 
+export const pruneDatapackContextIndexes = (datapackDirs: Iterable<string>) => {
+  const allowedDatapackDirs = new Set(datapackDirs)
+
+  for (const datapackDir of datapackContextIndexes.keys()) {
+    if (!allowedDatapackDirs.has(datapackDir)) {
+      datapackContextIndexes.delete(datapackDir)
+    }
+  }
+
+  if (activeDatapackContextKey && !allowedDatapackDirs.has(activeDatapackContextKey)) {
+    activeDatapackContextKey = null
+  }
+}
+
 export const setActiveDatapackContext = (datapackDir: string | null) => {
   activeDatapackContextKey = datapackDir
 }

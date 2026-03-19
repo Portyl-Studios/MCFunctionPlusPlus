@@ -38,6 +38,7 @@ import {
   loadMinecraftData,
   mergeMcfunctionContextIndexes,
   parseMcfunctionContextIndex,
+  pruneDatapackContextIndexes,
   setActiveDatapackContext,
   setDatapackContextIndex,
   setWorkspaceResourcePathsFromRelativePaths,
@@ -703,6 +704,7 @@ function CodeEditor() {
   const removeFileFromOpenAndModified = (fileKey: string) => {
     removeFileFromOpenedFiles(fileKey)
     removeFileFromModifiedFiles(fileKey)
+    fileContextParseCacheRef.current.delete(fileKey)
   }
 
   const handleFileRenamed = async (datapackDir: string, oldRelativePath: string, newName: string): Promise<boolean> => {
@@ -739,6 +741,12 @@ function CodeEditor() {
     const cachedState = fileEditorStatesRef.current.get(oldFileKey)
     if (cachedState) {
       fileEditorStatesRef.current.set(newFileKey, cachedState)
+    }
+
+    const cachedContext = fileContextParseCacheRef.current.get(oldFileKey)
+    if (cachedContext) {
+      fileContextParseCacheRef.current.set(newFileKey, cachedContext)
+      fileContextParseCacheRef.current.delete(oldFileKey)
     }
 
     clearAutoSaveTimer(oldFileKey)
@@ -1264,6 +1272,15 @@ function CodeEditor() {
     setWorkspaceResourcePathsFromRelativePaths(relativePaths)
   }, [datapacks])
 
+  useEffect(() => {
+    const activeDatapackDirs = new Set(datapacks.map((datapack) => datapack.dir))
+    for (const datapackDir of explorerContainerRefs.current.keys()) {
+      if (!activeDatapackDirs.has(datapackDir)) {
+        explorerContainerRefs.current.delete(datapackDir)
+      }
+    }
+  }, [datapacks])
+
   const buildOpenedModifiedContentMap = () => {
     const openedModifiedContentByFileKey = new Map<string, string>()
 
@@ -1280,6 +1297,7 @@ function CodeEditor() {
     datapack: DatapackEntry,
     scanRunId: number,
     openedModifiedContentByFileKey: ReadonlyMap<string, string>,
+    seenMcfunctionFileKeys?: Set<string>,
   ) => {
     let mergedIndex = parseMcfunctionContextIndex("")
 
@@ -1290,6 +1308,7 @@ function CodeEditor() {
       if (!relativePath.toLowerCase().endsWith(".mcfunction")) continue
 
       const fileKey = createFileKey(datapack.dir, relativePath)
+      seenMcfunctionFileKeys?.add(fileKey)
       let content: string | null = null
 
       const openedModifiedContent = openedModifiedContentByFileKey.get(fileKey)
@@ -1323,6 +1342,19 @@ function CodeEditor() {
     return mergedIndex
   }
 
+  const pruneFileContextParseCache = (validFileKeys: ReadonlySet<string>, targetDatapackDir?: string) => {
+    for (const cachedFileKey of fileContextParseCacheRef.current.keys()) {
+      if (targetDatapackDir) {
+        const cachedDatapackDir = parseFileKey(cachedFileKey).datapackDir
+        if (cachedDatapackDir !== targetDatapackDir) continue
+      }
+
+      if (!validFileKeys.has(cachedFileKey)) {
+        fileContextParseCacheRef.current.delete(cachedFileKey)
+      }
+    }
+  }
+
   const refreshActiveEditorLint = () => {
     if (!viewRef.current) return
 
@@ -1336,22 +1368,34 @@ function CodeEditor() {
   const reloadAllContextsAsync = async () => {
     if (datapacks.length === 0) {
       clearDatapackContextIndexes()
+      fileContextParseCacheRef.current.clear()
       setActiveDatapackContext(null)
       return
     }
 
+    const datapackDirs = datapacks.map((datapack) => datapack.dir)
+    pruneDatapackContextIndexes(datapackDirs)
+
     const scanRunId = contextScanRunIdRef.current + 1
     contextScanRunIdRef.current = scanRunId
     const openedModifiedContentByFileKey = buildOpenedModifiedContentMap()
+    const seenMcfunctionFileKeys = new Set<string>()
 
     for (const datapack of datapacks) {
       if (contextScanRunIdRef.current !== scanRunId) return
 
-      const mergedIndex = await buildDatapackContextIndexAsync(datapack, scanRunId, openedModifiedContentByFileKey)
+      const mergedIndex = await buildDatapackContextIndexAsync(
+        datapack,
+        scanRunId,
+        openedModifiedContentByFileKey,
+        seenMcfunctionFileKeys,
+      )
       if (!mergedIndex) return
 
       setDatapackContextIndex(datapack.dir, mergedIndex)
     }
+
+    pruneFileContextParseCache(seenMcfunctionFileKeys)
 
     const activeDatapackDir = activeFileRef.current
       ? parseFileKey(activeFileRef.current).datapackDir
@@ -1365,10 +1409,12 @@ function CodeEditor() {
     const scanRunId = contextScanRunIdRef.current + 1
     contextScanRunIdRef.current = scanRunId
     const openedModifiedContentByFileKey = buildOpenedModifiedContentMap()
+    const seenMcfunctionFileKeys = new Set<string>()
 
     const datapack = datapacks.find(entry => entry.dir === datapackDir)
     if (!datapack) {
       setDatapackContextIndex(datapackDir, null)
+      pruneFileContextParseCache(seenMcfunctionFileKeys, datapackDir)
 
       const activeDatapackDir = activeFileRef.current
         ? parseFileKey(activeFileRef.current).datapackDir
@@ -1378,10 +1424,16 @@ function CodeEditor() {
       return
     }
 
-    const mergedIndex = await buildDatapackContextIndexAsync(datapack, scanRunId, openedModifiedContentByFileKey)
+    const mergedIndex = await buildDatapackContextIndexAsync(
+      datapack,
+      scanRunId,
+      openedModifiedContentByFileKey,
+      seenMcfunctionFileKeys,
+    )
     if (!mergedIndex) return
 
     setDatapackContextIndex(datapack.dir, mergedIndex)
+    pruneFileContextParseCache(seenMcfunctionFileKeys, datapackDir)
 
     const activeDatapackDir = activeFileRef.current
       ? parseFileKey(activeFileRef.current).datapackDir
@@ -1781,6 +1833,8 @@ function CodeEditor() {
       autoSaveTimersRef.current.clear()
       clearContextReloadTimer()
       fileEditorStatesRef.current.clear()
+      fileContextParseCacheRef.current.clear()
+      explorerContainerRefs.current.clear()
     }
   }, [])
 

@@ -109,6 +109,14 @@ const stopAllFileWatches = async (): Promise<void> => {
   await Promise.all(watchIds.map((watchId) => stopFileWatch(watchId)))
 }
 
+const stopAllFileWatchesSafely = async (reason: string): Promise<void> => {
+  try {
+    await stopAllFileWatches()
+  } catch (error) {
+    console.error(`Failed to stop file watches during ${reason}:`, error)
+  }
+}
+
 const getAllowedFileOperationRoots = (): string[] => {
   const roots = new Set<string>()
 
@@ -183,6 +191,10 @@ const setupWindowShortcuts = (window: BrowserWindow): void => {
 
 registerPickFolderHandler(() => mainWindow)
 registerWindowControlHandlers(() => mainWindow, {
+  onQuitConfirmed: async () => {
+    isAppQuitting = true
+    await stopAllFileWatchesSafely('custom quit')
+  },
   onQuitCancelled: () => {
     isQuitRequestPending = false
   },
@@ -407,7 +419,9 @@ app.on('ready', async () => {
     mainWindow?.webContents.send('quit-requested')
   })
 
-  mainWindow.on('closed', () => (mainWindow = null))
+  mainWindow.on('closed', () => {
+    mainWindow = null
+  })
 
   // Register focused-window shortcuts
   setupWindowShortcuts(mainWindow)
@@ -417,7 +431,7 @@ app.on('ready', async () => {
 
 app.on('before-quit', () => {
   isAppQuitting = true
-  void stopAllFileWatches()
+  void stopAllFileWatchesSafely('before-quit')
 })
 
 app.on('window-all-closed', () => {

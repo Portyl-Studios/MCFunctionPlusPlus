@@ -3,6 +3,7 @@ import { wait } from './utils'
 
 type WindowControlHandlerOptions = {
   onQuitCancelled?: () => void
+  onQuitConfirmed?: () => Promise<void> | void
 }
 
 const getIsWindowExpanded = (mainWindow: BrowserWindow) => {
@@ -44,12 +45,11 @@ export const registerWindowControlHandlers = (
 
   ipcMain.handle('quit', async () => {
     const mainWindow = getMainWindow()
-    if (mainWindow && !mainWindow.isDestroyed()) {
-      if (!mainWindow.webContents.isDestroyed()) {
-        mainWindow.webContents.send('quit-confirmed')
-      }
 
-      await wait(500)
+    await options.onQuitConfirmed?.()
+
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      await wait(350)
 
       if (!mainWindow.isDestroyed()) {
         mainWindow.destroy()
