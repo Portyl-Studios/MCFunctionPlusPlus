@@ -128,6 +128,18 @@ Four GitHub Actions workflows are used:
    - Trigger: automatic on successful `Desktop Auto Version And Tag` run for `main`
    - Action: creates or updates the GitHub Release for the tag created by version bumping
 
+### Tip: Push Without Triggering Release Workflows
+
+If you need to push changes to `main` without triggering CI/release workflows, include a skip token in your commit message:
+
+```bash
+git commit -m "docs: update README [skip ci]"
+git push
+```
+
+`[skip ci]` (or `[ci skip]`) prevents push and pull-request workflows from running for that commit.
+Note: if you push a version tag separately, tag-triggered release workflows can still run.
+
 ### Required Repository Setup
 
 1. Ensure Actions permission allows write access to repository contents.
