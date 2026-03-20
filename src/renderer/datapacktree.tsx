@@ -1,7 +1,7 @@
 import React from 'react'
 import datapackSchema from '../../resources/datapackschema/94.1.json'
 import type { MenuItem } from './menuitem'
-import { Dialog, useDialog } from './overlays/dialog'
+import { showAlertEvent, showConfirmEvent, showPromptEvent } from './overlays/dialog-events'
 import { Tooltip } from './overlays/tooltip'
 import { detectEditorLanguage, type DiagnosticSummary } from './language-handler'
 
@@ -167,7 +167,6 @@ export function DatapackTree({ paths, className, folderName, rootId, rootName, r
     return builtTree
   }, [paths, folderName])
   const [selectedPath, setSelectedPath] = React.useState<string | null>(externalSelectedPath ?? null)
-  const dialog = useDialog()
   const [expandedPaths, setExpandedPaths] = React.useState<Set<string>>(() => {
     const dirs: string[] = []
     // Expand root by default
@@ -370,7 +369,7 @@ export function DatapackTree({ paths, className, folderName, rootId, rootName, r
     const actualPath = getActualPath(pathKey)
     if (!actualPath) {
       console.error('Cannot determine actual path')
-      await dialog.showAlert('Error', 'Cannot determine actual path')
+      await showAlertEvent('Error', 'Cannot determine actual path')
       return
     }
 
@@ -391,7 +390,7 @@ export function DatapackTree({ paths, className, folderName, rootId, rootName, r
       }
     }
 
-    const newName = await dialog.showPrompt('Rename', 'Enter new name:', currentName)
+    const newName = await showPromptEvent('Rename', 'Enter new name:', currentName)
     if (!newName || newName === currentName) {
       return
     }
@@ -409,7 +408,7 @@ export function DatapackTree({ paths, className, folderName, rootId, rootName, r
       }
     } catch (error) {
       console.error('Failed to rename:', error)
-      await dialog.showAlert('Error', `Failed to rename: ${error instanceof Error ? error.message : 'Unknown error'}`)
+      await showAlertEvent('Error', `Failed to rename: ${error instanceof Error ? error.message : 'Unknown error'}`)
     }
   }
 
@@ -417,7 +416,7 @@ export function DatapackTree({ paths, className, folderName, rootId, rootName, r
     const actualPath = getActualPath(pathKey)
     if (!actualPath) {
       console.error('Cannot determine actual path')
-      await dialog.showAlert('Error', 'Cannot determine actual path')
+      await showAlertEvent('Error', 'Cannot determine actual path')
       return
     }
 
@@ -439,7 +438,7 @@ export function DatapackTree({ paths, className, folderName, rootId, rootName, r
     }
 
     const itemType = isFile ? 'file' : 'folder'
-    const confirmed = await dialog.showConfirm('Delete', `Are you sure you want to delete the ${itemType} "${itemName}"?${isFile ? '' : ' This will delete all contents.'}`)
+    const confirmed = await showConfirmEvent('Delete', `Are you sure you want to delete the ${itemType} "${itemName}"?${isFile ? '' : ' This will delete all contents.'}`)
     if (!confirmed) {
       return
     }
@@ -451,7 +450,7 @@ export function DatapackTree({ paths, className, folderName, rootId, rootName, r
       }
     } catch (error) {
       console.error('Failed to delete:', error)
-      await dialog.showAlert('Error', `Failed to delete: ${error instanceof Error ? error.message : 'Unknown error'}`)
+      await showAlertEvent('Error', `Failed to delete: ${error instanceof Error ? error.message : 'Unknown error'}`)
     }
   }
 
@@ -475,7 +474,7 @@ export function DatapackTree({ paths, className, folderName, rootId, rootName, r
               }
             } catch (error) {
               console.error('Failed to create folder:', error)
-              await dialog.showAlert('Error', `Failed to create folder: ${error instanceof Error ? error.message : 'Unknown error'}`)
+              await showAlertEvent('Error', `Failed to create folder: ${error instanceof Error ? error.message : 'Unknown error'}`)
             }
           }
         },
@@ -633,18 +632,6 @@ export function DatapackTree({ paths, className, folderName, rootId, rootName, r
           {renderNode(tree, 0, tree.name)}
         </ul>
       </div>
-      {dialog.dialogConfig && (
-        <Dialog
-          isOpen={dialog.isOpen}
-          title={dialog.dialogConfig.title}
-          message={dialog.dialogConfig.message}
-          buttons={dialog.dialogConfig.buttons}
-          autoCloseMs={dialog.dialogConfig.autoCloseMs}
-          inputValue={dialog.dialogConfig.inputValue}
-          onInputChange={dialog.dialogConfig.onInputChange}
-          onClose={dialog.closeDialog}
-        />
-      )}
     </>
   )
 }

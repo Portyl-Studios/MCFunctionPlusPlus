@@ -29,6 +29,7 @@ import packageJson from "../../package.json"
 import { DatapackTree } from "./datapacktree"
 import { Dialog } from "./overlays/dialog"
 import { useDialogRequest } from "./overlays/dialog-request"
+import { subscribeDialogRequests } from "./overlays/dialog-events"
 import { ContextMenu } from "./overlays/contextmenu"
 import { useContextMenuRequest } from "./overlays/contextmenu-request"
 import { getDirFromPath, toRelativePaths, createFileKey, parseFileKey } from "./utils"
@@ -428,6 +429,7 @@ function CodeEditor() {
   const fileContextParseCacheRef = useRef<Map<string, ParsedContextCacheEntry>>(new Map())
   const openFileRequestIdRef = useRef(0)
   const dialog = useDialogRequest()
+  const openDialogRef = useRef(dialog.openDialog)
   const isDialogOpenRef = useRef(dialog.isOpen)
   const openedFilesRef = useRef(openedFiles)
   const modifiedFilesRef = useRef(modifiedFiles)
@@ -440,6 +442,20 @@ function CodeEditor() {
     handleOpenDefaultWorkspace,
     handleGetDatapacks,
   } = useWorkspace()
+
+  useEffect(() => {
+    openDialogRef.current = dialog.openDialog
+  }, [dialog.openDialog])
+
+  useEffect(() => {
+    const unsubscribe = subscribeDialogRequests((config) => {
+      openDialogRef.current(config)
+    })
+
+    return () => {
+      unsubscribe()
+    }
+  }, [])
 
   // Load auto-save preference from workspace
   useEffect(() => {
@@ -1949,14 +1965,14 @@ function CodeEditor() {
 
   // Keyboard shortcuts
   useEffect(() => {
-    const hasBlockingPopupOpen = () => {
-      const hasOpenMenu = document.querySelector('.menu-layer') !== null
-      const hasOpenDialog = document.querySelector('[data-popup-dialog="true"]') !== null
+    const hasBlockingOverlayOpen = () => {
+      const hasOpenMenu = document.querySelector('[data-overlay-menu="true"]') !== null
+      const hasOpenDialog = document.querySelector('[data-overlay-dialog="true"]') !== null
       return hasOpenMenu || hasOpenDialog
     }
 
     const handler = (_event: unknown, action: ShortcutAction) => {
-      if (hasBlockingPopupOpen()) return
+      if (hasBlockingOverlayOpen()) return
 
       switch (action) {
         case "quit":
@@ -2911,7 +2927,7 @@ function CodeEditor() {
       )}
 
       {showAppUpdateModal && (
-        <div className="fixed inset-0 z-9999 bg-black/60 flex items-center justify-center p-4" data-popup-dialog="true">
+        <div className="fixed inset-0 z-9999 bg-black/60 flex items-center justify-center p-4" data-overlay-dialog="true">
           <div className="w-full max-w-md rounded border border-codemirror-500 bg-codemirror-700 shadow-xl">
             <div className="px-4 py-3 border-b border-codemirror-600 text-codemirror-50 font-semibold">
               {getUpdateStatusTitle(appUpdateStatus)}

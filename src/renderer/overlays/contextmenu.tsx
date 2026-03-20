@@ -76,7 +76,7 @@ export function ContextMenu({ items, x, y, isOpen, onClose }: ContextMenuProps) 
 
   return (
     <div
-      data-popup-menu="true"
+      data-overlay-menu="true"
       ref={menuRef}
       className="fixed menu-layer"
       style={{ top: position.y, left: position.x, visibility: isPositionReady ? 'visible' : 'hidden' }}

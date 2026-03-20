@@ -82,7 +82,7 @@ export function DropdownMenu({ label, items, isOpen, setIsOpen, buttonClassName,
         {label}
       </div>
       {isOpen && !disabled && (
-        <div data-popup-menu="true" className={`absolute top-full ${alignRight ? 'right-1' : 'left-1'} mt-2 menu-layer z-50`}>
+        <div data-overlay-menu="true" className={`absolute top-full ${alignRight ? 'right-1' : 'left-1'} mt-2 menu-layer z-50`}>
           <MenuItems items={items} maxItems={10} onItemClick={() => setIsOpen(false)} />
         </div>
       )}

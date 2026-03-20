@@ -86,7 +86,7 @@ export function Dialog({ isOpen, title, message, buttons, autoCloseMs, onClose, 
   return (<>
     <div className="fixed inset-0 top-9 bottom-7.5 bg-codemirror-700 opacity-50 z-50"></div>
     <div
-      data-popup-dialog="true"
+      data-overlay-dialog="true"
       className="fixed inset-0 top-9 bottom-7.5 flex items-center justify-center z-50"
       style={{ backdropFilter: 'blur(2px)' }}
       onClick={onClose}
