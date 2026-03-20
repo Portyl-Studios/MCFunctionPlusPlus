@@ -349,12 +349,12 @@ export function ToastStack() {
           onMouseLeave={() => handleToastMouseLeave(toast.id)}
           onPointerDown={(event) => handleToastPointerDown(toast.id, event)}
           className={`max-w-3xs rounded shadow-lg border
-            border-codemirror-highlight
+            border-codemirror-default hover:border-codemirror-400
             bg-codemirror-600 px-6 py-4 overflow-hidden
             text-sm text-codemirror-100 hover:text-codemirror-50
             relative select-none cursor-grab active:cursor-grabbing
             transition-all
-            ${draggingToastId === toast.id ? 'duration-0 border-codemirror-highlight text-codemirror-50 shadow-xl' : ''}
+            ${draggingToastId === toast.id ? 'duration-0' : ''}
             ${exitingToastIds[toast.id] ? 'duration-300 ease-out' : ''}
             ${draggingToastId !== toast.id && !exitingToastIds[toast.id] ? 'duration-400' : ''}
             ${toast.isFading ? 'opacity-0 hover:opacity-100' : 'opacity-100'}`}
@@ -379,7 +379,9 @@ export function ToastStack() {
               style={{ transform: `scaleX(${fadeProgressByToastId[toast.id] ?? 0})` }}
             />
           </div>
-          {toast.message}
+          <div className="mr-4">
+            {toast.message}
+          </div>
         </div>
       ))}
     </div>
