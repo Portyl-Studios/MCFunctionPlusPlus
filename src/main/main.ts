@@ -1,7 +1,8 @@
 import { app, BrowserWindow, ipcMain } from 'electron'
 import path from 'path'
 import fs from 'fs'
-import * as parcelWatcher from '@parcel/watcher'
+import parcelWatcher from '@parcel/watcher'
+import type { AsyncSubscription } from '@parcel/watcher'
 import { fileURLToPath } from 'url'
 import { registerWindowControlHandlers } from './window'
 import { readFile, registerFileOperationHandlers, registerPickFolderHandler, validateDatapackFolder } from './fileops'
@@ -38,7 +39,7 @@ const getWindowIconPath = () => {
 let mainWindow: BrowserWindow | null = null
 let isAppQuitting = false
 let isQuitRequestPending = false
-const fileWatchSubscriptions = new Map<string, parcelWatcher.AsyncSubscription>()
+const fileWatchSubscriptions = new Map<string, AsyncSubscription>()
 
 const normalizeComparablePath = (targetPath: string): string => {
   const resolvedPath = path.resolve(targetPath)
