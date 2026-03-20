@@ -604,6 +604,7 @@ function CodeEditor() {
     await handleWorkspaceChangeWithConfirm(async () => {
       const didOpenWorkspace = await handleOpenWorkspace()
       if (!didOpenWorkspace) return
+      showToastEvent("Workspace opened")
     })
   }
 
@@ -611,6 +612,7 @@ function CodeEditor() {
     await handleWorkspaceChangeWithConfirm(async () => {
       const didCreateWorkspace = await handleNewWorkspace()
       if (!didCreateWorkspace) return
+      showToastEvent("Workspace created")
     })
   }
 
@@ -618,6 +620,7 @@ function CodeEditor() {
     await handleWorkspaceChangeWithConfirm(async () => {
       const didOpenDefaultWorkspace = await handleOpenDefaultWorkspace()
       if (!didOpenDefaultWorkspace) return
+      showToastEvent("Default workspace opened")
     })
   }
 
@@ -691,6 +694,8 @@ function CodeEditor() {
       await window.electron.addDatapackExisting(folder)
       const existingDirs = datapacks.map((datapack) => datapack.dir)
       await refreshDatapacks([...existingDirs, folder])
+      const datapackName = folder.split(/[\\/]/).filter(Boolean).pop() || "Datapack"
+      showToastEvent(`Added datapack: ${datapackName}`)
     } catch (error) {
       console.error("Failed to add datapack:", error)
       await dialog.showAlert("Error", `Failed to add datapack: ${error instanceof Error ? error.message : "Unknown error"}`)
@@ -717,6 +722,8 @@ function CodeEditor() {
       // Refresh the datapack list
       const updatedDirs = datapacks.filter((dp) => dp.dir !== datapackDir).map((dp) => dp.dir)
       await refreshDatapacks(updatedDirs)
+      const datapackName = datapackDir.split(/[\\/]/).filter(Boolean).pop() || "Datapack"
+      showToastEvent(`Removed datapack: ${datapackName}`)
     } catch (error) {
       console.error("Failed to remove datapack:", error)
       await dialog.showAlert("Error", `Failed to remove datapack: ${error instanceof Error ? error.message : "Unknown error"}`)
@@ -1073,7 +1080,12 @@ function CodeEditor() {
   const saveCurrentFile = async (): Promise<boolean> => {
     if (!activeFile || !viewRef.current) return false
     const contents = viewRef.current.state.doc.toString()
-    return await saveFile(activeFile, contents)
+    const didSave = await saveFile(activeFile, contents)
+    if (didSave) {
+      const openedFile = openedFiles.find((f) => createFileKey(f.datapackDir, f.relativePath) === activeFile)
+      showToastEvent(`Saved: ${openedFile?.fileName ?? "file"}`)
+    }
+    return didSave
   }
 
   const saveFileInternal = async (fileKey: string): Promise<boolean> => {
@@ -1120,7 +1132,11 @@ function CodeEditor() {
 
     try {
       const saveResults = await Promise.all(savePromises)
-      return saveResults.every(Boolean)
+      const didSaveAll = saveResults.every(Boolean)
+      if (didSaveAll && filesToSave.length > 0) {
+        showToastEvent(`Saved ${filesToSave.length} file${filesToSave.length === 1 ? "" : "s"}`)
+      }
+      return didSaveAll
     } catch (error) {
       console.error("Failed to save all files:", error)
       await dialog.showAlert("Error", `Failed to save all files: ${error instanceof Error ? error.message : "Unknown error"}`)
@@ -2225,6 +2241,7 @@ function CodeEditor() {
     const fullPath = `${datapackDir}/${relativePath}`.replace(/\//g, "\\")
     try {
       await navigator.clipboard.writeText(fullPath)
+      showToastEvent("Copied full path")
     } catch (error) {
       console.error("Failed to copy path:", error)
       await dialog.showAlert("Error", `Failed to copy path: ${error instanceof Error ? error.message : "Unknown error"}`)
@@ -2235,6 +2252,7 @@ function CodeEditor() {
     const { relativePath } = parseFileKey(fileKey)
     try {
       await navigator.clipboard.writeText(relativePath)
+      showToastEvent("Copied relative path")
     } catch (error) {
       console.error("Failed to copy relative path:", error)
       await dialog.showAlert("Error", `Failed to copy relative path: ${error instanceof Error ? error.message : "Unknown error"}`)
