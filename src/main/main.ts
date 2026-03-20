@@ -10,6 +10,7 @@ import { registerWorkspaceHandlers } from './workspace'
 import workspaceManager from './workspace'
 import { registerDatapackHandlers, datapackManager } from './datapack'
 import { preferencesManager } from './preferences'
+import type { AppUpdateStatus } from './electron-api'
 
 // Replicating __dirname using ES Modules
 const __filename = fileURLToPath(import.meta.url)
@@ -35,19 +36,117 @@ let isAppQuitting = false
 let isQuitRequestPending = false
 let hasCheckedForUpdatesThisSession = false
 const fileWatchSubscriptions = new Map<string, parcelWatcher.AsyncSubscription>()
+const UPDATE_CHECK_TIMEOUT_MS = 10_000
+
+let appUpdateStatus: AppUpdateStatus = {
+  status: 'checking',
+  updateAvailable: false,
+}
+let updateCheckTimeoutId: ReturnType<typeof setTimeout> | null = null
+let isUpdateCheckFinalized = false
+
+const broadcastAppUpdateStatus = (): void => {
+  if (!mainWindow || mainWindow.isDestroyed() || mainWindow.webContents.isDestroyed()) return
+  mainWindow.webContents.send('app-update-status-changed', appUpdateStatus)
+}
+
+const clearUpdateCheckTimeout = (): void => {
+  if (!updateCheckTimeoutId) return
+  clearTimeout(updateCheckTimeoutId)
+  updateCheckTimeoutId = null
+}
+
+const setAppUpdateStatus = (status: AppUpdateStatus): void => {
+  appUpdateStatus = status
+  const isFinalState = status.status !== 'checking'
+
+  if (isFinalState) {
+    isUpdateCheckFinalized = true
+    clearUpdateCheckTimeout()
+  }
+
+  broadcastAppUpdateStatus()
+}
+
+const startUpdateCheckTimeout = (): void => {
+  clearUpdateCheckTimeout()
+  updateCheckTimeoutId = setTimeout(() => {
+    if (isUpdateCheckFinalized) return
+    setAppUpdateStatus({
+      status: 'failed',
+      updateAvailable: false,
+      message: `Update check timed out after ${UPDATE_CHECK_TIMEOUT_MS / 1000} seconds.`,
+    })
+  }, UPDATE_CHECK_TIMEOUT_MS)
+}
+
+autoUpdater.on('checking-for-update', () => {
+  if (isUpdateCheckFinalized) return
+  setAppUpdateStatus({
+    status: 'checking',
+    updateAvailable: false,
+  })
+})
+
+autoUpdater.on('update-not-available', () => {
+  if (isUpdateCheckFinalized) return
+  setAppUpdateStatus({
+    status: 'up-to-date',
+    updateAvailable: false,
+  })
+})
+
+autoUpdater.on('update-available', (updateInfo) => {
+  if (isUpdateCheckFinalized) return
+  setAppUpdateStatus({
+    status: 'update-available',
+    updateAvailable: true,
+    latestVersion: typeof updateInfo?.version === 'string' ? updateInfo.version : undefined,
+  })
+})
+
+autoUpdater.on('error', (error) => {
+  if (isUpdateCheckFinalized) return
+  setAppUpdateStatus({
+    status: 'failed',
+    updateAvailable: false,
+    message: error instanceof Error ? error.message : 'Unknown updater error',
+  })
+})
 
 const checkForUpdatesOncePerLaunch = async (): Promise<void> => {
   if (hasCheckedForUpdatesThisSession) return
   hasCheckedForUpdatesThisSession = true
 
-  if (!app.isPackaged) return
+  isUpdateCheckFinalized = false
+  setAppUpdateStatus({
+    status: 'checking',
+    updateAvailable: false,
+  })
+  startUpdateCheckTimeout()
+
+  if (!app.isPackaged) {
+    setAppUpdateStatus({
+      status: 'up-to-date',
+      updateAvailable: false,
+      message: 'Development build detected. Skipping update check.',
+    })
+    return
+  }
 
   autoUpdater.autoDownload = true
   autoUpdater.autoInstallOnAppQuit = true
 
   try {
-    await autoUpdater.checkForUpdatesAndNotify()
+    await autoUpdater.checkForUpdates()
   } catch (error) {
+    if (!isUpdateCheckFinalized) {
+      setAppUpdateStatus({
+        status: 'failed',
+        updateAvailable: false,
+        message: error instanceof Error ? error.message : 'Failed to check for updates.',
+      })
+    }
     console.error('Failed to check for app updates:', error)
   }
 }
@@ -251,6 +350,10 @@ ipcMain.handle('watch-file-stop-all', async () => {
   await stopAllFileWatches()
 })
 
+ipcMain.handle('app-update-status-get', () => {
+  return appUpdateStatus
+})
+
 // IPC handler to get or create default workspace
 ipcMain.handle('workspace-get-or-create-default', async () => {
   try {
@@ -401,7 +504,10 @@ app.on('ready', async () => {
       y: point.y - bounds.y,
     })
   })
-  mainWindow.webContents.on('did-finish-load', emitWindowStateChanged)
+  mainWindow.webContents.on('did-finish-load', () => {
+    emitWindowStateChanged()
+    broadcastAppUpdateStatus()
+  })
 
   mainWindow.on('close', (event) => {
     if (isAppQuitting) return

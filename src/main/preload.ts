@@ -2,7 +2,7 @@
 const { contextBridge, ipcRenderer } = require('electron')
 
 import type { IpcRendererEvent } from 'electron'
-import type { ElectronAPI, ExternalFileChangeEvent, ShortcutHandler, TitlebarContextMenuPosition } from './electron-api'
+import type { AppUpdateStatus, ElectronAPI, ExternalFileChangeEvent, ShortcutHandler, TitlebarContextMenuPosition } from './electron-api'
 import type { AppPreferences } from './preferences'
 
 const electronApi: ElectronAPI = {
@@ -168,7 +168,17 @@ const electronApi: ElectronAPI = {
     return () => {
       ipcRenderer.removeListener('file-external-change', listener)
     }
-  }
+  },
+  getAppUpdateStatus: () => {
+    return ipcRenderer.invoke('app-update-status-get') as Promise<AppUpdateStatus>
+  },
+  onAppUpdateStatusChange: (callback: (status: AppUpdateStatus) => void) => {
+    const listener = (_event: IpcRendererEvent, status: AppUpdateStatus) => callback(status)
+    ipcRenderer.on('app-update-status-changed', listener)
+    return () => {
+      ipcRenderer.removeListener('app-update-status-changed', listener)
+    }
+  },
 }
 
 contextBridge.exposeInMainWorld('electron', electronApi)

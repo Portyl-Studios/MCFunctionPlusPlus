@@ -27,6 +27,13 @@ export type AddDatapackExistingResult = {
 }
 
 export type ShortcutAction = 'quit' | 'open' | 'save' | 'saveAll' | 'close' | string
+export type AppUpdateStatusType = 'checking' | 'up-to-date' | 'update-available' | 'failed'
+export type AppUpdateStatus = {
+  status: AppUpdateStatusType
+  updateAvailable: boolean
+  latestVersion?: string
+  message?: string
+}
 
 export type ShortcutHandler = (event: unknown, action: ShortcutAction) => void
 export type QuitRequestedHandler = () => void
@@ -85,4 +92,6 @@ export interface ElectronAPI {
   watchFileStop: (watchId: string) => Promise<void>
   watchFileStopAll: () => Promise<void>
   onFileExternalChange: (callback: (event: ExternalFileChangeEvent) => void) => () => void
+  getAppUpdateStatus: () => Promise<AppUpdateStatus>
+  onAppUpdateStatusChange: (callback: (status: AppUpdateStatus) => void) => () => void
 }
