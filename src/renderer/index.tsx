@@ -30,6 +30,8 @@ import { DatapackTree } from "./datapacktree"
 import { Dialog } from "./overlays/dialog"
 import { useDialogRequest } from "./overlays/dialog-request"
 import { subscribeDialogRequests } from "./overlays/dialog-events"
+import { showToastEvent } from "./overlays/toast-events"
+import { ToastStack } from "./overlays/toast"
 import { ContextMenu } from "./overlays/contextmenu"
 import { useContextMenuRequest } from "./overlays/contextmenu-request"
 import { getDirFromPath, toRelativePaths, createFileKey, parseFileKey } from "./utils"
@@ -106,21 +108,6 @@ const appVersionLabel = `v${packageJson.version}`
 const defaultAppUpdateStatus: AppUpdateStatus = {
   status: "checking",
   updateAvailable: false,
-}
-
-const getUpdateStatusTitle = (status: AppUpdateStatus): string => {
-  switch (status.status) {
-    case "checking":
-      return "Checking for updates"
-    case "up-to-date":
-      return "App is up to date"
-    case "update-available":
-      return "Update available"
-    case "failed":
-      return "Update check failed"
-    default:
-      return "Update status"
-  }
 }
 
 const getUpdateStatusMessage = (status: AppUpdateStatus): string => {
@@ -390,7 +377,7 @@ function CodeEditor() {
   const [isHeaderMenuSixOpen, setIsHeaderMenuSixOpen] = useState(false)
   const [isFullScreen, setIsFullScreen] = useState(false)
   const [appUpdateStatus, setAppUpdateStatus] = useState<AppUpdateStatus>(defaultAppUpdateStatus)
-  const [isAppUpdateStatusAcknowledged, setIsAppUpdateStatusAcknowledged] = useState(false)
+  const lastAppUpdateToastKeyRef = useRef<string | null>(null)
   const [openedFiles, setOpenedFiles] = useState<OpenedFile[]>([])
   const [activeFile, setActiveFile] = useState<string | null>(null)
   const [modifiedFiles, setModifiedFiles] = useState<Set<string>>(new Set())
@@ -1918,20 +1905,33 @@ function CodeEditor() {
   useEffect(() => {
     let isDisposed = false
 
+    const notifyUpdateStatus = (status: AppUpdateStatus) => {
+      if (status.status === "checking") return
+
+      const toastKey = `${status.status}|${status.updateAvailable}|${status.latestVersion ?? ""}|${status.message ?? ""}`
+      if (lastAppUpdateToastKeyRef.current === toastKey) return
+
+      lastAppUpdateToastKeyRef.current = toastKey
+      showToastEvent(getUpdateStatusMessage(status))
+    }
+
     const syncInitialUpdateStatus = async () => {
       try {
         const status = await window.electron.getAppUpdateStatus()
         if (!isDisposed) {
           setAppUpdateStatus(status)
+          notifyUpdateStatus(status)
         }
       } catch (error) {
         console.error("Failed to get app update status:", error)
         if (!isDisposed) {
-          setAppUpdateStatus({
+          const failedStatus: AppUpdateStatus = {
             status: "failed",
             updateAvailable: false,
             message: "Unable to fetch update status from the main process.",
-          })
+          }
+          setAppUpdateStatus(failedStatus)
+          notifyUpdateStatus(failedStatus)
         }
       }
     }
@@ -1941,6 +1941,7 @@ function CodeEditor() {
     const unsubscribe = window.electron.onAppUpdateStatusChange((status: AppUpdateStatus) => {
       if (isDisposed) return
       setAppUpdateStatus(status)
+      notifyUpdateStatus(status)
     })
 
     return () => {
@@ -2024,8 +2025,6 @@ function CodeEditor() {
   const appUpdateTooltipContent = hasPendingAppUpdate
     ? `New version${appUpdateStatus.latestVersion ? ` (${appUpdateStatus.latestVersion})` : ""} detected. Restart MCFunction++ to install the update.`
     : ""
-  const showAppUpdateModal = !isAppUpdateStatusAcknowledged
-  const isAppUpdateCheckInProgress = appUpdateStatus.status === "checking"
   const activeFileRelativePathLabel = activeRelativePath
     ? activeRelativePath
       .replace(/\\/g, "/")
@@ -2926,34 +2925,7 @@ function CodeEditor() {
         <Dialog {...dialog.dialogProps} />
       )}
 
-      {showAppUpdateModal && (
-        <div className="fixed inset-0 z-9999 bg-black/60 flex items-center justify-center p-4" data-overlay-dialog="true">
-          <div className="w-full max-w-md rounded border border-codemirror-500 bg-codemirror-700 shadow-xl">
-            <div className="px-4 py-3 border-b border-codemirror-600 text-codemirror-50 font-semibold">
-              {getUpdateStatusTitle(appUpdateStatus)}
-            </div>
-
-            <div className="px-4 py-4 text-sm text-codemirror-100 flex items-start gap-3">
-              {isAppUpdateCheckInProgress && <span className="codicon codicon-loading animate-spin mt-0.5" />}
-              {!isAppUpdateCheckInProgress && appUpdateStatus.status === "up-to-date" && <span className="codicon codicon-check mt-0.5 text-green-300" />}
-              {!isAppUpdateCheckInProgress && appUpdateStatus.status === "update-available" && <span className="codicon codicon-warning mt-0.5 text-amber-300" />}
-              {!isAppUpdateCheckInProgress && appUpdateStatus.status === "failed" && <span className="codicon codicon-error mt-0.5 text-red-300" />}
-              <p>{getUpdateStatusMessage(appUpdateStatus)}</p>
-            </div>
-
-            <div className="px-4 py-3 border-t border-codemirror-600 flex justify-end">
-              <button
-                type="button"
-                className={`button ${isAppUpdateCheckInProgress ? "opacity-60 cursor-not-allowed hover:bg-codemirror-600" : ""}`}
-                disabled={isAppUpdateCheckInProgress}
-                onClick={() => setIsAppUpdateStatusAcknowledged(true)}
-              >
-                OK
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <ToastStack />
     </div>
   )
 }
