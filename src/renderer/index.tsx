@@ -730,6 +730,15 @@ function CodeEditor() {
     }
   }
 
+  const handleOpenBugReport = async () => {
+    try {
+      await window.electron.openExternal('https://github.com/Portyl-Studios/MCFunctionPlusPlus/issues')
+    } catch (error) {
+      console.error("Failed to open bug report page:", error)
+      await dialog.showAlert("Error", "Failed to open bug report page")
+    }
+  }
+
   const removeFileFromOpenedFiles = (fileKey: string) => {
     setOpenedFiles((prev) => prev.filter((f) => createFileKey(f.datapackDir, f.relativePath) !== fileKey))
   }
@@ -2500,7 +2509,7 @@ function CodeEditor() {
             items={[
               { label: "Preferences", onClick: undefined, disabled: true },
               {},
-              { label: "Report Bug", onClick: undefined, disabled: true },
+              { label: "Report Bug", onClick: handleOpenBugReport },
               {},
               { label: "Website", onClick: undefined, disabled: true },
               { label: "Help", onClick: undefined, disabled: true },
