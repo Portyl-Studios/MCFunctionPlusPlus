@@ -103,6 +103,28 @@ This will:
 1. Compile TypeScript files from `src/main/` to `out/main/`
 2. Bundle the React application from `src/renderer/` to `out/renderer/`
 
+### Testing
+
+Run the unit/integration suite:
+```bash
+npm run test
+```
+
+Run with coverage gate (phase-1 target modules):
+```bash
+npm run test:coverage
+```
+
+Run Playwright E2E scaffolding:
+```bash
+npm run test:e2e
+```
+
+Run aggregate CI test command:
+```bash
+npm run test:ci
+```
+
 ### Building Distributables
 
 Create a distributable executable for Windows:
@@ -138,21 +160,26 @@ You can generate icon formats from a single PNG using:
 
 ### Desktop CI/CD (Auto Version + Release)
 
-Four GitHub Actions workflows are used:
+Five GitHub Actions workflows are used:
 
-1. `.github/workflows/desktop-auto-version-and-tag.yml`
+1. `.github/workflows/desktop-test.yml`
+   - Trigger: push and pull request on `main`
+   - Action: runs `npm ci` and `npm run test:coverage`
+   - Purpose: enforce baseline test + coverage gate before release packaging
+
+2. `.github/workflows/desktop-auto-version-and-tag.yml`
    - Trigger: push to `main`
    - Action: reads `major.minor` from `package.json`, computes patch from existing tags (`vMAJOR.MINOR.*`), then sets `MAJOR.MINOR.NEXT_PATCH`
    - Behavior: patch resets to `0` automatically when you change major/minor to a new series
    - Behavior: if your pushed commit already has the exact target version (for example `2.1.0` when starting a new series), it only creates the tag and does not create an extra bump commit
-2. `.github/workflows/desktop-build-and-publish-nsis.yml`
+3. `.github/workflows/desktop-build-and-publish-nsis.yml`
    - Trigger: push of `vX.Y.Z` tag, or successful `Desktop Auto Version And Tag` on `main`
    - Action: builds and publishes Windows NSIS installer artifacts to GitHub Releases (`--publish always`)
    - Safeguard: skips publish when installer assets already exist for the target tag
-3. `.github/workflows/desktop-enforce-version-policy.yml`
+4. `.github/workflows/desktop-enforce-version-policy.yml`
    - Trigger: pull requests to `main` (and pushes to `main`)
    - Action: blocks manual patch edits for the same major/minor line, and enforces patch `0` when major/minor is changed manually
-4. `.github/workflows/desktop-ensure-github-release.yml`
+5. `.github/workflows/desktop-ensure-github-release.yml`
    - Trigger: automatic on successful `Desktop Auto Version And Tag` run for `main`
    - Action: creates or updates the GitHub Release for the tag created by version bumping
    - Reliability: uses the exact tag artifact exported by the versioning workflow to avoid tag-resolution race conditions

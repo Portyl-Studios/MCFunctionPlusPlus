@@ -100,6 +100,10 @@ jobs:
         if: steps.release-assets.outputs.should_publish == 'true'
         run: npm ci
 
+      - name: Run tests
+        if: steps.release-assets.outputs.should_publish == 'true'
+        run: npm run test:coverage
+
       - name: Build app
         if: steps.release-assets.outputs.should_publish == 'true'
         run: npm run build
