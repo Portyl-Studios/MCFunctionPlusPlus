@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain } from 'electron'
+import { app, BrowserWindow, ipcMain, shell } from 'electron'
 import { wait } from './utils'
 
 type WindowControlHandlerOptions = {
@@ -61,5 +61,9 @@ export const registerWindowControlHandlers = (
 
   ipcMain.handle('quit-cancelled', async () => {
     options.onQuitCancelled?.()
+  })
+
+  ipcMain.handle('open-external', async (_event, { url }) => {
+    await shell.openExternal(url)
   })
 }

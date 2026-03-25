@@ -94,4 +94,5 @@ export interface ElectronAPI {
   onFileExternalChange: (callback: (event: ExternalFileChangeEvent) => void) => () => void
   getAppUpdateStatus: () => Promise<AppUpdateStatus>
   onAppUpdateStatusChange: (callback: (status: AppUpdateStatus) => void) => () => void
+  openExternal: (url: string) => Promise<void>
 }

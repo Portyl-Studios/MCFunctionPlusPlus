@@ -179,6 +179,9 @@ const electronApi: ElectronAPI = {
       ipcRenderer.removeListener('app-update-status-changed', listener)
     }
   },
+  openExternal: (url: string) => {
+    return ipcRenderer.invoke('open-external', { url })
+  },
 }
 
 contextBridge.exposeInMainWorld('electron', electronApi)
