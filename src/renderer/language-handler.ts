@@ -10,7 +10,9 @@ import {
   mcfunctionContextExtension,
   mcfunctionLanguage,
   mcfunctionCompletionSource,
-  mcfunctionDiagnosticSource,
+  mcfunctionLiveLintingSource,
+  mcfunctionContextDiagnosticsSource,
+  getMcfunctionContextIndex,
   getActiveDatapackContextIndex,
 } from "./mcfunction-language"
 
@@ -93,9 +95,28 @@ const LANGUAGE_DEFINITIONS_INTERNAL: EditorLanguageDefinition[] = [
         maxRenderedOptions: 100,
       }),
       linter((view) => {
-        const diagnostics = mcfunctionDiagnosticSource(view, getActiveDatapackContextIndex())
+        const diagnostics = mcfunctionLiveLintingSource(view)
         onDiagnosticSummaryChange?.(summarizeDiagnostics(diagnostics))
         return diagnostics
+      }),
+      linter((view) => {
+        // Add context diagnostics (uninitialized objectives/tags)
+        try {
+          const contextIndex = getMcfunctionContextIndex(view.state)
+          const contextDiags = mcfunctionContextDiagnosticsSource(view, contextIndex)
+          return contextDiags
+        } catch {
+          return []
+        }
+      }, {
+        // Context updates are dispatched via state effects without doc changes.
+        // Re-run this linter when the derived context index instance changes.
+        needsRefresh: (update) => {
+          if (update.docChanged) return true
+          const previousContextIndex = getMcfunctionContextIndex(update.startState)
+          const currentContextIndex = getMcfunctionContextIndex(update.state)
+          return previousContextIndex !== currentContextIndex
+        },
       }),
       mcfunctionEnterAutocompleteKeymap,
       mcfunctionContextExtension,
@@ -201,11 +222,18 @@ export const computeDiagnosticSummaryForContent = (
   if (languageId === "mcfunction") {
     const state = EditorState.create({ doc: content })
     const virtualView = { state } as unknown as EditorView
-    const diagnostics = mcfunctionDiagnosticSource(
-      virtualView,
-      options?.mcfunctionContextIndex ?? getActiveDatapackContextIndex(),
-    )
-    return summarizeDiagnostics(diagnostics)
+    
+    // Always include live linting diagnostics
+    const liveLintingDiags = mcfunctionLiveLintingSource(virtualView)
+    
+    // Include context diagnostics if context index is available
+    let allDiagnostics = liveLintingDiags
+    if (options?.mcfunctionContextIndex) {
+      const contextDiags = mcfunctionContextDiagnosticsSource(virtualView, options.mcfunctionContextIndex)
+      allDiagnostics = [...liveLintingDiags, ...contextDiags]
+    }
+    
+    return summarizeDiagnostics(allDiagnostics)
   }
 
   if (languageId === "json") {

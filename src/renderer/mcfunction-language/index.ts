@@ -7,6 +7,8 @@ export {
   mcfunctionCompletionSource,
 } from "./autocomplete"
 export { mcfunctionDiagnosticSource } from "./diagnostics"
+export { mcfunctionLiveLintingSource } from "./live-linting-diagnostics"
+export { mcfunctionContextDiagnosticsSource } from "./context-diagnostics"
 export {
   mcfunctionContextExtension,
   getMcfunctionContextIndex,

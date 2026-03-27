@@ -37,6 +37,7 @@ const SCOREBOARD_PLAYER_ACTIONS = new Set(["set", "add", "remove", "get", "reset
 
 const workspaceResourcePaths = new Set<string>()
 const workspacePathsUpdatedEffect = StateEffect.define<void>()
+const contextIndexesUpdatedEffect = StateEffect.define<void>()
 let editorViewsToRefresh: Set<EditorView> = new Set()
 const datapackContextIndexes = new Map<string, McfunctionContextIndex>()
 let activeDatapackContextKey: string | null = null
@@ -273,10 +274,10 @@ const createResourcePathFromFilePath = (relativePath: string) => {
   return `${namespace}:${pathValue}`
 }
 
-const refreshRegisteredEditorViews = () => {
+const refreshRegisteredEditorViews = (effect: StateEffect<void>) => {
   for (const view of editorViewsToRefresh) {
     try {
-      view.dispatch({ effects: workspacePathsUpdatedEffect.of(undefined) })
+      view.dispatch({ effects: effect })
     } catch {
       editorViewsToRefresh.delete(view)
     }
@@ -292,7 +293,7 @@ export const setWorkspaceResourcePathsFromRelativePaths = (relativePaths: string
     workspaceResourcePaths.add(resourcePath)
   }
 
-  refreshRegisteredEditorViews()
+  refreshRegisteredEditorViews(workspacePathsUpdatedEffect.of(undefined))
 }
 
 const createEmptyIndex = (): McfunctionContextIndex => ({
@@ -490,7 +491,10 @@ const mcfunctionContextField = StateField.define<McfunctionContextState>({
     return parseDocContextIndex(state.doc)
   },
   update(value, transaction) {
-    if (transaction.docChanged || transaction.effects.some(e => e.is(workspacePathsUpdatedEffect))) {
+    if (
+      transaction.docChanged
+      || transaction.effects.some((e) => e.is(workspacePathsUpdatedEffect) || e.is(contextIndexesUpdatedEffect))
+    ) {
       return parseDocContextIndex(transaction.state.doc)
     }
     return value
@@ -527,32 +531,44 @@ export const parseMcfunctionContextIndex = (content: string, resourcePaths: Iter
 export const setDatapackContextIndex = (datapackDir: string, index: McfunctionContextIndex | null) => {
   if (!index) {
     datapackContextIndexes.delete(datapackDir)
+    refreshRegisteredEditorViews(contextIndexesUpdatedEffect.of(undefined))
     return
   }
 
   datapackContextIndexes.set(datapackDir, cloneContextIndex(index))
+  refreshRegisteredEditorViews(contextIndexesUpdatedEffect.of(undefined))
 }
 
 export const clearDatapackContextIndexes = () => {
   datapackContextIndexes.clear()
+  refreshRegisteredEditorViews(contextIndexesUpdatedEffect.of(undefined))
 }
 
 export const pruneDatapackContextIndexes = (datapackDirs: Iterable<string>) => {
   const allowedDatapackDirs = new Set(datapackDirs)
+  let changed = false
 
   for (const datapackDir of datapackContextIndexes.keys()) {
     if (!allowedDatapackDirs.has(datapackDir)) {
       datapackContextIndexes.delete(datapackDir)
+      changed = true
     }
   }
 
   if (activeDatapackContextKey && !allowedDatapackDirs.has(activeDatapackContextKey)) {
     activeDatapackContextKey = null
+    changed = true
+  }
+
+  if (changed) {
+    refreshRegisteredEditorViews(contextIndexesUpdatedEffect.of(undefined))
   }
 }
 
 export const setActiveDatapackContext = (datapackDir: string | null) => {
+  if (activeDatapackContextKey === datapackDir) return
   activeDatapackContextKey = datapackDir
+  refreshRegisteredEditorViews(contextIndexesUpdatedEffect.of(undefined))
 }
 
 export const getActiveDatapackContextIndex = (): McfunctionContextIndex => {
