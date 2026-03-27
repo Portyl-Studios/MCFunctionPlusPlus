@@ -131,7 +131,7 @@ const handleScoreboardLine = (index: McfunctionContextIndex, lineFrom: number, t
   const actionToken = tokens[2]?.value
 
   if (groupToken === "objectives") {
-    const objective = tokens[3]
+    const objective = actionToken === "setdisplay" ? tokens[4] : tokens[3]
     if (!objective || !isObjectiveToken(objective.value)) return
 
     if (pass === "collect") {
@@ -147,7 +147,7 @@ const handleScoreboardLine = (index: McfunctionContextIndex, lineFrom: number, t
       return
     }
 
-    if ((actionToken === "modify" || actionToken === "remove") && index.objectives.has(objective.value)) {
+    if (actionToken !== "add" && index.objectives.has(objective.value)) {
       addOccurrence(index, lineFrom, objective, "objective")
     }
     return
