@@ -420,6 +420,7 @@ function CodeEditor() {
   const isDialogOpenRef = useRef(dialog.isOpen)
   const openedFilesRef = useRef(openedFiles)
   const modifiedFilesRef = useRef(modifiedFiles)
+  const datapacksRef = useRef(datapacks)
   const {
     workspaceInfo,
     handleOpenWorkspace,
@@ -1325,6 +1326,10 @@ function CodeEditor() {
   }, [activeFile])
 
   useEffect(() => {
+    datapacksRef.current = datapacks
+  }, [datapacks])
+
+  useEffect(() => {
     void (async () => {
       try {
         await loadMcfunctionCommandSchema("1.21.11")
@@ -1479,7 +1484,7 @@ function CodeEditor() {
     const openedModifiedContentByFileKey = buildOpenedModifiedContentMap()
     const seenMcfunctionFileKeys = new Set<string>()
 
-    const datapack = datapacks.find(entry => entry.dir === datapackDir)
+    const datapack = datapacksRef.current.find(entry => entry.dir === datapackDir)
     if (!datapack) {
       setDatapackContextIndex(datapackDir, null)
       pruneFileContextParseCache(seenMcfunctionFileKeys, datapackDir)
