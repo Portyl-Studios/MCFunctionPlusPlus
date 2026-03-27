@@ -183,7 +183,7 @@ export const portylDarkEditorTheme = EditorView.theme({
     textDecorationColor: sage,
   },
   ".cm-context-mcfunction-tag": {
-    fontStyle: "italic",
+    color: "#a2c9ff",
   },
   
 }, {dark: true})
