@@ -87,7 +87,14 @@ const LANGUAGE_DEFINITIONS_INTERNAL: EditorLanguageDefinition[] = [
     codicon: "codicon-file-code",
     extensions: [".mcfunction"],
     supportsDiagnostics: true,
-    createExtensions: (onDiagnosticSummaryChange) => [
+    createExtensions: (onDiagnosticSummaryChange) => {
+      const emitMcfunctionSummary = (view: EditorView) => {
+        const liveDiagnostics = mcfunctionLiveLintingSource(view)
+        const contextDiagnostics = mcfunctionContextDiagnosticsSource(view, getMcfunctionContextIndex(view.state))
+        onDiagnosticSummaryChange?.(summarizeDiagnostics([...liveDiagnostics, ...contextDiagnostics]))
+      }
+
+      return [
       autocompletion({
         override: [mcfunctionCompletionSource],
         activateOnTyping: true,
@@ -96,7 +103,7 @@ const LANGUAGE_DEFINITIONS_INTERNAL: EditorLanguageDefinition[] = [
       }),
       linter((view) => {
         const diagnostics = mcfunctionLiveLintingSource(view)
-        onDiagnosticSummaryChange?.(summarizeDiagnostics(diagnostics))
+        emitMcfunctionSummary(view)
         return diagnostics
       }),
       linter((view) => {
@@ -104,8 +111,10 @@ const LANGUAGE_DEFINITIONS_INTERNAL: EditorLanguageDefinition[] = [
         try {
           const contextIndex = getMcfunctionContextIndex(view.state)
           const contextDiags = mcfunctionContextDiagnosticsSource(view, contextIndex)
+          emitMcfunctionSummary(view)
           return contextDiags
         } catch {
+          emitMcfunctionSummary(view)
           return []
         }
       }, {
@@ -121,7 +130,8 @@ const LANGUAGE_DEFINITIONS_INTERNAL: EditorLanguageDefinition[] = [
       mcfunctionEnterAutocompleteKeymap,
       mcfunctionContextExtension,
       mcfunctionLanguage,
-    ],
+      ]
+    },
   },
   {
     id: "json",
