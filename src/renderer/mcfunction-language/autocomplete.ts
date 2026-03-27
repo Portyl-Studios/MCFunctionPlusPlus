@@ -14,6 +14,27 @@ import { getActiveDatapackContextIndex, getMcfunctionContextIndex, mergeMcfuncti
 
 const SCORE_HOLDER_REGEX = /^(@[a-z](?:\[[^\]]*\])?|\*|[\$#A-Za-z0-9_+.=-]+)$/i
 const OBJECTIVE_REGEX = /^[A-Za-z0-9_.+-]{1,16}$/
+const SCOREBOARD_SLOT_SUGGESTIONS = [
+  "list",
+  "sidebar",
+  "below_name",
+  "sidebar.team.black",
+  "sidebar.team.dark_blue",
+  "sidebar.team.dark_green",
+  "sidebar.team.dark_aqua",
+  "sidebar.team.dark_red",
+  "sidebar.team.dark_purple",
+  "sidebar.team.gold",
+  "sidebar.team.gray",
+  "sidebar.team.dark_gray",
+  "sidebar.team.blue",
+  "sidebar.team.green",
+  "sidebar.team.aqua",
+  "sidebar.team.red",
+  "sidebar.team.light_purple",
+  "sidebar.team.yellow",
+  "sidebar.team.white",
+]
 
 type CompletionContextHints = {
   previousToken?: string
@@ -69,6 +90,7 @@ const FALLBACK_SUGGESTIONS = {
     "minecraft:vec3": ["~ ~ ~", "^ ^ ^", "0 64 0"],
     "minecraft:rotation": ["~ ~", "^ ^", "0 0"],
     "minecraft:score_holder": ["@a", "@e", "@p", "@s"],
+    "minecraft:scoreboard_slot": SCOREBOARD_SLOT_SUGGESTIONS,
     "minecraft:message": ["\"text\""],
     "minecraft:nbt_compound_tag": ["{}"],
     "minecraft:nbt_path": ["path"],
@@ -533,6 +555,29 @@ export const mcfunctionCompletionSource = (context: CompletionContext): Completi
         from,
         options,
         validFor: /^[a-z0-9_./:-]*$/i,
+      }
+    }
+  }
+
+  if (
+    pathTokens[0] === "scoreboard"
+    && pathTokens[1] === "objectives"
+    && pathTokens[2] === "setdisplay"
+    && pathTokens.length === 3
+  ) {
+    const options = SCOREBOARD_SLOT_SUGGESTIONS
+      .filter((slot) => !activeToken || normalizeCompletionForMatch(slot).startsWith(normalizeCompletionForMatch(activeToken)))
+      .map((slot) => ({
+        label: slot,
+        type: "enum" as const,
+        info: "Scoreboard display slot",
+      }))
+
+    if (options.length > 0) {
+      return {
+        from,
+        options,
+        validFor: /^[a-z0-9_.]*$/i,
       }
     }
   }
