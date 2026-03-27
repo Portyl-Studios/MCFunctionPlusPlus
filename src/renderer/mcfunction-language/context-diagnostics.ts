@@ -139,10 +139,11 @@ const handleTagCommandSymbols = (
     return
   }
 
-  const wasRegistered = registeredTags.has(tagName)
-  if (!wasRegistered) return
+  if (registeredTags.has(tagName)) return
 
-  // Tag is registered, don't error for add
+  const from = lineFrom + tagNameToken.start
+  const to = lineFrom + tagNameToken.end
+  pushUnknownTagDiagnostic(diagnostics, from, to, tagName)
 }
 
 const handleSelectorTagSymbols = (

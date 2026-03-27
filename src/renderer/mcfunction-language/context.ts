@@ -203,13 +203,10 @@ const handleTagCommandUsage = (index: McfunctionContextIndex, lineFrom: number, 
     return
   }
 
-  const wasRegistered = index.tags.has(tagName)
-  if (wasRegistered) {
-    addOccurrence(index, lineFrom, {
-      ...tagNameToken,
-      value: tagName,
-    }, "tag")
-  }
+  addOccurrence(index, lineFrom, {
+    ...tagNameToken,
+    value: tagName,
+  }, "tag")
 }
 
 const handleSelectorTagUsage = (index: McfunctionContextIndex, lineFrom: number, lineText: string, pass: ContextParsePass) => {
