@@ -7,7 +7,7 @@ import type { McfunctionContextIndex } from "./context"
 const OBJECTIVE_REGEX = /^[A-Za-z0-9_.+-]{1,16}$/
 const TAG_NAME_REGEX = /^[A-Za-z0-9_./:-]+$/
 const SELECTOR_TAG_GLOBAL_REGEX = /(?:^|[\[,])\s*tag\s*=\s*(!?)([A-Za-z0-9_./:-]+)/gi
-const SCORE_COMPARISON_OPERATORS = new Set(["<", "<=", "=", ">=", ">", "matches"])
+const SCORE_COMPARISON_OPERATORS = new Set(["<", "<=", "=", ">=", ">"])
 const SCOREBOARD_PLAYER_ACTIONS = new Set(["set", "add", "remove", "get", "reset", "enable"])
 
 const isCommentLine = (text: string) => /^\s*#/.test(text)
@@ -114,6 +114,8 @@ const handleInlineScoreSymbols = (
     handleObjectiveToken(registeredObjectives, diagnostics, lineFrom, tokens[i + 2])
 
     const operationToken = tokens[i + 3]?.value
+    if (operationToken === "matches") continue
+
     if (operationToken && SCORE_COMPARISON_OPERATORS.has(operationToken)) {
       handleObjectiveToken(registeredObjectives, diagnostics, lineFrom, tokens[i + 5])
     }

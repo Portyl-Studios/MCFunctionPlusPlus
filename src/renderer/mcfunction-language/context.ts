@@ -32,7 +32,7 @@ const RESOURCE_PATH_GLOBAL_REGEX = /#?[a-z_][a-z0-9_.-]*:[a-z0-9_./-]+/gi
 const TAG_NAME_REGEX = /^[A-Za-z0-9_./:-]+$/
 const SELECTOR_TAG_GLOBAL_REGEX = /(?:^|[\[,])\s*tag\s*=\s*(!?)([A-Za-z0-9_./:-]+)/gi
 const FUNCTION_FILE_PATH_REGEX = /^data\/([a-z0-9_.-]+)\/functions?\/(.+)\.mcfunction$/i
-const SCORE_COMPARISON_OPERATORS = new Set(["<", "<=", "=", ">=", ">", "matches"])
+const SCORE_COMPARISON_OPERATORS = new Set(["<", "<=", "=", ">=", ">"])
 const SCOREBOARD_PLAYER_ACTIONS = new Set(["set", "add", "remove", "get", "reset", "enable"])
 
 const workspaceResourcePaths = new Set<string>()
@@ -172,6 +172,8 @@ const handleInlineScoreUsage = (index: McfunctionContextIndex, lineFrom: number,
     handleScorePair(index, lineFrom, tokens[i + 1], tokens[i + 2], pass)
 
     const operationToken = tokens[i + 3]?.value
+    if (operationToken === "matches") continue
+
     if (operationToken && SCORE_COMPARISON_OPERATORS.has(operationToken)) {
       handleScorePair(index, lineFrom, tokens[i + 4], tokens[i + 5], pass)
     }
