@@ -172,6 +172,19 @@ const electronApi: ElectronAPI = {
   getAppUpdateStatus: () => {
     return ipcRenderer.invoke('app-update-status-get') as Promise<AppUpdateStatus>
   },
+  checkAppUpdateNow: () => {
+    return ipcRenderer.invoke('app-update-check-now') as Promise<AppUpdateStatus>
+  },
+  prepareAppUpdateInstallNow: () => {
+    return ipcRenderer.invoke('app-update-install-now') as Promise<void>
+  },
+  onAppUpdateDownloadProgress: (callback: (progressPercent: number) => void) => {
+    const listener = (_event: IpcRendererEvent, progressPercent: number) => callback(progressPercent)
+    ipcRenderer.on('app-update-download-progress', listener)
+    return () => {
+      ipcRenderer.removeListener('app-update-download-progress', listener)
+    }
+  },
   onAppUpdateStatusChange: (callback: (status: AppUpdateStatus) => void) => {
     const listener = (_event: IpcRendererEvent, status: AppUpdateStatus) => callback(status)
     ipcRenderer.on('app-update-status-changed', listener)

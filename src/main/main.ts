@@ -12,10 +12,11 @@ import { registerDatapackHandlers, datapackManager } from './datapack'
 import { preferencesManager } from './preferences'
 import {
   broadcastAppUpdateStatus,
-  checkForUpdatesOncePerLaunch,
+  registerAppUpdateDownloadProgressBroadcaster,
   registerAutoUpdaterHandlers,
   registerAppUpdateStatusBroadcaster,
 } from './auto-updater'
+import { quitAppRespectingInstallFlag } from './quit-manager'
 
 // Replicating __dirname using ES Modules
 const __filename = fileURLToPath(import.meta.url)
@@ -183,6 +184,7 @@ registerWindowControlHandlers(() => mainWindow, {
   onQuitConfirmed: async () => {
     isAppQuitting = true
     await stopAllFileWatchesSafely('custom quit')
+    return false
   },
   onQuitCancelled: () => {
     isQuitRequestPending = false
@@ -364,6 +366,11 @@ app.on('ready', async () => {
     mainWindow.webContents.send('app-update-status-changed', status)
   })
 
+  registerAppUpdateDownloadProgressBroadcaster((progressPercent) => {
+    if (!mainWindow || mainWindow.isDestroyed() || mainWindow.webContents.isDestroyed()) return
+    mainWindow.webContents.send('app-update-download-progress', progressPercent)
+  })
+
   // In development, use Vite dev server; in production, load built files
   if (process.env.VITE_DEV_SERVER_URL) {
     mainWindow.loadURL(process.env.VITE_DEV_SERVER_URL)
@@ -400,6 +407,7 @@ app.on('ready', async () => {
   mainWindow.webContents.on('did-finish-load', () => {
     emitWindowStateChanged()
     broadcastAppUpdateStatus(mainWindow)
+    // set initial app update status
   })
 
   mainWindow.on('close', (event) => {
@@ -410,7 +418,7 @@ app.on('ready', async () => {
 
     if (mainWindow?.isDestroyed() || mainWindow?.webContents.isDestroyed()) {
       isAppQuitting = true
-      app.quit()
+      quitAppRespectingInstallFlag()
       return
     }
 
@@ -420,13 +428,12 @@ app.on('ready', async () => {
 
   mainWindow.on('closed', () => {
     registerAppUpdateStatusBroadcaster(null)
+    registerAppUpdateDownloadProgressBroadcaster(null)
     mainWindow = null
   })
 
   // Register focused-window shortcuts
   setupWindowShortcuts(mainWindow)
-
-  void checkForUpdatesOncePerLaunch()
 })
 
 app.on('before-quit', () => {
@@ -434,6 +441,10 @@ app.on('before-quit', () => {
   void stopAllFileWatchesSafely('before-quit')
 })
 
+app.on('will-quit', () => {
+  isQuitRequestPending = false
+})
+
 app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') app.quit()
+  if (process.platform !== 'darwin') quitAppRespectingInstallFlag()
 })

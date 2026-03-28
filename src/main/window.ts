@@ -1,9 +1,10 @@
 import { app, BrowserWindow, ipcMain, shell } from 'electron'
 import { wait } from './utils'
+import { quitAppRespectingInstallFlag } from './quit-manager'
 
 type WindowControlHandlerOptions = {
   onQuitCancelled?: () => void
-  onQuitConfirmed?: () => Promise<void> | void
+  onQuitConfirmed?: () => Promise<boolean> | boolean
 }
 
 const getIsWindowExpanded = (mainWindow: BrowserWindow) => {
@@ -46,7 +47,10 @@ export const registerWindowControlHandlers = (
   ipcMain.handle('quit', async () => {
     const mainWindow = getMainWindow()
 
-    await options.onQuitConfirmed?.()
+    const wasHandled = await options.onQuitConfirmed?.()
+    if (wasHandled) {
+      return
+    }
 
     if (mainWindow && !mainWindow.isDestroyed()) {
       await wait(350)
@@ -56,7 +60,7 @@ export const registerWindowControlHandlers = (
       }
     }
 
-    app.quit()
+    quitAppRespectingInstallFlag()
   })
 
   ipcMain.handle('quit-cancelled', async () => {

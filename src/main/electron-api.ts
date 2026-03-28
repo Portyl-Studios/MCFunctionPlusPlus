@@ -31,6 +31,7 @@ export type AppUpdateStatusType = 'checking' | 'up-to-date' | 'update-available'
 export type AppUpdateStatus = {
   status: AppUpdateStatusType
   updateAvailable: boolean
+  downloadCompleted?: boolean
   latestVersion?: string
   message?: string
 }
@@ -93,6 +94,9 @@ export interface ElectronAPI {
   watchFileStopAll: () => Promise<void>
   onFileExternalChange: (callback: (event: ExternalFileChangeEvent) => void) => () => void
   getAppUpdateStatus: () => Promise<AppUpdateStatus>
+  checkAppUpdateNow: () => Promise<AppUpdateStatus>
+  prepareAppUpdateInstallNow: () => Promise<void>
+  onAppUpdateDownloadProgress: (callback: (progressPercent: number) => void) => () => void
   onAppUpdateStatusChange: (callback: (status: AppUpdateStatus) => void) => () => void
   openExternal: (url: string) => Promise<void>
 }

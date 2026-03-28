@@ -50,7 +50,8 @@ import { detectEditorLanguage, getLanguageProcessingExtensions, type DiagnosticS
 import { runGlobalDiagnosticsScan } from "./diagnostics/global-diagnostics"
 import { Tooltip } from "./overlays/tooltip"
 import { useExternalFileWatcher } from "./use-external-file-watcher"
-import type { AppUpdateStatus, ShortcutAction } from "../main/electron-api"
+import { useAppUpdate } from "./use-app-update"
+import type { ShortcutAction } from "../main/electron-api"
 
 type DatapackEntry = {
   dir: string
@@ -105,29 +106,6 @@ const defaultDiagnosticSummary: DiagnosticSummary = {
 }
 
 const appVersionLabel = `v${packageJson.version}`
-const defaultAppUpdateStatus: AppUpdateStatus = {
-  status: "checking",
-  updateAvailable: false,
-}
-
-const getUpdateStatusMessage = (status: AppUpdateStatus): string => {
-  if (status.status === "checking") {
-    return "MCFunction++ is checking for updates."
-  }
-
-  if (status.status === "up-to-date") {
-    return status.message ?? "You are running the latest version."
-  }
-
-  if (status.status === "update-available") {
-    if (status.latestVersion) {
-      return `Version ${status.latestVersion} is available. Restart the app to install it.`
-    }
-    return "A new version is available. Restart the app to install it."
-  }
-
-  return status.message ?? "Update check did not complete within 10 seconds."
-}
 
 const getCursorMarkerInfo = (state: EditorState): CursorMarkerInfo => {
   const selection = state.selection.main
@@ -376,8 +354,6 @@ function CodeEditor() {
   const [isHeaderMenuFiveOpen, setIsHeaderMenuFiveOpen] = useState(false)
   const [isHeaderMenuSixOpen, setIsHeaderMenuSixOpen] = useState(false)
   const [isFullScreen, setIsFullScreen] = useState(false)
-  const [appUpdateStatus, setAppUpdateStatus] = useState<AppUpdateStatus>(defaultAppUpdateStatus)
-  const lastAppUpdateToastKeyRef = useRef<string | null>(null)
   const [openedFiles, setOpenedFiles] = useState<OpenedFile[]>([])
   const [activeFile, setActiveFile] = useState<string | null>(null)
   const [modifiedFiles, setModifiedFiles] = useState<Set<string>>(new Set())
@@ -430,6 +406,17 @@ function CodeEditor() {
     handleOpenDefaultWorkspace,
     handleGetDatapacks,
   } = useWorkspace()
+
+  const {
+    hasPendingAppUpdate,
+    appUpdateTooltipContent,
+    isManualUpdateCheckInProgress,
+    handleManualUpdateCheck,
+  } = useAppUpdate({
+    dialog,
+    modifiedFilesCount: modifiedFiles.size,
+    saveAllFiles,
+  })
 
   useEffect(() => {
     openDialogRef.current = dialog.openDialog
@@ -635,7 +622,7 @@ function CodeEditor() {
     if (modifiedFiles.size === 0) {
       const confirmed = await dialog.showConfirm("Quit", "Are you sure you want to quit?")
       if (confirmed) {
-        ;window.electron.quit()
+        await window.electron.quit()
       } else {
         notifyQuitCancelled()
       }
@@ -654,7 +641,7 @@ function CodeEditor() {
             onClick: async () => {
               const didSave = await saveAllFiles()
               if (didSave) {
-                ;window.electron.quit()
+                await window.electron.quit()
               } else {
                 notifyQuitCancelled()
               }
@@ -663,8 +650,8 @@ function CodeEditor() {
           },
           {
             label: "Discard",
-            onClick: () => {
-              ;window.electron.quit()
+            onClick: async () => {
+              await window.electron.quit()
               resolve()
             },
           },
@@ -679,8 +666,6 @@ function CodeEditor() {
       })
     })
   }
-
-
 
   const handleRefreshExplorer = async () => {
     if (!datapacks.length) return
@@ -1121,7 +1106,7 @@ function CodeEditor() {
     autoSaveTimersRef.current.set(fileKey, timerId)
   }
 
-  const saveAllFiles = async (): Promise<boolean> => {
+  async function saveAllFiles(): Promise<boolean> {
     const filesToSave: Array<{ fileKey: string; contents: string }> = []
 
     // Collect all modified files with their cached content
@@ -1933,56 +1918,6 @@ function CodeEditor() {
   }, [])
 
   useEffect(() => {
-    let isDisposed = false
-
-    const notifyUpdateStatus = (status: AppUpdateStatus) => {
-      if (status.status === "checking") return
-
-      const toastKey = `${status.status}|${status.updateAvailable}|${status.latestVersion ?? ""}|${status.message ?? ""}`
-      if (lastAppUpdateToastKeyRef.current === toastKey) return
-
-      lastAppUpdateToastKeyRef.current = toastKey
-      showToastEvent(getUpdateStatusMessage(status))
-    }
-
-    const syncInitialUpdateStatus = async () => {
-      try {
-        const status = await window.electron.getAppUpdateStatus()
-        if (!isDisposed) {
-          setAppUpdateStatus(status)
-          notifyUpdateStatus(status)
-        }
-      } catch (error) {
-        console.error("Failed to get app update status:", error)
-        if (!isDisposed) {
-          const failedStatus: AppUpdateStatus = {
-            status: "failed",
-            updateAvailable: false,
-            message: "Unable to fetch update status from the main process.",
-          }
-          setAppUpdateStatus(failedStatus)
-          notifyUpdateStatus(failedStatus)
-        }
-      }
-    }
-
-    void syncInitialUpdateStatus()
-
-    const unsubscribe = window.electron.onAppUpdateStatusChange((status: AppUpdateStatus) => {
-      if (isDisposed) return
-      setAppUpdateStatus(status)
-      notifyUpdateStatus(status)
-    })
-
-    return () => {
-      isDisposed = true
-      if (typeof unsubscribe === "function") {
-        unsubscribe()
-      }
-    }
-  }, [])
-
-  useEffect(() => {
     const unsubscribeQuitRequested = window.electron.onQuitRequested(() => {
       void handleQuitWithConfirm(true)
     })
@@ -2051,10 +1986,6 @@ function CodeEditor() {
   const activeRelativePath = activeFile ? parseFileKey(activeFile).relativePath : null
   const activeLanguage = detectEditorLanguage(activeRelativePath)
   const showDiagnosticSummary = activeLanguage.supportsDiagnostics
-  const hasPendingAppUpdate = appUpdateStatus.updateAvailable
-  const appUpdateTooltipContent = hasPendingAppUpdate
-    ? `New version${appUpdateStatus.latestVersion ? ` (${appUpdateStatus.latestVersion})` : ""} detected. Restart MCFunction++ to install the update.`
-    : ""
   const activeFileRelativePathLabel = activeRelativePath
     ? activeRelativePath
       .replace(/\\/g, "/")
@@ -2476,7 +2407,7 @@ function CodeEditor() {
       icon: "codicon-gear",
       visible: visibleRightPanelTabs.has("settings"),
       content: (
-        <div className="text-sm text-codemirror-300">Application settings will appear here</div>
+        <div className="text-sm text-codemirror-300">Update controls are available from the footer version button.</div>
       )
     }
   ]
@@ -2910,7 +2841,13 @@ function CodeEditor() {
         <div className="footer-element">Made by touchportyl</div>
 
         <Tooltip content={appUpdateTooltipContent} disabled={!hasPendingAppUpdate}>
-          <div className="footer-element">
+          <div
+            className={`footer-element ${isManualUpdateCheckInProgress ? "opacity-60 cursor-not-allowed" : "cursor-pointer hover:bg-codemirror-highlight"}`}
+            onClick={() => {
+              if (isManualUpdateCheckInProgress) return
+              void handleManualUpdateCheck()
+            }}
+          >
             {hasPendingAppUpdate && <span className="codicon codicon-warning text-amber-300" />}
             {appVersionLabel}
           </div>

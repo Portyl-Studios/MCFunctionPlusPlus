@@ -21,9 +21,14 @@ interface WindowPreferences {
   isFullScreen?: boolean
 }
 
+interface UpdatesPreferences {
+  deferredVersion?: string
+}
+
 interface AppPreferences {
   panels?: PanelPreferences
   window?: WindowPreferences
+  updates?: UpdatesPreferences
 }
 
 class PreferencesManager {
@@ -95,4 +100,4 @@ class PreferencesManager {
 }
 
 export const preferencesManager = new PreferencesManager()
-export type { AppPreferences, PanelPreferences, WindowPreferences }
+export type { AppPreferences, PanelPreferences, WindowPreferences, UpdatesPreferences }
