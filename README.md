@@ -138,79 +138,30 @@ You can generate icon formats from a single PNG using:
 
 ### Desktop CI/CD (Auto Version + Release)
 
-Four GitHub Actions workflows are used:
+The `.github/workflows/desktop-release-pipeline.yml` workflow automates version bumping and release publishing on pushes to `main`:
 
-1. `.github/workflows/desktop-auto-version-and-tag.yml`
-   - Trigger: push to `main`
-   - Action: reads `major.minor` from `package.json`, computes patch from existing tags (`vMAJOR.MINOR.*`), then sets `MAJOR.MINOR.NEXT_PATCH`
-   - Behavior: patch resets to `0` automatically when you change major/minor to a new series
-   - Behavior: if your pushed commit already has the exact target version (for example `2.1.0` when starting a new series), it only creates the tag and does not create an extra bump commit
-2. `.github/workflows/desktop-build-and-publish-nsis.yml`
-   - Trigger: push of `vX.Y.Z` tag, or successful `Desktop Auto Version And Tag` on `main`
-   - Action: builds and publishes Windows NSIS installer artifacts to GitHub Releases (`--publish always`)
-   - Safeguard: skips publish when installer assets already exist for the target tag
-3. `.github/workflows/desktop-enforce-version-policy.yml`
-   - Trigger: pull requests to `main` (and pushes to `main`)
-   - Action: blocks manual patch edits for the same major/minor line, and enforces patch `0` when major/minor is changed manually
-4. `.github/workflows/desktop-ensure-github-release.yml`
-   - Trigger: automatic on successful `Desktop Auto Version And Tag` run for `main`
-   - Action: creates or updates the GitHub Release for the tag created by version bumping
-   - Reliability: uses the exact tag artifact exported by the versioning workflow to avoid tag-resolution race conditions
+- **Trigger**: Pushes to `main` by a non-bot actor
+- **Version**: Reads `major.minor` from `package.json`; auto-computes patch from existing tags (`vMAJOR.MINOR.*`), ignoring user-provided patch
+- **Bump**: Commits version bump to `package.json` if version changes, with `[skip ci]` to prevent re-triggering
+- **Tag & Release**: Creates tag `vX.Y.Z` and GitHub Release
+- **Assets**: Builds and publishes NSIS artifacts (`.exe`, `.exe.blockmap`, `latest.yml`) if any are missing
+- **Safeguard**: Skips publish if all required assets exist for the target tag
 
 ### Tip: Push Without Triggering Release Workflows
 
-If you need to push changes to `main` without triggering CI/release workflows, include a skip token in your commit message:
-
+Add `[skip ci]` to your commit message to prevent the workflow from running:
 ```bash
 git commit -m "docs: update README [skip ci]"
 git push
 ```
 
-`[skip ci]` (or `[ci skip]`) prevents push and pull-request workflows from running for that commit.
-Note: if you push a version tag separately, tag-triggered release workflows can still run.
-
-### Required Repository Setup
-
-1. Ensure Actions permission allows write access to repository contents.
-2. Ensure branch protection allows GitHub Actions to push version bump commits to `main`.
-3. Add `Desktop Enforce Version Policy / prevent-manual-patch-bumps` as a required status check in branch protection for `main`.
-4. No extra token is required for public-repo releases when using `${{ secrets.GITHUB_TOKEN }}`.
-5. Optional (recommended for production): configure code-signing secrets and certs for trusted Windows installers.
-
 ### How to Choose Your Major/Minor
 
-1. Before pushing to `main`, set `package.json` version to the major/minor line you want, using patch `0` (example: `2.4.0`).
-2. Push to `main`.
-3. The workflow creates `v2.4.0` for the first release in that series, then `v2.4.1`, `v2.4.2`, etc. on subsequent pushes.
-
-### Automatic Release Creation Flow
-
-1. Push to `main`.
-2. `Desktop Auto Version And Tag` computes/creates the next tag (`vX.Y.Z`).
-3. `Desktop Ensure GitHub Release` automatically creates or updates the GitHub Release for that tag.
-4. `Desktop Build And Publish NSIS Installer` publishes installer assets for that tag.
+Before pushing to `main`, set `package.json` version to the major/minor line you want, using patch `0` (example: `2.4.0`). The pipeline creates `v2.4.0` for the first release in that series, then `v2.4.1`, `v2.4.2`, etc. on subsequent pushes.
 
 ### Web Deployment (Firebase Hosting)
 
-The React renderer can also be deployed as a standalone web app using Firebase Hosting.
-
-#### Prerequisites
-- [Firebase CLI](https://firebase.google.com/docs/cli): `npm install -g firebase-tools`
-- Firebase project (configured in `.firebaserc`)
-
-#### Deploy to Firebase
-
-1. Build the application:
-   ```bash
-   npm run build
-   ```
-
-2. Deploy to Firebase Hosting:
-   ```bash
-   firebase deploy
-   ```
-
-The built React app from `out/renderer/` will be deployed to your Firebase hosting URL.
+Web deployment is on the roadmap. It will only be implemented once the main application is fully featured.
 
 ### Minecraft Source Files
 
