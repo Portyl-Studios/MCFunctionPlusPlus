@@ -1,0 +1,199 @@
+name: Desktop Release Pipeline
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+concurrency:
+  group: desktop-release-pipeline-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && github.actor != 'github-actions[bot]' }}
+    runs-on: windows-latest
+    permissions:
+      actions: read
+      contents: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Setup Node.js
+        uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Resolve next version
+        id: bump
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          CURRENT_VERSION=$(node -p "require('./package.json').version")
+
+          if [[ ! "$CURRENT_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "package.json version must use MAJOR.MINOR.PATCH"
+            exit 1
+          fi
+
+          MAJOR=$(echo "$CURRENT_VERSION" | cut -d. -f1)
+          MINOR=$(echo "$CURRENT_VERSION" | cut -d. -f2)
+
+          NEXT_PATCH=$(git tag --list "v${MAJOR}.${MINOR}.*" | node -e "const fs=require('fs');const tags=fs.readFileSync(0,'utf8').trim().split(/\\r?\\n/).filter(Boolean);let max=-1;for(const tag of tags){const m=tag.match(/^v\\d+\\.\\d+\\.(\\d+)$/);if(m)max=Math.max(max,Number(m[1]));}process.stdout.write(String(max+1));")
+          TARGET_VERSION="${MAJOR}.${MINOR}.${NEXT_PATCH}"
+          TARGET_TAG="v${TARGET_VERSION}"
+
+          echo "current_version=$CURRENT_VERSION" >> $GITHUB_OUTPUT
+          echo "version=$TARGET_VERSION" >> $GITHUB_OUTPUT
+          echo "tag=$TARGET_TAG" >> $GITHUB_OUTPUT
+
+          if [ "$CURRENT_VERSION" = "$TARGET_VERSION" ]; then
+            echo "changed=false" >> $GITHUB_OUTPUT
+          else
+            npm version "$TARGET_VERSION" --no-git-tag-version
+            echo "changed=true" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Commit and push version bump
+        if: steps.bump.outputs.changed == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add package.json package-lock.json
+          git commit -m "chore(release): ${{ steps.bump.outputs.tag }} [skip ci]"
+          git push origin main
+
+      - name: Create and push tag
+        id: release-tag
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG="${{ steps.bump.outputs.tag }}"
+          echo "tag=$TAG" >> $GITHUB_OUTPUT
+
+          if git rev-parse "$TAG" >/dev/null 2>&1; then
+            echo "Tag $TAG already exists, skipping"
+            exit 0
+          fi
+
+          git tag "$TAG"
+          git push origin "$TAG"
+
+      - name: Ensure GitHub release exists
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd
+        with:
+          script: |
+            const tag = `${{ steps.release-tag.outputs.tag }}`;
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+
+            let existingRelease = null;
+            try {
+              const response = await github.rest.repos.getReleaseByTag({ owner, repo, tag });
+              existingRelease = response.data;
+            } catch (error) {
+              if (error.status !== 404) throw error;
+            }
+
+            if (existingRelease) {
+              await github.rest.repos.updateRelease({
+                owner,
+                repo,
+                release_id: existingRelease.id,
+                tag_name: tag,
+                name: `MCFunction++ ${tag}`,
+                draft: false,
+                prerelease: false,
+                make_latest: 'true',
+              });
+              core.info(`Updated existing release for ${tag}`);
+            } else {
+              await github.rest.repos.createRelease({
+                owner,
+                repo,
+                tag_name: tag,
+                name: `MCFunction++ ${tag}`,
+                draft: false,
+                prerelease: false,
+                generate_release_notes: true,
+                make_latest: 'true',
+              });
+              core.info(`Created release for ${tag}`);
+            }
+
+      - name: Validate tag version matches package version
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          TAG="${{ steps.release-tag.outputs.tag }}"
+          TAG_VERSION="${TAG#v}"
+          PACKAGE_VERSION=$(node -p "require('./package.json').version")
+
+          if [ "$PACKAGE_VERSION" != "$TAG_VERSION" ]; then
+            echo "Tag/version mismatch detected"
+            echo "Tag: $TAG"
+            echo "package.json version: $PACKAGE_VERSION"
+            exit 1
+          fi
+
+      - name: Check existing release assets
+        id: release-assets
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd
+        with:
+          script: |
+            const tag = `${{ steps.release-tag.outputs.tag }}`;
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const normalizedVersion = tag.replace(/^v/i, '');
+
+            try {
+              const response = await github.rest.repos.getReleaseByTag({ owner, repo, tag });
+              const assetNames = response.data.assets.map((asset) => asset.name);
+              const hasInstaller = assetNames.some((name) => name.toLowerCase() === `mcfunctionplusplus-setup-${normalizedVersion}.exe`);
+              const hasBlockmap = assetNames.some((name) => name.toLowerCase() === `mcfunctionplusplus-setup-${normalizedVersion}.exe.blockmap`);
+              const hasLatestYml = assetNames.some((name) => name.toLowerCase() === 'latest.yml');
+
+              core.info(`Existing assets for ${tag}: ${assetNames.join(', ') || '(none)'}`);
+              core.setOutput('should_publish', hasInstaller && hasBlockmap && hasLatestYml ? 'false' : 'true');
+            } catch (error) {
+              if (error.status === 404) {
+                core.info(`No release exists yet for ${tag}; publishing is required.`);
+                core.setOutput('should_publish', 'true');
+                return;
+              }
+              throw error;
+            }
+
+      - name: Build app
+        if: steps.release-assets.outputs.should_publish == 'true'
+        run: npm run build
+
+      - name: Build and publish NSIS release
+        if: steps.release-assets.outputs.should_publish == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+        run: npx electron-builder --win nsis --publish always
+
+      - name: Summary
+        if: steps.release-assets.outputs.should_publish != 'true'
+        run: echo "Installer assets already exist for ${{ steps.release-tag.outputs.tag }}; skipping duplicate publish."
