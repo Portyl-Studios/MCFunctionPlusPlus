@@ -2,6 +2,7 @@ import React from 'react'
 import datapackSchema from '../../resources/datapackschema/94.1.json'
 import type { MenuItem } from './menuitem'
 import { showAlertEvent, showConfirmEvent, showPromptEvent } from './overlays/dialog-events'
+import { showToastEvent } from './overlays/toast-events'
 import { Tooltip } from './overlays/tooltip'
 import { detectEditorLanguage, type DiagnosticSummary } from './language-handler'
 
@@ -400,9 +401,12 @@ export function DatapackTree({ paths, className, folderName, rootId, rootName, r
       ? `${normalizedBase}/pack.mcmeta`
       : `${normalizedBase}/pack.mcmeta.disabled`
     const targetName = hasEnabledMcmeta ? 'pack.mcmeta.disabled' : 'pack.mcmeta'
+    const actionLabel = hasEnabledMcmeta ? 'Disabled' : 'Enabled'
+    const datapackLabel = rootName || folderName || tree.name || 'Datapack'
 
     try {
       await window.electron.renameFileOrFolder(sourcePath, targetName)
+      showToastEvent(`${actionLabel} datapack: ${datapackLabel}`)
       onRefreshRequested?.()
     } catch (error) {
       console.error('Failed to toggle datapack:', error)
