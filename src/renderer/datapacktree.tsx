@@ -683,7 +683,7 @@ export function DatapackTree({ paths, className, folderName, rootId, rootName, r
             </div>
 
             {/* Contents */}
-            <div className="flex flex-1 gap-x-2 items-center">
+            <div className="flex flex-1 gap-x-2 mr-1 items-center min-w-0 overflow-hidden">
 
               {/* Datapack ID */}
               {isRoot ? (
@@ -694,11 +694,11 @@ export function DatapackTree({ paths, className, folderName, rootId, rootName, r
                 </div>
               ) : (<div></div>)}
 
-              <div className="flex flex-col">
+              <div className="flex flex-col min-w-0">
 
-                <div className="flex gap-x-2 min-w-0 flex-1 items-center overflow-hidden">
+                <div className="flex flex-1 gap-x-2 items-center">
                   {/* Name */}
-                  <span className={`min-w-0 truncate
+                  <span className={`truncate
                     ${nodeNameWeightClass} ${nodeNameColorClass} ${nodeNameStyleClass}`}
                   >
                     {isRoot ? rootName || node.name : node.name}
@@ -721,7 +721,7 @@ export function DatapackTree({ paths, className, folderName, rootId, rootName, r
                     </span>
                   )}
                   {node.experimental && (
-                    <span className="pillbox bg-amber-900 text-amber-400">
+                    <span className="pillbox bg-yellow-900 text-yellow-400">
                       exp
                     </span>
                   )}
