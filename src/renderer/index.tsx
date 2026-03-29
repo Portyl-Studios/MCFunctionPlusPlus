@@ -578,6 +578,51 @@ function CodeEditor() {
     setDatapacks(entries.filter((entry): entry is DatapackEntry => !!entry))
   }
 
+  const refreshWorkspaceDatapacks = async (metadataPaths: string[]) => {
+    const loadedEntries: DatapackEntry[] = []
+    const missingMetadataPaths: string[] = []
+
+    for (const metadataPath of metadataPaths) {
+      const datapackDir = getDirFromPath(metadataPath)
+
+      let hasRootMcmeta = false
+      try {
+        const enabledMcmeta = await window.electron.readFileIfExists(datapackDir, 'pack.mcmeta')
+        const disabledMcmeta = await window.electron.readFileIfExists(datapackDir, 'pack.mcmeta.disabled')
+        hasRootMcmeta = enabledMcmeta !== null || disabledMcmeta !== null
+      } catch {
+        hasRootMcmeta = false
+      }
+
+      if (!hasRootMcmeta) {
+        missingMetadataPaths.push(metadataPath)
+        continue
+      }
+
+      const loadedEntry = await loadDatapackEntry(datapackDir)
+      if (loadedEntry) {
+        loadedEntries.push(loadedEntry)
+      } else {
+        missingMetadataPaths.push(metadataPath)
+      }
+    }
+
+    setDatapacks(loadedEntries)
+
+    for (const missingMetadataPath of missingMetadataPaths) {
+      try {
+        await window.electron.workspaceRemoveDatapack(missingMetadataPath)
+      } catch (error) {
+        console.error('Failed to remove missing datapack entry from workspace:', error)
+      }
+    }
+
+    if (missingMetadataPaths.length > 0) {
+      const label = missingMetadataPaths.length === 1 ? 'entry' : 'entries'
+      showToastEvent(`Removed ${missingMetadataPaths.length} missing datapack ${label} from workspace`)
+    }
+  }
+
   const handleWorkspaceChangeWithConfirm = async (workspaceChangeAction: () => Promise<void>) => {
     // If no unsaved files, just proceed
     if (modifiedFiles.size === 0) {
@@ -2131,8 +2176,7 @@ function CodeEditor() {
       if (!workspaceInfo.dir) return
       try {
         const metadataPaths = await handleGetDatapacks()
-        const datapackDirs = metadataPaths.map((metadataPath: string) => getDirFromPath(metadataPath))
-        await refreshDatapacks(datapackDirs)
+        await refreshWorkspaceDatapacks(metadataPaths)
       } catch (error) {
         console.error("Failed to load workspace datapacks:", error)
         await dialog.showAlert("Error", `Failed to load workspace datapacks: ${error instanceof Error ? error.message : "Unknown error"}`)
