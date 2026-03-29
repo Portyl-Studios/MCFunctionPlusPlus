@@ -401,7 +401,6 @@ function CodeEditor() {
   const {
     workspaceInfo,
     handleOpenWorkspace,
-    handleSaveWorkspace,
     handleSaveWorkspaceAs,
     handleNewWorkspace,
     handleOpenDefaultWorkspace,
@@ -2476,7 +2475,6 @@ function CodeEditor() {
               { label: "New Workspace", onClick: handleNewWorkspaceWithConfirm },
               { label: "Open Workspace", shortcut: "Ctrl+O", onClick: handleOpenWorkspaceWithConfirm },
               { label: "Open Default Workspace", onClick: handleOpenDefaultWorkspaceWithConfirm },
-              { label: "Save Workspace", onClick: handleSaveWorkspace },
               { label: "Save Workspace As", onClick: handleSaveWorkspaceAs },
               {},
               { label: "Add Existing Datapack", onClick: handleAddDatapack },
