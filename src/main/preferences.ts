@@ -39,6 +39,93 @@ interface AppPreferences {
   workspace?: WorkspacePreferences
 }
 
+const isRecord = (value: unknown): value is Record<string, unknown> => {
+  return !!value && typeof value === 'object' && !Array.isArray(value)
+}
+
+const sanitizeWorkspacePreferences = (value: unknown): WorkspacePreferences | undefined => {
+  if (!isRecord(value)) return undefined
+
+  const next: WorkspacePreferences = {}
+  const rawLastActive = value.lastActive
+  if (isRecord(rawLastActive)) {
+    const dir = typeof rawLastActive.dir === 'string' ? rawLastActive.dir : null
+    const name = typeof rawLastActive.name === 'string' ? rawLastActive.name : null
+    if (dir && name) {
+      next.lastActive = { dir, name }
+    }
+  }
+
+  return Object.keys(next).length > 0 ? next : undefined
+}
+
+const sanitizeStringArray = (value: unknown): string[] => {
+  if (!Array.isArray(value)) return []
+  return value.filter((item): item is string => typeof item === 'string')
+}
+
+const sanitizePanelsPreferences = (value: unknown): PanelPreferences | undefined => {
+  if (!isRecord(value)) return undefined
+
+  const next: PanelPreferences = {
+    leftPanelTabOrder: sanitizeStringArray(value.leftPanelTabOrder),
+    rightPanelTabOrder: sanitizeStringArray(value.rightPanelTabOrder),
+    bottomPanelTabOrder: sanitizeStringArray(value.bottomPanelTabOrder),
+    visibleLeftPanelTabs: sanitizeStringArray(value.visibleLeftPanelTabs),
+    visibleRightPanelTabs: sanitizeStringArray(value.visibleRightPanelTabs),
+    visibleBottomPanelTabs: sanitizeStringArray(value.visibleBottomPanelTabs),
+  }
+
+  if (typeof value.activeLeftTabId === 'string') next.activeLeftTabId = value.activeLeftTabId
+  if (typeof value.activeRightTabId === 'string') next.activeRightTabId = value.activeRightTabId
+  if (typeof value.activeBottomTabId === 'string') next.activeBottomTabId = value.activeBottomTabId
+  if (typeof value.leftPanelWidth === 'number') next.leftPanelWidth = value.leftPanelWidth
+  if (typeof value.rightPanelWidth === 'number') next.rightPanelWidth = value.rightPanelWidth
+  if (typeof value.bottomPanelHeight === 'number') next.bottomPanelHeight = value.bottomPanelHeight
+
+  return next
+}
+
+const sanitizeWindowPreferences = (value: unknown): WindowPreferences | undefined => {
+  if (!isRecord(value)) return undefined
+  const next: WindowPreferences = {}
+  if (typeof value.isFullScreen === 'boolean') {
+    next.isFullScreen = value.isFullScreen
+  }
+  return Object.keys(next).length > 0 ? next : undefined
+}
+
+const sanitizeUpdatesPreferences = (value: unknown): UpdatesPreferences | undefined => {
+  if (!isRecord(value)) return undefined
+  const next: UpdatesPreferences = {}
+  if (typeof value.deferredVersion === 'string') {
+    next.deferredVersion = value.deferredVersion
+  }
+  return Object.keys(next).length > 0 ? next : undefined
+}
+
+const sanitizeAppPreferences = (value: unknown): AppPreferences => {
+  if (!isRecord(value)) return {}
+
+  const next: AppPreferences = {}
+
+  const sanitizedPanels = sanitizePanelsPreferences(value.panels)
+  if (sanitizedPanels) next.panels = sanitizedPanels
+
+  const sanitizedWindow = sanitizeWindowPreferences(value.window)
+  if (sanitizedWindow) next.window = sanitizedWindow
+
+  const sanitizedUpdates = sanitizeUpdatesPreferences(value.updates)
+  if (sanitizedUpdates) next.updates = sanitizedUpdates
+
+  const sanitizedWorkspace = sanitizeWorkspacePreferences(value.workspace)
+  if (sanitizedWorkspace) {
+    next.workspace = sanitizedWorkspace
+  }
+
+  return next
+}
+
 class PreferencesManager {
   private preferencesPath: string
   private preferences: AppPreferences = {}
@@ -56,8 +143,15 @@ class PreferencesManager {
 
     try {
       const data = await fs.readFile(this.preferencesPath, 'utf-8')
-      this.preferences = JSON.parse(data)
+      const parsed = JSON.parse(data)
+      const sanitized = sanitizeAppPreferences(parsed)
+
+      this.preferences = sanitized
       this.loaded = true
+
+      if (JSON.stringify(parsed) !== JSON.stringify(sanitized)) {
+        await fs.writeFile(this.preferencesPath, JSON.stringify(sanitized, null, 2), 'utf-8')
+      }
     } catch (error) {
       // File doesn't exist or is invalid, use defaults
       this.preferences = {}
@@ -69,6 +163,7 @@ class PreferencesManager {
 
   async save(): Promise<void> {
     try {
+      this.preferences = sanitizeAppPreferences(this.preferences)
       await fs.writeFile(
         this.preferencesPath,
         JSON.stringify(this.preferences, null, 2),

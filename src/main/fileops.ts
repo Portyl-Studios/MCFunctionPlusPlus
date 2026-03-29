@@ -185,15 +185,19 @@ type FileOperationHandlerOptions = {
 }
 
 // File operations
-export const registerPickFolderHandler = (
-  getMainWindow: () => BrowserWindow | null
+export const registerPickDatapackMetadataFileHandler = (
+  getMainWindow: () => BrowserWindow | null,
 ) => {
-  ipcMain.handle('pick-folder', async () => {
+  ipcMain.handle('pick-datapack-metadata-file', async () => {
     const mainWindow = getMainWindow()
     if (!mainWindow) throw new Error('No main window')
 
     const result = await dialog.showOpenDialog(mainWindow, {
-      properties: ['openDirectory'],
+      properties: ['openFile'],
+      filters: [
+        { name: 'Datapack Metadata Files', extensions: ['mpp-datapack', 'mcmeta', 'disabled'] },
+        { name: 'All Files', extensions: ['*'] },
+      ],
     })
 
     if (result.canceled || result.filePaths.length === 0) {

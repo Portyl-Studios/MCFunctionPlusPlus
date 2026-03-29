@@ -18,6 +18,7 @@ interface DataPackTreeProps {
   onSelect?: (path: string, isFile: boolean) => void
   onFolderCreated?: () => void
   onRefreshRequested?: () => void
+  onRemoveFromWorkspaceRequested?: () => void
   onFileRenamed?: (oldRelativePath: string, newName: string) => Promise<boolean>
   onFileDeleted?: (relativePath: string) => Promise<boolean>
   onContextMenuRequest?: (event: React.MouseEvent, items: MenuItem[]) => void
@@ -162,7 +163,7 @@ const collectDirectoryPaths = (node: TreeNode, pathKey: string, output: string[]
   }
 }
 
-export function DatapackTree({ paths, className, folderName, rootId, rootName, rootPackVersion, rootTags, basePath, onSelect, onFolderCreated, onRefreshRequested, onFileRenamed, onFileDeleted, onContextMenuRequest, modifiedFileKeys, fileDiagnosticSummaries, externalSelectedPath, externalSelectedFileKey, externalExpandedPaths, onExpandedPathsChange, treeContainerRef }: DataPackTreeProps) {
+export function DatapackTree({ paths, className, folderName, rootId, rootName, rootPackVersion, rootTags, basePath, onSelect, onFolderCreated, onRefreshRequested, onRemoveFromWorkspaceRequested, onFileRenamed, onFileDeleted, onContextMenuRequest, modifiedFileKeys, fileDiagnosticSummaries, externalSelectedPath, externalSelectedFileKey, externalExpandedPaths, onExpandedPathsChange, treeContainerRef }: DataPackTreeProps) {
   const tree = React.useMemo(() => {
     const builtTree = buildTree(paths, folderName)
     // Enrich with schema starting from the root schema node
@@ -440,8 +441,11 @@ export function DatapackTree({ paths, className, folderName, rootId, rootName, r
         throw new Error('Invalid metadata format')
       }
 
+      const metadataRecord = metadata as Record<string, unknown>
+      const { isDisabled: _legacyDisabledFlag, ...metadataWithoutLegacyDisabled } = metadataRecord
+      void _legacyDisabledFlag
       const nextMetadata = {
-        ...metadata,
+        ...metadataWithoutLegacyDisabled,
         tags: nextTags,
       }
 
@@ -586,11 +590,16 @@ export function DatapackTree({ paths, className, folderName, rootId, rootName, r
         onClick: handleToggleDatapack,
         disabled: !canToggleDatapack,
       },
-      {},
       {
         label: 'Edit Tags',
         onClick: handleEditTags,
         disabled: !basePath,
+      },
+      {},
+      {
+        label: 'Remove Datapack from Workspace',
+        onClick: onRemoveFromWorkspaceRequested,
+        disabled: !onRemoveFromWorkspaceRequested,
       },
       {},
       {

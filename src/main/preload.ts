@@ -2,7 +2,7 @@
 const { contextBridge, ipcRenderer } = require('electron')
 
 import type { IpcRendererEvent } from 'electron'
-import type { AppUpdateStatus, ElectronAPI, ExternalFileChangeEvent, ShortcutHandler, TitlebarContextMenuPosition } from './electron-api'
+import type { AppUpdateStatus, ElectronAPI, ExternalDirectoryChangeEvent, ExternalFileChangeEvent, ShortcutHandler, TitlebarContextMenuPosition } from './electron-api'
 import type { AppPreferences } from './preferences'
 
 const electronApi: ElectronAPI = {
@@ -42,8 +42,8 @@ const electronApi: ElectronAPI = {
   quitCancelled: () => {
     return ipcRenderer.invoke('quit-cancelled')
   },
-  pickFolder: () => {
-    return ipcRenderer.invoke('pick-folder')
+  pickDatapackMetadataFile: () => {
+    return ipcRenderer.invoke('pick-datapack-metadata-file')
   },
   writeFile: (directory: string, filename: string, contents: string) => {
     return ipcRenderer.invoke('write-file', { directory, filename, contents })
@@ -119,8 +119,11 @@ const electronApi: ElectronAPI = {
   createFolder: (folderPath: string) => {
     return ipcRenderer.invoke('create-folder', { folderPath })
   },
-  addDatapackExisting: (datapackDir: string) => {
-    return ipcRenderer.invoke('add-datapack-existing', { datapackDir })
+  addDatapackFromMetadata: (metadataPath: string) => {
+    return ipcRenderer.invoke('add-datapack-from-metadata', { metadataPath })
+  },
+  ensureDatapackMetadata: (datapackDir: string) => {
+    return ipcRenderer.invoke('datapack-ensure-metadata', { datapackDir })
   },
   datapackLoad: (datapackDir: string) => {
     return ipcRenderer.invoke('datapack-load', { datapackDir })
@@ -181,6 +184,22 @@ const electronApi: ElectronAPI = {
     ipcRenderer.on('file-external-change', listener)
     return () => {
       ipcRenderer.removeListener('file-external-change', listener)
+    }
+  },
+  watchDirectoryStart: (watchId: string, directory: string) => {
+    return ipcRenderer.invoke('watch-directory-start', { watchId, directory })
+  },
+  watchDirectoryStop: (watchId: string) => {
+    return ipcRenderer.invoke('watch-directory-stop', { watchId })
+  },
+  watchDirectoryStopAll: () => {
+    return ipcRenderer.invoke('watch-directory-stop-all')
+  },
+  onDirectoryExternalChange: (callback: (event: ExternalDirectoryChangeEvent) => void) => {
+    const listener = (_event: IpcRendererEvent, payload: ExternalDirectoryChangeEvent) => callback(payload)
+    ipcRenderer.on('directory-external-change', listener)
+    return () => {
+      ipcRenderer.removeListener('directory-external-change', listener)
     }
   },
   getAppUpdateStatus: () => {

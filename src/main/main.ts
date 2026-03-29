@@ -5,10 +5,16 @@ import parcelWatcher from '@parcel/watcher'
 import type { AsyncSubscription } from '@parcel/watcher'
 import { fileURLToPath } from 'url'
 import { registerWindowControlHandlers } from './window'
-import { readFile, registerFileOperationHandlers, registerPickFolderHandler, validateDatapackFolder } from './fileops'
+import { readFile, registerFileOperationHandlers, registerPickDatapackMetadataFileHandler, validateDatapackFolder } from './fileops'
 import { registerWorkspaceHandlers } from './workspace'
 import workspaceManager from './workspace'
 import { registerDatapackHandlers, datapackManager } from './datapack'
+import {
+  createDefaultDatapackMetadata,
+  getDatapackMetadataPath,
+  parseDatapackMetadata,
+  writeDatapackMetadata,
+} from './datapack-parser'
 import { preferencesManager } from './preferences'
 import {
   broadcastAppUpdateStatus,
@@ -41,6 +47,7 @@ let mainWindow: BrowserWindow | null = null
 let isAppQuitting = false
 let isQuitRequestPending = false
 const fileWatchSubscriptions = new Map<string, AsyncSubscription>()
+const directoryWatchSubscriptions = new Map<string, AsyncSubscription>()
 let pendingWorkspaceFilePath: string | null = null
 
 const getWorkspaceFilePathFromArgv = (argv: string[]): string | null => {
@@ -150,6 +157,25 @@ const assertWatchPathAllowed = (directory: string, relativePath: string): { abso
   }
 }
 
+const assertWatchDirectoryAllowed = (directory: string): string => {
+  if (!directory || typeof directory !== 'string' || !path.isAbsolute(directory)) {
+    throw new Error('Invalid directory for directory watch')
+  }
+
+  const allowedRoots = getAllowedFileOperationRoots()
+  if (allowedRoots.length === 0) {
+    throw new Error('Directory watching is unavailable until workspace or datapack context is loaded')
+  }
+
+  const absoluteDirectory = path.resolve(directory)
+  const isAllowed = allowedRoots.some((root) => isPathWithinRoot(absoluteDirectory, root))
+  if (!isAllowed) {
+    throw new Error('Directory watching is only allowed within active workspace or datapack directories')
+  }
+
+  return absoluteDirectory
+}
+
 const stopFileWatch = async (watchId: string): Promise<void> => {
   const subscription = fileWatchSubscriptions.get(watchId)
   if (!subscription) return
@@ -163,9 +189,23 @@ const stopAllFileWatches = async (): Promise<void> => {
   await Promise.all(watchIds.map((watchId) => stopFileWatch(watchId)))
 }
 
+const stopDirectoryWatch = async (watchId: string): Promise<void> => {
+  const subscription = directoryWatchSubscriptions.get(watchId)
+  if (!subscription) return
+
+  directoryWatchSubscriptions.delete(watchId)
+  await subscription.unsubscribe()
+}
+
+const stopAllDirectoryWatches = async (): Promise<void> => {
+  const watchIds = [...directoryWatchSubscriptions.keys()]
+  await Promise.all(watchIds.map((watchId) => stopDirectoryWatch(watchId)))
+}
+
 const stopAllFileWatchesSafely = async (reason: string): Promise<void> => {
   try {
     await stopAllFileWatches()
+    await stopAllDirectoryWatches()
   } catch (error) {
     console.error(`Failed to stop file watches during ${reason}:`, error)
   }
@@ -243,7 +283,7 @@ const setupWindowShortcuts = (window: BrowserWindow): void => {
   })
 }
 
-registerPickFolderHandler(() => mainWindow)
+registerPickDatapackMetadataFileHandler(() => mainWindow)
 registerWindowControlHandlers(() => mainWindow, {
   onQuitConfirmed: async () => {
     isAppQuitting = true
@@ -306,6 +346,48 @@ ipcMain.handle('watch-file-stop-all', async () => {
   await stopAllFileWatches()
 })
 
+ipcMain.handle('watch-directory-start', async (_event, { watchId, directory }) => {
+  if (!watchId || typeof watchId !== 'string') {
+    throw new Error('Invalid directory watch id')
+  }
+
+  const absoluteDirectory = assertWatchDirectoryAllowed(directory)
+
+  await stopDirectoryWatch(watchId)
+
+  const subscription = await parcelWatcher.subscribe(absoluteDirectory, (error, events) => {
+    if (error) {
+      console.error(`Directory watch failed for ${watchId}:`, error)
+      return
+    }
+
+    if (!mainWindow || mainWindow.isDestroyed() || mainWindow.webContents.isDestroyed()) {
+      return
+    }
+
+    for (const event of events) {
+      if (event.type !== 'update' && event.type !== 'create' && event.type !== 'delete') continue
+
+      mainWindow.webContents.send('directory-external-change', {
+        watchId,
+        changeType: event.type,
+        path: event.path,
+      })
+    }
+  })
+
+  directoryWatchSubscriptions.set(watchId, subscription)
+})
+
+ipcMain.handle('watch-directory-stop', async (_event, { watchId }) => {
+  if (!watchId || typeof watchId !== 'string') return
+  await stopDirectoryWatch(watchId)
+})
+
+ipcMain.handle('watch-directory-stop-all', async () => {
+  await stopAllDirectoryWatches()
+})
+
 registerAutoUpdaterHandlers(ipcMain)
 
 // IPC handler to get or create default workspace
@@ -330,31 +412,138 @@ ipcMain.handle('workspace-launch-path-consume', async () => {
   return filePath
 })
 
-// IPC handler to add an existing datapack
-ipcMain.handle('add-datapack-existing', async (_event, { datapackDir }) => {
-  // Validate the folder is a datapack
+const buildDefaultDatapackMetadata = async (datapackDir: string, selectedMcmetaPath?: string) => {
+  const datapackName = path.basename(datapackDir)
+  const sanitizedId = datapackName.replace(/[^a-zA-Z0-9]/g, '').substring(0, 2).toUpperCase() || 'DP'
+  const metadata = createDefaultDatapackMetadata(datapackName, sanitizedId)
+
+  if (selectedMcmetaPath) {
+    try {
+      const mcmetaRaw = await readFile(selectedMcmetaPath)
+      const parsedMcmeta = JSON.parse(mcmetaRaw)
+      const packNode = parsedMcmeta?.pack
+
+      if (packNode && typeof packNode === 'object') {
+        const rawDescription = (packNode as { description?: unknown }).description
+        if (typeof rawDescription === 'string' && rawDescription.trim()) {
+          metadata.description = rawDescription.trim()
+        } else if (rawDescription && typeof rawDescription === 'object') {
+          const textDescription = (rawDescription as { text?: unknown }).text
+          if (typeof textDescription === 'string' && textDescription.trim()) {
+            metadata.description = textDescription.trim()
+          } else {
+            metadata.description = JSON.stringify(rawDescription)
+          }
+        }
+
+        const directPackFormat = (packNode as { pack_format?: unknown }).pack_format
+        if (typeof directPackFormat === 'number' && Number.isFinite(directPackFormat)) {
+          metadata.packFormatVersionMin = directPackFormat
+          metadata.packFormatVersionMax = directPackFormat
+        }
+
+        const supportedFormats = (packNode as { supported_formats?: unknown }).supported_formats
+        if (typeof supportedFormats === 'number' && Number.isFinite(supportedFormats)) {
+          metadata.packFormatVersionMin = supportedFormats
+          metadata.packFormatVersionMax = supportedFormats
+        } else if (Array.isArray(supportedFormats) && supportedFormats.length === 2) {
+          const [minFormat, maxFormat] = supportedFormats
+          if (typeof minFormat === 'number' && Number.isFinite(minFormat)) {
+            metadata.packFormatVersionMin = minFormat
+          }
+          if (typeof maxFormat === 'number' && Number.isFinite(maxFormat)) {
+            metadata.packFormatVersionMax = maxFormat
+          }
+        } else if (supportedFormats && typeof supportedFormats === 'object') {
+          const minInclusive = (supportedFormats as { min_inclusive?: unknown }).min_inclusive
+          const maxInclusive = (supportedFormats as { max_inclusive?: unknown }).max_inclusive
+          if (typeof minInclusive === 'number' && Number.isFinite(minInclusive)) {
+            metadata.packFormatVersionMin = minInclusive
+          }
+          if (typeof maxInclusive === 'number' && Number.isFinite(maxInclusive)) {
+            metadata.packFormatVersionMax = maxInclusive
+          }
+        }
+      }
+    } catch (error) {
+      console.warn('Failed to parse selected pack.mcmeta file while creating metadata:', error)
+    }
+  }
+
+  return metadata
+}
+
+const ensureDatapackMetadata = async (datapackDir: string, preferredMcmetaPath?: string) => {
+  let metadata = await parseDatapackMetadata(datapackDir)
+  let created = false
+
+  if (!metadata) {
+    let mcmetaPathForExtraction: string | undefined = preferredMcmetaPath
+    if (!mcmetaPathForExtraction) {
+      const enabledMcmetaPath = path.join(datapackDir, 'pack.mcmeta')
+      const disabledMcmetaPath = path.join(datapackDir, 'pack.mcmeta.disabled')
+      if (fs.existsSync(enabledMcmetaPath)) {
+        mcmetaPathForExtraction = enabledMcmetaPath
+      } else if (fs.existsSync(disabledMcmetaPath)) {
+        mcmetaPathForExtraction = disabledMcmetaPath
+      }
+    }
+
+    metadata = await buildDefaultDatapackMetadata(datapackDir, mcmetaPathForExtraction)
+    await writeDatapackMetadata(datapackDir, metadata)
+    created = true
+  }
+
+  return {
+    metadataPath: getDatapackMetadataPath(datapackDir),
+    metadata,
+    created,
+  }
+}
+
+ipcMain.handle('add-datapack-from-metadata', async (_event, { metadataPath }) => {
+  if (!metadataPath || typeof metadataPath !== 'string') {
+    throw new Error('Invalid metadata path')
+  }
+
+  const selectedFileName = path.basename(metadataPath).toLowerCase()
+  const isMppMetadata = selectedFileName === '.mpp-datapack'
+  const isPackMcmeta = selectedFileName === 'pack.mcmeta' || selectedFileName === 'pack.mcmeta.disabled'
+
+  if (!isMppMetadata && !isPackMcmeta) {
+    throw new Error('Selected file must be .mpp-datapack, pack.mcmeta, or pack.mcmeta.disabled')
+  }
+
+  const datapackDir = path.dirname(metadataPath)
+  const isValidDatapack = await validateDatapackFolder(datapackDir)
+  if (!isValidDatapack) {
+    throw new Error('Datapack folder is invalid for the selected metadata file')
+  }
+
+  const ensured = await ensureDatapackMetadata(datapackDir, isPackMcmeta ? metadataPath : undefined)
+
+  if (workspaceManager.getWorkspace()) {
+    workspaceManager.addDatapack(ensured.metadataPath)
+    await workspaceManager.saveWorkspace()
+  }
+
+  return {
+    metadataPath: ensured.metadataPath,
+    metadata: ensured.metadata,
+  }
+})
+
+ipcMain.handle('datapack-ensure-metadata', async (_event, { datapackDir }) => {
+  if (!datapackDir || typeof datapackDir !== 'string') {
+    throw new Error('Invalid datapack directory')
+  }
+
   const isValidDatapack = await validateDatapackFolder(datapackDir)
   if (!isValidDatapack) {
     throw new Error('Folder does not contain a valid datapack (pack.mcmeta or pack.mcmeta.disabled not found)')
   }
 
-  // Load or create datapack metadata
-  const metadata = await datapackManager.loadDatapack(datapackDir)
-  
-  // Get the metadata file path
-  const { getDatapackMetadataPath } = await import('./datapack-parser')
-  const metadataPath = getDatapackMetadataPath(datapackDir)
-  
-  // Add to workspace if one is loaded
-  if (workspaceManager.getWorkspace()) {
-    workspaceManager.addDatapack(metadataPath)
-    await workspaceManager.saveWorkspace()
-  }
-
-  return {
-    metadataPath,
-    metadata
-  }
+  return await ensureDatapackMetadata(datapackDir)
 })
 
 // IPC handlers for preferences

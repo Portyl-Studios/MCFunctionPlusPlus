@@ -390,6 +390,8 @@ function CodeEditor() {
   const contextScanRunIdRef = useRef(0)
   const contextDiagnosticsPipelineRunIdRef = useRef(0)
   const contextReloadTimerRef = useRef<number | null>(null)
+  const directoryRefreshTimerRef = useRef<number | null>(null)
+  const directoryWatchIdsRef = useRef<Map<string, string>>(new Map())
   const fileContextParseCacheRef = useRef<Map<string, ParsedContextCacheEntry>>(new Map())
   const openFileRequestIdRef = useRef(0)
   const dialog = useDialogRequest()
@@ -504,8 +506,27 @@ function CodeEditor() {
 
   const loadDatapackEntry = async (datapackDir: string): Promise<DatapackEntry | null> => {
     try {
-      const files = await window.electron.listFiles(datapackDir)
-      const paths = Array.isArray(files) ? files : []
+      const initialFiles = await window.electron.listFiles(datapackDir)
+      let paths = Array.isArray(initialFiles) ? initialFiles : []
+
+      const hasMetaFile = paths.some((entry) => entry.replace(/\\/g, '/').endsWith('/.mpp-datapack') || entry.replace(/\\/g, '/').endsWith('.mpp-datapack'))
+      const hasPackMcmeta = paths.some((entry) => {
+        const normalizedEntry = entry.replace(/\\/g, '/').toLowerCase()
+        return normalizedEntry.endsWith('/pack.mcmeta') || normalizedEntry.endsWith('/pack.mcmeta.disabled')
+      })
+
+      if (!hasMetaFile && hasPackMcmeta) {
+        try {
+          const ensureResult = await window.electron.ensureDatapackMetadata(datapackDir)
+          if (ensureResult?.created) {
+            const refreshedFiles = await window.electron.listFiles(datapackDir)
+            paths = Array.isArray(refreshedFiles) ? refreshedFiles : paths
+          }
+        } catch (error) {
+          console.warn('Failed to auto-create datapack metadata while loading workspace entry:', error)
+        }
+      }
+
       const name = datapackDir.split(/[\\/]/).pop() || "datapack"
       let id: string | undefined
       let displayName: string | undefined
@@ -678,19 +699,20 @@ function CodeEditor() {
     await refreshDatapacks(datapacks.map((datapack) => datapack.dir))
   }
 
-  const handleAddDatapack = async () => {
-    const folder = await window.electron.pickFolder()
-    if (!folder) return
+  const handleAddDatapackToWorkspace = async () => {
+    const metadataPath = await window.electron.pickDatapackMetadataFile()
+    if (!metadataPath) return
 
     try {
-      await window.electron.addDatapackExisting(folder)
+      await window.electron.addDatapackFromMetadata(metadataPath)
+      const datapackDir = metadataPath.replace(/\\/g, '/').split('/').slice(0, -1).join('/')
       const existingDirs = datapacks.map((datapack) => datapack.dir)
-      await refreshDatapacks([...existingDirs, folder])
-      const datapackName = folder.split(/[\\/]/).filter(Boolean).pop() || "Datapack"
-      showToastEvent(`Added datapack: ${datapackName}`)
+      await refreshDatapacks([...existingDirs, datapackDir])
+      const datapackName = datapackDir.split(/[\\/]/).filter(Boolean).pop() || 'Datapack'
+      showToastEvent(`Added datapack to workspace: ${datapackName}`)
     } catch (error) {
-      console.error("Failed to add datapack:", error)
-      await dialog.showAlert("Error", `Failed to add datapack: ${error instanceof Error ? error.message : "Unknown error"}`)
+      console.error('Failed to add datapack to workspace:', error)
+      await dialog.showAlert('Error', `Failed to add datapack to workspace: ${error instanceof Error ? error.message : 'Unknown error'}`)
     }
   }
 
@@ -715,10 +737,10 @@ function CodeEditor() {
       const updatedDirs = datapacks.filter((dp) => dp.dir !== datapackDir).map((dp) => dp.dir)
       await refreshDatapacks(updatedDirs)
       const datapackName = datapackDir.split(/[\\/]/).filter(Boolean).pop() || "Datapack"
-      showToastEvent(`Removed datapack: ${datapackName}`)
+      showToastEvent(`Removed datapack from workspace: ${datapackName}`)
     } catch (error) {
       console.error("Failed to remove datapack:", error)
-      await dialog.showAlert("Error", `Failed to remove datapack: ${error instanceof Error ? error.message : "Unknown error"}`)
+      await dialog.showAlert("Error", `Failed to remove datapack from workspace: ${error instanceof Error ? error.message : "Unknown error"}`)
     }
   }
 
@@ -1048,6 +1070,91 @@ function CodeEditor() {
     onExternalFileDeleted: handleExternalFileDeleted,
     onExternalStructureChanged: handleExternalStructureChanged,
   })
+
+  useEffect(() => {
+    let isDisposed = false
+
+    const syncDirectoryWatches = async () => {
+      const desiredByDatapackDir = new Map<string, string>()
+      for (const datapack of datapacks) {
+        desiredByDatapackDir.set(datapack.dir, `dir-watch|${datapack.dir}`)
+      }
+
+      for (const [datapackDir, watchId] of directoryWatchIdsRef.current.entries()) {
+        if (desiredByDatapackDir.has(datapackDir)) continue
+        try {
+          await window.electron.watchDirectoryStop(watchId)
+        } catch (error) {
+          console.error("Failed to stop datapack directory watch:", error)
+        } finally {
+          directoryWatchIdsRef.current.delete(datapackDir)
+        }
+      }
+
+      for (const [datapackDir, watchId] of desiredByDatapackDir.entries()) {
+        if (isDisposed) return
+        if (directoryWatchIdsRef.current.has(datapackDir)) continue
+
+        try {
+          await window.electron.watchDirectoryStart(watchId, datapackDir)
+          directoryWatchIdsRef.current.set(datapackDir, watchId)
+        } catch (error) {
+          console.error("Failed to start datapack directory watch:", error)
+        }
+      }
+    }
+
+    void syncDirectoryWatches()
+
+    return () => {
+      isDisposed = true
+    }
+  }, [datapacks])
+
+  useEffect(() => {
+    const unsubscribe = window.electron.onDirectoryExternalChange((event) => {
+      const watchIdPrefix = 'dir-watch|'
+      if (!event.watchId.startsWith(watchIdPrefix)) return
+
+      const datapackDir = event.watchId.slice(watchIdPrefix.length)
+      const trackedDatapackDirs = datapacksRef.current.map((datapack) => datapack.dir)
+      if (!trackedDatapackDirs.includes(datapackDir)) return
+
+      if (directoryRefreshTimerRef.current !== null) {
+        window.clearTimeout(directoryRefreshTimerRef.current)
+      }
+
+      directoryRefreshTimerRef.current = window.setTimeout(() => {
+        directoryRefreshTimerRef.current = null
+        void refreshDatapacks(trackedDatapackDirs)
+      }, 120)
+    })
+
+    return () => {
+      unsubscribe()
+      if (directoryRefreshTimerRef.current !== null) {
+        window.clearTimeout(directoryRefreshTimerRef.current)
+        directoryRefreshTimerRef.current = null
+      }
+    }
+  }, [refreshDatapacks])
+
+  useEffect(() => {
+    return () => {
+      const stopDirectoryWatches = async () => {
+        for (const watchId of directoryWatchIdsRef.current.values()) {
+          try {
+            await window.electron.watchDirectoryStop(watchId)
+          } catch (error) {
+            console.error("Failed to stop datapack directory watch during cleanup:", error)
+          }
+        }
+        directoryWatchIdsRef.current.clear()
+      }
+
+      void stopDirectoryWatches()
+    }
+  }, [])
 
   const saveFile = async (fileKey: string, contents: string): Promise<boolean> => {
     const { datapackDir, relativePath } = parseFileKey(fileKey)
@@ -2375,6 +2482,7 @@ function CodeEditor() {
               treeContainerRef={getExplorerContainerRef(datapack.dir)}
               onFolderCreated={handleRefreshExplorer}
               onRefreshRequested={handleRefreshExplorer}
+              onRemoveFromWorkspaceRequested={() => handleRemoveDatapack(datapack.dir)}
               onSelect={(pathKey, isFile) => handleExplorerSelect(datapack.dir, pathKey, isFile)}
               onFileRenamed={(oldRelativePath, newName) => handleFileRenamed(datapack.dir, oldRelativePath, newName)}
               onFileDeleted={(relativePath) => handleFileDeleted(datapack.dir, relativePath)}
@@ -2387,8 +2495,8 @@ function CodeEditor() {
       ) : (
         <>
           <div className="text-sm text-codemirror-300">No datapacks added</div>
-          <div className="flex flex-col items-center m-4 button" onClick={handleAddDatapack}>
-            <div className="text-sm text-codemirror-100">Add Existing Datapack</div>
+          <div className="flex flex-col items-center m-4 button" onClick={handleAddDatapackToWorkspace}>
+            <div className="text-sm text-codemirror-100">Add Datapack to Workspace</div>
           </div>
         </>
       )
@@ -2474,9 +2582,9 @@ function CodeEditor() {
               { label: "Open Default Workspace", onClick: handleOpenDefaultWorkspaceWithConfirm },
               { label: "Save Workspace As", onClick: handleSaveWorkspaceAs },
               {},
-              { label: "Add Existing Datapack", onClick: handleAddDatapack },
+              { label: "Add Datapack to Workspace", onClick: handleAddDatapackToWorkspace },
               {
-                label: "Remove Datapack",
+                label: "Remove Datapack from Workspace",
                 children: datapacks.length > 0
                   ? datapacks.map((datapack) => ({
                       label: `${datapack.displayName}${datapack.packVersion ? ` (v${datapack.packVersion})` : ""}`,

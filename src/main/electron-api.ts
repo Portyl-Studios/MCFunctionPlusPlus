@@ -26,6 +26,12 @@ export type AddDatapackExistingResult = {
   metadata: DatapackMetadata
 }
 
+export type EnsureDatapackMetadataResult = {
+  metadataPath: string
+  metadata: DatapackMetadata
+  created: boolean
+}
+
 export type ShortcutAction = 'quit' | 'open' | 'save' | 'saveAll' | 'close' | string
 export type AppUpdateStatusType = 'checking' | 'up-to-date' | 'update-available' | 'failed'
 export type AppUpdateStatus = {
@@ -44,6 +50,12 @@ export type ExternalFileChangeEvent = {
   changeType: ExternalFileChangeType
 }
 
+export type ExternalDirectoryChangeEvent = {
+  watchId: string
+  changeType: ExternalFileChangeType
+  path: string
+}
+
 export interface ElectronAPI {
   minimize: () => Promise<void>
   toggleFullscreen: () => Promise<void>
@@ -53,7 +65,7 @@ export interface ElectronAPI {
   onQuitRequested: (callback: QuitRequestedHandler) => () => void
   quit: () => Promise<void>
   quitCancelled: () => Promise<void>
-  pickFolder: () => Promise<string | null>
+  pickDatapackMetadataFile: () => Promise<string | null>
   writeFile: (directory: string, filename: string, contents: string) => Promise<string>
   saveFile: (directory: string, relativePath: string, contents: string) => Promise<string>
   readFile: (directory: string, filePath: string) => Promise<string>
@@ -76,7 +88,8 @@ export interface ElectronAPI {
   workspaceGetDatapacks: () => Promise<string[]>
   workspaceNew: () => Promise<{ success: boolean }>
   createFolder: (folderPath: string) => Promise<string>
-  addDatapackExisting: (datapackDir: string) => Promise<AddDatapackExistingResult>
+  addDatapackFromMetadata: (metadataPath: string) => Promise<AddDatapackExistingResult>
+  ensureDatapackMetadata: (datapackDir: string) => Promise<EnsureDatapackMetadataResult>
   datapackLoad: (datapackDir: string) => Promise<DatapackMetadata>
   datapackGet: () => Promise<DatapackMetadata | null>
   datapackUpdate: (updates: Partial<DatapackMetadata>) => Promise<DatapackMetadata | null>
@@ -95,6 +108,10 @@ export interface ElectronAPI {
   watchFileStop: (watchId: string) => Promise<void>
   watchFileStopAll: () => Promise<void>
   onFileExternalChange: (callback: (event: ExternalFileChangeEvent) => void) => () => void
+  watchDirectoryStart: (watchId: string, directory: string) => Promise<void>
+  watchDirectoryStop: (watchId: string) => Promise<void>
+  watchDirectoryStopAll: () => Promise<void>
+  onDirectoryExternalChange: (callback: (event: ExternalDirectoryChangeEvent) => void) => () => void
   getAppUpdateStatus: () => Promise<AppUpdateStatus>
   checkAppUpdateNow: () => Promise<AppUpdateStatus>
   prepareAppUpdateInstallNow: () => Promise<void>
