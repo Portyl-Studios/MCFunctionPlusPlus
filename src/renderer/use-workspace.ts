@@ -60,6 +60,11 @@ export function useWorkspace() {
   // Load last active workspace if available; otherwise load/create default workspace.
   useEffect(() => {
     const initializeWorkspace = async () => {
+      const loadDefaultWorkspace = async () => {
+        const result = await window.electron.workspaceGetOrCreateDefault()
+        await loadWorkspaceAndPersist(result.dir, result.name)
+      }
+
       try {
         const launchWorkspacePath = await window.electron.workspaceConsumeLaunchPath()
         if (launchWorkspacePath) {
@@ -79,12 +84,18 @@ export function useWorkspace() {
           } catch (error) {
             console.warn('Failed to load last active workspace, falling back to default workspace:', error)
           }
+        } else {
+          console.warn('Last active workspace is missing, falling back to default workspace')
         }
 
-        const result = await window.electron.workspaceGetOrCreateDefault()
-        await loadWorkspaceAndPersist(result.dir, result.name)
+        await loadDefaultWorkspace()
       } catch (error) {
-        console.error('Failed to load default workspace:', error)
+        console.error('Workspace initialization failed, attempting default workspace fallback:', error)
+        try {
+          await loadDefaultWorkspace()
+        } catch (fallbackError) {
+          console.error('Failed to load default workspace:', fallbackError)
+        }
       }
     }
 
