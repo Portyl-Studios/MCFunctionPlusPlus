@@ -547,7 +547,8 @@ export function DatapackTree({ paths, className, folderName, rootId, rootName, r
     const submenuItems: MenuItem[] = allowedChildren.map((child) => {
       const isTemplate = child.startsWith('<') && child.endsWith('>')
       const isFile = child.includes('.')
-      const folderExists = node.children?.has(child) ?? false
+      const folderExists = (node.children?.has(child) ?? false)
+        || (child === 'pack.mcmeta' && (node.children?.has('pack.mcmeta.disabled') ?? false))
       return {
         label: child,
         onClick: async () => {
