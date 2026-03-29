@@ -601,7 +601,6 @@ function CodeEditor() {
     await handleWorkspaceChangeWithConfirm(async () => {
       const didOpenWorkspace = await handleOpenWorkspace()
       if (!didOpenWorkspace) return
-      showToastEvent("Workspace opened")
     })
   }
 
@@ -609,7 +608,6 @@ function CodeEditor() {
     await handleWorkspaceChangeWithConfirm(async () => {
       const didCreateWorkspace = await handleNewWorkspace()
       if (!didCreateWorkspace) return
-      showToastEvent("Workspace created")
     })
   }
 
@@ -617,7 +615,6 @@ function CodeEditor() {
     await handleWorkspaceChangeWithConfirm(async () => {
       const didOpenDefaultWorkspace = await handleOpenDefaultWorkspace()
       if (!didOpenDefaultWorkspace) return
-      showToastEvent("Default workspace opened")
     })
   }
 

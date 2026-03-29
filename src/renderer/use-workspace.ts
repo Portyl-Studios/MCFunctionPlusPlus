@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { showToastEvent } from './overlays/toast-events'
 
 interface WorkspaceInfo {
   dir: string | null
@@ -11,19 +12,48 @@ export function useWorkspace() {
     name: null
   })
 
-  // Load or create default workspace on mount
+  const saveLastActiveWorkspace = async (dir: string, name: string) => {
+    await window.electron.preferencesSet('workspace', {
+      lastActive: { dir, name },
+    })
+  }
+
+  const getWorkspaceToastLabel = (name: string) => name.replace(/\.mpp-workspace$/, '')
+
+  const loadWorkspaceAndPersist = async (dir: string, name: string, showToast: boolean = true) => {
+    await window.electron.workspaceLoad(dir, name)
+    setWorkspaceInfo({ dir, name })
+    await saveLastActiveWorkspace(dir, name)
+
+    if (showToast) {
+      showToastEvent(`Workspace opened: ${getWorkspaceToastLabel(name)}`)
+    }
+  }
+
+  // Load last active workspace if available; otherwise load/create default workspace.
   useEffect(() => {
-    const loadDefaultWorkspace = async () => {
+    const initializeWorkspace = async () => {
       try {
+        const savedWorkspacePreference = await window.electron.preferencesGet('workspace')
+        const savedLastActive = savedWorkspacePreference?.lastActive
+
+        if (savedLastActive?.dir && savedLastActive?.name) {
+          try {
+            await loadWorkspaceAndPersist(savedLastActive.dir, savedLastActive.name)
+            return
+          } catch (error) {
+            console.warn('Failed to load last active workspace, falling back to default workspace:', error)
+          }
+        }
+
         const result = await window.electron.workspaceGetOrCreateDefault()
-        await window.electron.workspaceLoad(result.dir, result.name)
-        setWorkspaceInfo({ dir: result.dir, name: result.name })
+        await loadWorkspaceAndPersist(result.dir, result.name)
       } catch (error) {
         console.error('Failed to load default workspace:', error)
       }
     }
 
-    loadDefaultWorkspace()
+    initializeWorkspace()
   }, [])
 
   const handleOpenWorkspace = async (): Promise<boolean> => {
@@ -33,8 +63,7 @@ export function useWorkspace() {
     }
 
     try {
-      await window.electron.workspaceLoad(result.dir, result.name)
-      setWorkspaceInfo({ dir: result.dir, name: result.name })
+      await loadWorkspaceAndPersist(result.dir, result.name)
       return true
     } catch (error) {
       console.error('Failed to load workspace:', error)
@@ -69,6 +98,7 @@ export function useWorkspace() {
         const name = filename.replace(/\.mpp-workspace$/, '')
         const result = await window.electron.workspaceSaveAs(dir, name)
         setWorkspaceInfo({ dir: result.dir, name: result.name })
+        await saveLastActiveWorkspace(result.dir, result.name)
         return true
       } catch (error) {
         console.error('Failed to save workspace as:', error)
@@ -113,8 +143,7 @@ export function useWorkspace() {
       const didSave = await handleSaveWorkspaceAs()
       if (!didSave) {
         if (previousWorkspace.dir && previousWorkspace.name) {
-          await window.electron.workspaceLoad(previousWorkspace.dir, previousWorkspace.name)
-          setWorkspaceInfo(previousWorkspace)
+          await loadWorkspaceAndPersist(previousWorkspace.dir, previousWorkspace.name)
         }
         return false
       }
@@ -129,8 +158,7 @@ export function useWorkspace() {
   const handleOpenDefaultWorkspace = async (): Promise<boolean> => {
     try {
       const result = await window.electron.workspaceGetOrCreateDefault()
-      await window.electron.workspaceLoad(result.dir, result.name)
-      setWorkspaceInfo({ dir: result.dir, name: result.name })
+      await loadWorkspaceAndPersist(result.dir, result.name)
       return true
     } catch (error) {
       console.error('Failed to load default workspace:', error)

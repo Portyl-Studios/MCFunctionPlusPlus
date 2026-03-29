@@ -25,10 +25,18 @@ interface UpdatesPreferences {
   deferredVersion?: string
 }
 
+interface WorkspacePreferences {
+  lastActive?: {
+    dir: string
+    name: string
+  }
+}
+
 interface AppPreferences {
   panels?: PanelPreferences
   window?: WindowPreferences
   updates?: UpdatesPreferences
+  workspace?: WorkspacePreferences
 }
 
 class PreferencesManager {
@@ -100,4 +108,4 @@ class PreferencesManager {
 }
 
 export const preferencesManager = new PreferencesManager()
-export type { AppPreferences, PanelPreferences, WindowPreferences, UpdatesPreferences }
+export type { AppPreferences, PanelPreferences, WindowPreferences, UpdatesPreferences, WorkspacePreferences }
