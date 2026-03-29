@@ -28,6 +28,12 @@ import { quitAppRespectingInstallFlag } from './quit-manager'
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
 
+// Always gate startup behind single-instance lock before any app initialization work.
+const singleInstanceLock = app.requestSingleInstanceLock()
+if (!singleInstanceLock) {
+  app.exit(0)
+}
+
 const __resourcepath = app.isPackaged
   ? path.join(process.resourcesPath, 'resources')
   : path.join(__dirname, '../../resources')
@@ -78,11 +84,6 @@ const deliverPendingWorkspaceOpenRequest = () => {
 const initialWorkspaceFilePath = getWorkspaceFilePathFromArgv(process.argv)
 if (initialWorkspaceFilePath) {
   pendingWorkspaceFilePath = initialWorkspaceFilePath
-}
-
-const singleInstanceLock = app.requestSingleInstanceLock()
-if (!singleInstanceLock) {
-  app.quit()
 }
 
 app.on('second-instance', (_event, argv) => {
