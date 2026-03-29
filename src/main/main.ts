@@ -55,12 +55,23 @@ let isQuitRequestPending = false
 const fileWatchSubscriptions = new Map<string, AsyncSubscription>()
 const directoryWatchSubscriptions = new Map<string, AsyncSubscription>()
 let pendingWorkspaceFilePath: string | null = null
+let pendingDatapackMetadataPath: string | null = null
 
 const getWorkspaceFilePathFromArgv = (argv: string[]): string | null => {
   for (const arg of argv) {
     if (!arg || typeof arg !== 'string') continue
     if (arg.startsWith('-')) continue
     if (!arg.toLowerCase().endsWith('.mpp-workspace')) continue
+    return path.resolve(arg)
+  }
+  return null
+}
+
+const getDatapackMetadataPathFromArgv = (argv: string[]): string | null => {
+  for (const arg of argv) {
+    if (!arg || typeof arg !== 'string') continue
+    if (arg.startsWith('-')) continue
+    if (!arg.toLowerCase().endsWith('.mpp-datapack')) continue
     return path.resolve(arg)
   }
   return null
@@ -81,15 +92,40 @@ const deliverPendingWorkspaceOpenRequest = () => {
   pendingWorkspaceFilePath = null
 }
 
+const deliverPendingDatapackOpenRequest = () => {
+  if (!pendingDatapackMetadataPath || !mainWindow || mainWindow.isDestroyed() || mainWindow.webContents.isDestroyed()) {
+    return
+  }
+
+  if (mainWindow.webContents.isLoadingMainFrame()) {
+    return
+  }
+
+  mainWindow.webContents.send('datapack-open-requested', {
+    filePath: pendingDatapackMetadataPath,
+  })
+  pendingDatapackMetadataPath = null
+}
+
 const initialWorkspaceFilePath = getWorkspaceFilePathFromArgv(process.argv)
 if (initialWorkspaceFilePath) {
   pendingWorkspaceFilePath = initialWorkspaceFilePath
+}
+
+const initialDatapackMetadataPath = getDatapackMetadataPathFromArgv(process.argv)
+if (initialDatapackMetadataPath) {
+  pendingDatapackMetadataPath = initialDatapackMetadataPath
 }
 
 app.on('second-instance', (_event, argv) => {
   const workspaceFilePath = getWorkspaceFilePathFromArgv(argv)
   if (workspaceFilePath) {
     pendingWorkspaceFilePath = workspaceFilePath
+  }
+
+  const datapackMetadataPath = getDatapackMetadataPathFromArgv(argv)
+  if (datapackMetadataPath) {
+    pendingDatapackMetadataPath = datapackMetadataPath
   }
 
   if (!mainWindow || mainWindow.isDestroyed()) {
@@ -102,16 +138,24 @@ app.on('second-instance', (_event, argv) => {
 
   mainWindow.focus()
   deliverPendingWorkspaceOpenRequest()
+  deliverPendingDatapackOpenRequest()
 })
 
 app.on('open-file', (event, filePath) => {
   event.preventDefault()
-  if (!filePath.toLowerCase().endsWith('.mpp-workspace')) {
+  const resolvedFilePath = path.resolve(filePath)
+  const normalizedLowerPath = resolvedFilePath.toLowerCase()
+
+  if (normalizedLowerPath.endsWith('.mpp-workspace')) {
+    pendingWorkspaceFilePath = resolvedFilePath
+    deliverPendingWorkspaceOpenRequest()
     return
   }
 
-  pendingWorkspaceFilePath = path.resolve(filePath)
-  deliverPendingWorkspaceOpenRequest()
+  if (normalizedLowerPath.endsWith('.mpp-datapack')) {
+    pendingDatapackMetadataPath = resolvedFilePath
+    deliverPendingDatapackOpenRequest()
+  }
 })
 
 const normalizeComparablePath = (targetPath: string): string => {
@@ -413,6 +457,12 @@ ipcMain.handle('workspace-launch-path-consume', async () => {
   return filePath
 })
 
+ipcMain.handle('datapack-launch-path-consume', async () => {
+  const filePath = pendingDatapackMetadataPath
+  pendingDatapackMetadataPath = null
+  return filePath
+})
+
 const buildDefaultDatapackMetadata = async (datapackDir: string, selectedMcmetaPath?: string) => {
   const datapackName = path.basename(datapackDir)
   const sanitizedId = datapackName.replace(/[^a-zA-Z0-9]/g, '').substring(0, 2).toUpperCase() || 'DP'
@@ -673,6 +723,7 @@ app.on('ready', async () => {
     broadcastAppUpdateStatus(mainWindow)
     // set initial app update status
     deliverPendingWorkspaceOpenRequest()
+    deliverPendingDatapackOpenRequest()
   })
 
   mainWindow.on('close', (event) => {

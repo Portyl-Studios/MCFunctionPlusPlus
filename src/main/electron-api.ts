@@ -75,6 +75,8 @@ export interface ElectronAPI {
   workspaceGetOrCreateDefault: () => Promise<WorkspaceDefaultResult>
   workspaceConsumeLaunchPath: () => Promise<string | null>
   onWorkspaceOpenRequested: (callback: (filePath: string) => void) => () => void
+  datapackConsumeLaunchPath: () => Promise<string | null>
+  onDatapackOpenRequested: (callback: (filePath: string) => void) => () => void
   workspaceGet: () => Promise<WorkspaceData | null>
   workspaceInfo: () => Promise<{ dir: string | null; name: string | null }>
   workspaceOpenDialog: () => Promise<WorkspaceFileSelection | null>

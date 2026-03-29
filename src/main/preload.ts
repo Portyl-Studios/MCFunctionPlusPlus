@@ -80,6 +80,20 @@ const electronApi: ElectronAPI = {
       ipcRenderer.removeListener('workspace-open-requested', listener)
     }
   },
+  datapackConsumeLaunchPath: () => {
+    return ipcRenderer.invoke('datapack-launch-path-consume')
+  },
+  onDatapackOpenRequested: (callback: (filePath: string) => void) => {
+    const listener = (_event: IpcRendererEvent, payload: { filePath?: string }) => {
+      if (typeof payload?.filePath === 'string') {
+        callback(payload.filePath)
+      }
+    }
+    ipcRenderer.on('datapack-open-requested', listener)
+    return () => {
+      ipcRenderer.removeListener('datapack-open-requested', listener)
+    }
+  },
   workspaceGet: () => {
     return ipcRenderer.invoke('workspace-get')
   },

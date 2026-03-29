@@ -392,6 +392,8 @@ function CodeEditor() {
   const contextReloadTimerRef = useRef<number | null>(null)
   const directoryRefreshTimerRef = useRef<number | null>(null)
   const directoryWatchIdsRef = useRef<Map<string, string>>(new Map())
+  const didConsumeDatapackLaunchPathRef = useRef(false)
+  const pendingExternalDatapackPathRef = useRef<string | null>(null)
   const fileContextParseCacheRef = useRef<Map<string, ParsedContextCacheEntry>>(new Map())
   const openFileRequestIdRef = useRef(0)
   const dialog = useDialogRequest()
@@ -703,6 +705,12 @@ function CodeEditor() {
     const metadataPath = await window.electron.pickDatapackMetadataFile()
     if (!metadataPath) return
 
+    await addDatapackMetadataToWorkspace(metadataPath)
+  }
+
+  const addDatapackMetadataToWorkspace = async (metadataPath: string): Promise<boolean> => {
+    if (!metadataPath) return false
+
     try {
       await window.electron.addDatapackFromMetadata(metadataPath)
       const datapackDir = metadataPath.replace(/\\/g, '/').split('/').slice(0, -1).join('/')
@@ -710,9 +718,11 @@ function CodeEditor() {
       await refreshDatapacks([...existingDirs, datapackDir])
       const datapackName = datapackDir.split(/[\\/]/).filter(Boolean).pop() || 'Datapack'
       showToastEvent(`Added datapack to workspace: ${datapackName}`)
+      return true
     } catch (error) {
       console.error('Failed to add datapack to workspace:', error)
       await dialog.showAlert('Error', `Failed to add datapack to workspace: ${error instanceof Error ? error.message : 'Unknown error'}`)
+      return false
     }
   }
 
@@ -1070,6 +1080,42 @@ function CodeEditor() {
     onExternalFileDeleted: handleExternalFileDeleted,
     onExternalStructureChanged: handleExternalStructureChanged,
   })
+
+  useEffect(() => {
+    const handleDatapackOpenRequest = async (filePath: string) => {
+      if (!filePath || !filePath.toLowerCase().endsWith('.mpp-datapack')) return
+
+      if (!workspaceInfo.dir || !workspaceInfo.name) {
+        pendingExternalDatapackPathRef.current = filePath
+        return
+      }
+
+      pendingExternalDatapackPathRef.current = null
+      await addDatapackMetadataToWorkspace(filePath)
+    }
+
+    if (!didConsumeDatapackLaunchPathRef.current) {
+      didConsumeDatapackLaunchPathRef.current = true
+      void window.electron.datapackConsumeLaunchPath().then(async (launchDatapackPath) => {
+        if (launchDatapackPath) {
+          await handleDatapackOpenRequest(launchDatapackPath)
+        }
+      })
+    }
+
+    if (pendingExternalDatapackPathRef.current && workspaceInfo.dir && workspaceInfo.name) {
+      const pendingPath = pendingExternalDatapackPathRef.current
+      void handleDatapackOpenRequest(pendingPath)
+    }
+
+    const unsubscribe = window.electron.onDatapackOpenRequested((filePath) => {
+      void handleDatapackOpenRequest(filePath)
+    })
+
+    return () => {
+      unsubscribe()
+    }
+  }, [workspaceInfo.dir, workspaceInfo.name, datapacks, refreshDatapacks])
 
   useEffect(() => {
     let isDisposed = false

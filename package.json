@@ -78,6 +78,13 @@
         "description": "MCFunction++ Workspace File",
         "icon": "assets/icon.ico",
         "role": "Editor"
+      },
+      {
+        "ext": "mpp-datapack",
+        "name": "MCFunction++ Datapack Metadata",
+        "description": "MCFunction++ Datapack Metadata File",
+        "icon": "assets/icon.ico",
+        "role": "Editor"
       }
     ],
     "nsis": {
