@@ -66,6 +66,20 @@ const electronApi: ElectronAPI = {
   workspaceGetOrCreateDefault: () => {
     return ipcRenderer.invoke('workspace-get-or-create-default')
   },
+  workspaceConsumeLaunchPath: () => {
+    return ipcRenderer.invoke('workspace-launch-path-consume')
+  },
+  onWorkspaceOpenRequested: (callback: (filePath: string) => void) => {
+    const listener = (_event: IpcRendererEvent, payload: { filePath?: string }) => {
+      if (typeof payload?.filePath === 'string') {
+        callback(payload.filePath)
+      }
+    }
+    ipcRenderer.on('workspace-open-requested', listener)
+    return () => {
+      ipcRenderer.removeListener('workspace-open-requested', listener)
+    }
+  },
   workspaceGet: () => {
     return ipcRenderer.invoke('workspace-get')
   },

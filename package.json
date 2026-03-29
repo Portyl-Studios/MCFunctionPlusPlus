@@ -71,6 +71,15 @@
       "icon": "assets/icon.png",
       "category": "Development"
     },
+    "fileAssociations": [
+      {
+        "ext": "mpp-workspace",
+        "name": "MCFunction++ Workspace",
+        "description": "MCFunction++ Workspace File",
+        "icon": "assets/icon.ico",
+        "role": "Editor"
+      }
+    ],
     "nsis": {
       "oneClick": false,
       "perMachine": true,

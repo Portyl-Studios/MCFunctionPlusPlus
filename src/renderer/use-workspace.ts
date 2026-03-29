@@ -30,10 +30,45 @@ export function useWorkspace() {
     }
   }
 
+  const openWorkspaceFromFilePath = async (filePath: string, showToast: boolean = true): Promise<boolean> => {
+    if (!filePath || !filePath.toLowerCase().endsWith('.mpp-workspace')) {
+      return false
+    }
+
+    const normalizedPath = filePath.replace(/\\/g, '/')
+    const lastSlash = normalizedPath.lastIndexOf('/')
+    if (lastSlash <= 0) {
+      return false
+    }
+
+    const dir = normalizedPath.slice(0, lastSlash)
+    const filename = normalizedPath.slice(lastSlash + 1)
+    const name = filename.replace(/\.mpp-workspace$/, '')
+    if (!dir || !name) {
+      return false
+    }
+
+    try {
+      await loadWorkspaceAndPersist(dir, name, showToast)
+      return true
+    } catch (error) {
+      console.error('Failed to open workspace from file path:', error)
+      return false
+    }
+  }
+
   // Load last active workspace if available; otherwise load/create default workspace.
   useEffect(() => {
     const initializeWorkspace = async () => {
       try {
+        const launchWorkspacePath = await window.electron.workspaceConsumeLaunchPath()
+        if (launchWorkspacePath) {
+          const didOpenLaunchWorkspace = await openWorkspaceFromFilePath(launchWorkspacePath)
+          if (didOpenLaunchWorkspace) {
+            return
+          }
+        }
+
         const savedWorkspacePreference = await window.electron.preferencesGet('workspace')
         const savedLastActive = savedWorkspacePreference?.lastActive
 
@@ -54,6 +89,16 @@ export function useWorkspace() {
     }
 
     initializeWorkspace()
+  }, [])
+
+  useEffect(() => {
+    const unsubscribe = window.electron.onWorkspaceOpenRequested(async (filePath) => {
+      await openWorkspaceFromFilePath(filePath)
+    })
+
+    return () => {
+      unsubscribe()
+    }
   }, [])
 
   const handleOpenWorkspace = async (): Promise<boolean> => {

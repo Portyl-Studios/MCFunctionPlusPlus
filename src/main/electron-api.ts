@@ -61,6 +61,8 @@ export interface ElectronAPI {
   listFiles: (directory: string) => Promise<string[]>
   workspaceLoad: (directory: string, name: string) => Promise<WorkspaceData>
   workspaceGetOrCreateDefault: () => Promise<WorkspaceDefaultResult>
+  workspaceConsumeLaunchPath: () => Promise<string | null>
+  onWorkspaceOpenRequested: (callback: (filePath: string) => void) => () => void
   workspaceGet: () => Promise<WorkspaceData | null>
   workspaceInfo: () => Promise<{ dir: string | null; name: string | null }>
   workspaceOpenDialog: () => Promise<WorkspaceFileSelection | null>

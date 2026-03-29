@@ -41,6 +41,70 @@ let mainWindow: BrowserWindow | null = null
 let isAppQuitting = false
 let isQuitRequestPending = false
 const fileWatchSubscriptions = new Map<string, AsyncSubscription>()
+let pendingWorkspaceFilePath: string | null = null
+
+const getWorkspaceFilePathFromArgv = (argv: string[]): string | null => {
+  for (const arg of argv) {
+    if (!arg || typeof arg !== 'string') continue
+    if (arg.startsWith('-')) continue
+    if (!arg.toLowerCase().endsWith('.mpp-workspace')) continue
+    return path.resolve(arg)
+  }
+  return null
+}
+
+const deliverPendingWorkspaceOpenRequest = () => {
+  if (!pendingWorkspaceFilePath || !mainWindow || mainWindow.isDestroyed() || mainWindow.webContents.isDestroyed()) {
+    return
+  }
+
+  if (mainWindow.webContents.isLoadingMainFrame()) {
+    return
+  }
+
+  mainWindow.webContents.send('workspace-open-requested', {
+    filePath: pendingWorkspaceFilePath,
+  })
+  pendingWorkspaceFilePath = null
+}
+
+const initialWorkspaceFilePath = getWorkspaceFilePathFromArgv(process.argv)
+if (initialWorkspaceFilePath) {
+  pendingWorkspaceFilePath = initialWorkspaceFilePath
+}
+
+const singleInstanceLock = app.requestSingleInstanceLock()
+if (!singleInstanceLock) {
+  app.quit()
+}
+
+app.on('second-instance', (_event, argv) => {
+  const workspaceFilePath = getWorkspaceFilePathFromArgv(argv)
+  if (workspaceFilePath) {
+    pendingWorkspaceFilePath = workspaceFilePath
+  }
+
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    return
+  }
+
+  if (mainWindow.isMinimized()) {
+    mainWindow.restore()
+  }
+
+  mainWindow.focus()
+  deliverPendingWorkspaceOpenRequest()
+})
+
+app.on('open-file', (event, filePath) => {
+  event.preventDefault()
+  if (!filePath.toLowerCase().endsWith('.mpp-workspace')) {
+    return
+  }
+
+  pendingWorkspaceFilePath = path.resolve(filePath)
+  deliverPendingWorkspaceOpenRequest()
+})
 
 const normalizeComparablePath = (targetPath: string): string => {
   const resolvedPath = path.resolve(targetPath)
@@ -260,6 +324,12 @@ ipcMain.handle('workspace-get-or-create-default', async () => {
   }
 })
 
+ipcMain.handle('workspace-launch-path-consume', async () => {
+  const filePath = pendingWorkspaceFilePath
+  pendingWorkspaceFilePath = null
+  return filePath
+})
+
 // IPC handler to add an existing datapack
 ipcMain.handle('add-datapack-existing', async (_event, { datapackDir }) => {
   // Validate the folder is a datapack
@@ -338,6 +408,10 @@ ipcMain.handle('minecraft-data-get', async (_event, { version, dataType }) => {
 })
 
 app.on('ready', async () => {
+  if (!singleInstanceLock) {
+    return
+  }
+
   // Load preferences on startup
   await preferencesManager.load()
 
@@ -408,6 +482,7 @@ app.on('ready', async () => {
     emitWindowStateChanged()
     broadcastAppUpdateStatus(mainWindow)
     // set initial app update status
+    deliverPendingWorkspaceOpenRequest()
   })
 
   mainWindow.on('close', (event) => {
