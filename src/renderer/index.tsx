@@ -60,6 +60,7 @@ type DatapackEntry = {
   id?: string
   displayName?: string
   packVersion?: string
+  tags?: string[]
 }
 
 type OpenedFile = {
@@ -510,6 +511,7 @@ function CodeEditor() {
       let id: string | undefined
       let displayName: string | undefined
       let packVersion: string | undefined
+      let tags: string[] | undefined
       try {
         const metadataRaw = await window.electron.readFile(datapackDir, ".mpp-datapack")
         const parsed = JSON.parse(metadataRaw)
@@ -522,10 +524,17 @@ function CodeEditor() {
         if (parsed && typeof parsed.packVersion === "string") {
           packVersion = parsed.packVersion
         }
+        if (parsed && Array.isArray(parsed.tags)) {
+          tags = (parsed.tags as unknown[])
+            .filter((tag): tag is string => typeof tag === "string")
+            .map((tag) => tag.trim())
+            .filter((tag) => tag.length > 0)
+        }
       } catch {
         id = undefined
         displayName = undefined
         packVersion = undefined
+        tags = undefined
       }
       return {
         dir: datapackDir,
@@ -534,6 +543,7 @@ function CodeEditor() {
         id,
         displayName,
         packVersion,
+        tags,
       }
     } catch {
       return null
@@ -2354,6 +2364,7 @@ function CodeEditor() {
               rootId={datapack.id}
               rootName={datapack.displayName}
               rootPackVersion={datapack.packVersion}
+              rootTags={datapack.tags}
               basePath={datapack.dir}
               className="mt-2"
               externalSelectedPath={explorerSelectedPathsByDatapack[datapack.dir]}

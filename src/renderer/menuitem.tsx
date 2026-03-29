@@ -172,7 +172,7 @@ export function MenuItems({ items, onItemClick, maxItems = 5 }: MenuItemsProps) 
                 {/* Right: Shortcut or Submenu indicator */}
                 <span className="min-w-4 shrink-0 flex items-center justify-end">
                   {item.shortcut && (
-                    <span className="pillbox px-2 py-0.5 font-mono text-xs text-codemirror-300">
+                    <span className="pillbox ml-2 px-2 py-0.5 font-mono text-xs text-codemirror-300">
                       {item.shortcut}
                     </span>
                   )}

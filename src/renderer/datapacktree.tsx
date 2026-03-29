@@ -12,6 +12,7 @@ interface DataPackTreeProps {
   rootId?: string
   rootName?: string
   rootPackVersion?: string
+  rootTags?: string[]
   basePath?: string
   onSelect?: (path: string, isFile: boolean) => void
   onFolderCreated?: () => void
@@ -160,7 +161,7 @@ const collectDirectoryPaths = (node: TreeNode, pathKey: string, output: string[]
   }
 }
 
-export function DatapackTree({ paths, className, folderName, rootId, rootName, rootPackVersion, basePath, onSelect, onFolderCreated, onRefreshRequested, onFileRenamed, onFileDeleted, onContextMenuRequest, modifiedFileKeys, fileDiagnosticSummaries, externalSelectedPath, externalSelectedFileKey, externalExpandedPaths, onExpandedPathsChange, treeContainerRef }: DataPackTreeProps) {
+export function DatapackTree({ paths, className, folderName, rootId, rootName, rootPackVersion, rootTags, basePath, onSelect, onFolderCreated, onRefreshRequested, onFileRenamed, onFileDeleted, onContextMenuRequest, modifiedFileKeys, fileDiagnosticSummaries, externalSelectedPath, externalSelectedFileKey, externalExpandedPaths, onExpandedPathsChange, treeContainerRef }: DataPackTreeProps) {
   const tree = React.useMemo(() => {
     const builtTree = buildTree(paths, folderName)
     // Enrich with schema starting from the root schema node
@@ -190,6 +191,12 @@ export function DatapackTree({ paths, className, folderName, rootId, rootName, r
   )
   const isDatapackDisabled = hasDisabledMcmeta && !hasEnabledMcmeta
   const canToggleDatapack = hasEnabledMcmeta || hasDisabledMcmeta
+  const sortedRootTags = React.useMemo(() => {
+    const normalized = (rootTags ?? [])
+      .map((tag) => tag.trim())
+      .filter((tag) => tag.length > 0)
+    return [...normalized].sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }))
+  }, [rootTags])
 
   // Use external values if provided
   const effectiveSelectedPath = externalSelectedPath !== undefined ? externalSelectedPath : selectedPath
@@ -403,6 +410,45 @@ export function DatapackTree({ paths, className, folderName, rootId, rootName, r
     }
   }
 
+  const handleEditTags = async () => {
+    if (!basePath) {
+      await showAlertEvent('Error', 'Cannot edit tags without a base path')
+      return
+    }
+
+    const defaultTagValue = sortedRootTags.join(', ')
+    const rawInput = await showPromptEvent('Edit tags', 'Enter comma-separated tags:', defaultTagValue)
+    if (rawInput === null) {
+      return
+    }
+
+    const nextTags = Array.from(new Set(
+      rawInput
+        .split(',')
+        .map((tag) => tag.trim())
+        .filter((tag) => tag.length > 0),
+    ))
+
+    try {
+      const metadataRaw = await window.electron.readFile(basePath, '.mpp-datapack')
+      const metadata = JSON.parse(metadataRaw)
+      if (!metadata || typeof metadata !== 'object' || Array.isArray(metadata)) {
+        throw new Error('Invalid metadata format')
+      }
+
+      const nextMetadata = {
+        ...metadata,
+        tags: nextTags,
+      }
+
+      await window.electron.writeFile(basePath, '.mpp-datapack', JSON.stringify(nextMetadata, null, 2))
+      onRefreshRequested?.()
+    } catch (error) {
+      console.error('Failed to edit datapack tags:', error)
+      await showAlertEvent('Error', `Failed to edit tags: ${error instanceof Error ? error.message : 'Unknown error'}`)
+    }
+  }
+
   const handleRename = async (pathKey: string, currentName: string) => {
     const actualPath = getActualPath(pathKey)
     if (!actualPath) {
@@ -537,6 +583,12 @@ export function DatapackTree({ paths, className, folderName, rootId, rootName, r
       },
       {},
       {
+        label: 'Edit Tags',
+        onClick: handleEditTags,
+        disabled: !basePath,
+      },
+      {},
+      {
         label: 'Create Datapack Directory',
         children: submenuItems.length ? submenuItems : undefined,
         disabled: submenuItems.length === 0,
@@ -588,13 +640,14 @@ export function DatapackTree({ paths, className, folderName, rootId, rootName, r
     const isRoot = depth === 0
     const isDisabledMetaFile = node.isFile && (relativePath || node.name) === 'pack.mcmeta.disabled'
     const nodeNameWeightClass = node.isFile ? 'font-normal' : (isRoot ? 'font-bold' : 'font-semibold')
-    const nodeNameColorClass = isDisabledMetaFile
-      ? 'text-red-400'
-      : node.schemaNode
-      ? 'text-emerald-300'
-      : isModified
-        ? 'text-orange-300'
-        : 'text-codemirror-100'
+    let nodeNameColorClass = 'text-codemirror-100'
+    if ((isRoot && isDatapackDisabled) || isDisabledMetaFile) {
+      nodeNameColorClass = 'text-red-400'
+    } else if (node.schemaNode) {
+      nodeNameColorClass = 'text-emerald-300'
+    } else if (isModified) {
+      nodeNameColorClass = 'text-orange-300'
+    }
     const nodeNameStyleClass = node.experimental ? 'italic' : ''
 
     return (
@@ -606,12 +659,13 @@ export function DatapackTree({ paths, className, folderName, rootId, rootName, r
                 el.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'nearest' })
               }
             } : null}
-            className={`flex min-w-0 items-center cursor-pointer rounded px-1  ${isSelected ? 'bg-codemirror-select' : isRoot && isDatapackDisabled ? 'bg-red-800/20 hover:bg-red-800/30' : 'hover:bg-codemirror-highlight'} ${isRoot ? 'py-2' : ''}`}
+            className={`flex min-w-0 items-center cursor-pointer rounded px-1  ${isSelected ? 'bg-codemirror-select' : isRoot && isDatapackDisabled ? 'bg-rose-800/20 hover:bg-rose-800/30' : 'hover:bg-codemirror-highlight'} ${isRoot ? 'py-2' : ''}`}
             style={{ paddingLeft: padding }}
             onClick={() => handleSelect(pathKey, !!node.isFile, !!hasChildren)}
             onContextMenu={(e) => handleRightClick(e, node, pathKey)}
           >
-            <span className={`mr-2 flex items-center text-codemirror-100 h-4 ${isRoot ? 'w-auto' : 'w-4'}`}>
+            {/* Chevron */}
+            <div className="mr-2 flex items-center text-codemirror-100">
               {hasChildren ? (
                 isExpanded ? (
                   <i className="codicon codicon-chevron-down" />
@@ -621,50 +675,76 @@ export function DatapackTree({ paths, className, folderName, rootId, rootName, r
               ) : (
                 <i className={`codicon ${languageIconClass}`} />
               )}
-              {/* Datapack ID */}
-              {isRoot ? (
-                <span className="pillbox px-2 pt-1 pb-0.5 bg-emerald-800 text-sm font-mono font-bold text-codemirror-50">
-                  {rootId || 'ID'}
-                </span>
-              ) : (<div></div>)}
-            </span>
-
-            <div className="flex min-w-0 flex-1 items-center overflow-hidden">
-              {/* Name */}
-              <span className={`min-w-0 truncate
-                ${nodeNameWeightClass} ${nodeNameColorClass} ${nodeNameStyleClass}`}
-              >
-                {isRoot ? rootName || node.name : node.name}
-              </span>
-
-              {/* Pillboxes */}
-              {isRoot && rootPackVersion && (
-                <span className="pillbox bg-indigo-800 text-indigo-100">
-                  v{rootPackVersion}
-                </span>
-              )}
-              {isRoot && node.packFormatVersion && (
-                <span className="pillbox">
-                  {node.packFormatVersion}
-                </span>
-              )}
-              {node.contentType && (
-                <span className="pillbox">
-                  {node.contentType}
-                </span>
-              )}
-              {node.experimental && (
-                <span className="pillbox bg-amber-900 text-amber-400">
-                  exp
-                </span>
-              )}
-              {isRoot && isDatapackDisabled && (
-                <span className="pillbox bg-red-700 text-red-100">
-                  disabled
-                </span>
-              )}
             </div>
 
+            {/* Contents */}
+            <div className="flex flex-1 gap-x-2 items-center">
+
+              {/* Datapack ID */}
+              {isRoot ? (
+                <div className={`pillbox px-2.5 pt-1 pb-0.5
+                ${isDatapackDisabled ? 'bg-red-800' : 'bg-emerald-800'}
+                text-sm font-mono font-bold text-codemirror-50`}>
+                  {rootId || 'ID'}
+                </div>
+              ) : (<div></div>)}
+
+              <div className="flex flex-col">
+
+                <div className="flex gap-x-2 min-w-0 flex-1 items-center overflow-hidden">
+                  {/* Name */}
+                  <span className={`min-w-0 truncate
+                    ${nodeNameWeightClass} ${nodeNameColorClass} ${nodeNameStyleClass}`}
+                  >
+                    {isRoot ? rootName || node.name : node.name}
+                  </span>
+
+                  {/* Pillboxes */}
+                  {isRoot && rootPackVersion && (
+                    <span className="pillbox bg-indigo-800 text-indigo-100">
+                      v{rootPackVersion}
+                    </span>
+                  )}
+                  {isRoot && node.packFormatVersion && (
+                    <span className="pillbox">
+                      {node.packFormatVersion}
+                    </span>
+                  )}
+                  {node.contentType && (
+                    <span className="pillbox">
+                      {node.contentType}
+                    </span>
+                  )}
+                  {node.experimental && (
+                    <span className="pillbox bg-amber-900 text-amber-400">
+                      exp
+                    </span>
+                  )}
+
+                </div>
+                
+                {/* Second row for root node information */}
+                {isRoot && (
+                  <div className="mt-0.5 flex max-h-16 min-w-0 flex-1 flex-wrap items-center gap-x-2 gap-y-1.5 overflow-y-auto pr-1">
+                    {isDatapackDisabled && (
+                      <span className="pillbox bg-rose-700 text-rose-50">
+                        disabled
+                      </span>
+                    )}
+                    {sortedRootTags.map((tag) => (
+                      <span key={tag} className="pillbox
+                      bg-codemirror-400 text-codemirror-50
+                      max-w-24 truncate">
+                        {tag}
+                      </span>
+                    ))}
+                  </div>
+                )}
+
+              </div>
+            </div>
+
+            {/* Indicators: Aligned right */}
             <div className="ml-auto flex shrink-0 items-center">
               {hasDiagnosticError && (
                 <i className="codicon codicon-error text-red-400 ml-1 shrink-0" />
