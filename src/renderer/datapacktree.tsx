@@ -15,6 +15,7 @@ interface DataPackTreeProps {
   basePath?: string
   onSelect?: (path: string, isFile: boolean) => void
   onFolderCreated?: () => void
+  onRefreshRequested?: () => void
   onFileRenamed?: (oldRelativePath: string, newName: string) => Promise<boolean>
   onFileDeleted?: (relativePath: string) => Promise<boolean>
   onContextMenuRequest?: (event: React.MouseEvent, items: MenuItem[]) => void
@@ -159,7 +160,7 @@ const collectDirectoryPaths = (node: TreeNode, pathKey: string, output: string[]
   }
 }
 
-export function DatapackTree({ paths, className, folderName, rootId, rootName, rootPackVersion, basePath, onSelect, onFolderCreated, onFileRenamed, onFileDeleted, onContextMenuRequest, modifiedFileKeys, fileDiagnosticSummaries, externalSelectedPath, externalSelectedFileKey, externalExpandedPaths, onExpandedPathsChange, treeContainerRef }: DataPackTreeProps) {
+export function DatapackTree({ paths, className, folderName, rootId, rootName, rootPackVersion, basePath, onSelect, onFolderCreated, onRefreshRequested, onFileRenamed, onFileDeleted, onContextMenuRequest, modifiedFileKeys, fileDiagnosticSummaries, externalSelectedPath, externalSelectedFileKey, externalExpandedPaths, onExpandedPathsChange, treeContainerRef }: DataPackTreeProps) {
   const tree = React.useMemo(() => {
     const builtTree = buildTree(paths, folderName)
     // Enrich with schema starting from the root schema node
@@ -178,6 +179,17 @@ export function DatapackTree({ paths, className, folderName, rootId, rootName, r
     }
     return new Set(dirs)
   })
+
+  const hasEnabledMcmeta = React.useMemo(
+    () => paths.some((entry) => entry.replace(/\\/g, '/').replace(/^\/+/, '') === 'pack.mcmeta'),
+    [paths],
+  )
+  const hasDisabledMcmeta = React.useMemo(
+    () => paths.some((entry) => entry.replace(/\\/g, '/').replace(/^\/+/, '') === 'pack.mcmeta.disabled'),
+    [paths],
+  )
+  const isDatapackDisabled = hasDisabledMcmeta && !hasEnabledMcmeta
+  const canToggleDatapack = hasEnabledMcmeta || hasDisabledMcmeta
 
   // Use external values if provided
   const effectiveSelectedPath = externalSelectedPath !== undefined ? externalSelectedPath : selectedPath
@@ -365,6 +377,32 @@ export function DatapackTree({ paths, className, folderName, rootId, rootName, r
     return null
   }
 
+  const handleToggleDatapack = async () => {
+    if (!basePath) {
+      await showAlertEvent('Error', 'Cannot toggle datapack without a base path')
+      return
+    }
+
+    if (!hasEnabledMcmeta && !hasDisabledMcmeta) {
+      await showAlertEvent('Error', 'No pack.mcmeta or pack.mcmeta.disabled file found in datapack root')
+      return
+    }
+
+    const normalizedBase = normalizePath(basePath)
+    const sourcePath = hasEnabledMcmeta
+      ? `${normalizedBase}/pack.mcmeta`
+      : `${normalizedBase}/pack.mcmeta.disabled`
+    const targetName = hasEnabledMcmeta ? 'pack.mcmeta.disabled' : 'pack.mcmeta'
+
+    try {
+      await window.electron.renameFileOrFolder(sourcePath, targetName)
+      onRefreshRequested?.()
+    } catch (error) {
+      console.error('Failed to toggle datapack:', error)
+      await showAlertEvent('Error', `Failed to toggle datapack: ${error instanceof Error ? error.message : 'Unknown error'}`)
+    }
+  }
+
   const handleRename = async (pathKey: string, currentName: string) => {
     const actualPath = getActualPath(pathKey)
     if (!actualPath) {
@@ -486,6 +524,25 @@ export function DatapackTree({ paths, className, folderName, rootId, rootName, r
     const isRootNode = pathKey === tree.name
     const canRenameOrDelete = !isRootNode && basePath !== undefined
 
+    const rootItems: MenuItem[] = [
+      {
+        label: 'Refresh',
+        onClick: onRefreshRequested,
+        disabled: !onRefreshRequested,
+      },
+      {
+        label: hasEnabledMcmeta ? 'Disable Datapack' : 'Enable Datapack',
+        onClick: handleToggleDatapack,
+        disabled: !canToggleDatapack,
+      },
+      {},
+      {
+        label: 'Create Datapack Directory',
+        children: submenuItems.length ? submenuItems : undefined,
+        disabled: submenuItems.length === 0,
+      },
+    ]
+
     const items: MenuItem[] = [
       {label: 'Cut', onClick: undefined, disabled: true},
       {label: 'Copy', onClick: undefined, disabled: true},
@@ -509,7 +566,7 @@ export function DatapackTree({ paths, className, folderName, rootId, rootName, r
       },
     ]
 
-    onContextMenuRequest?.(e, items)
+    onContextMenuRequest?.(e, isRootNode ? rootItems : items)
   }
 
   const renderNode = (node: TreeNode, depth: number, pathKey: string): React.ReactNode => {
@@ -529,8 +586,11 @@ export function DatapackTree({ paths, className, folderName, rootId, rootName, r
       ? externalSelectedFileKey === nodeFileKey
       : effectiveSelectedPath === pathKey
     const isRoot = depth === 0
+    const isDisabledMetaFile = node.isFile && (relativePath || node.name) === 'pack.mcmeta.disabled'
     const nodeNameWeightClass = node.isFile ? 'font-normal' : (isRoot ? 'font-bold' : 'font-semibold')
-    const nodeNameColorClass = node.schemaNode
+    const nodeNameColorClass = isDisabledMetaFile
+      ? 'text-red-400'
+      : node.schemaNode
       ? 'text-emerald-300'
       : isModified
         ? 'text-orange-300'
@@ -546,7 +606,7 @@ export function DatapackTree({ paths, className, folderName, rootId, rootName, r
                 el.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'nearest' })
               }
             } : null}
-            className={`flex min-w-0 items-center cursor-pointer rounded px-1  ${isSelected ? 'bg-codemirror-select' : 'hover:bg-codemirror-highlight'} ${isRoot ? 'py-2' : ''}`}
+            className={`flex min-w-0 items-center cursor-pointer rounded px-1  ${isSelected ? 'bg-codemirror-select' : isRoot && isDatapackDisabled ? 'bg-red-800/20 hover:bg-red-800/30' : 'hover:bg-codemirror-highlight'} ${isRoot ? 'py-2' : ''}`}
             style={{ paddingLeft: padding }}
             onClick={() => handleSelect(pathKey, !!node.isFile, !!hasChildren)}
             onContextMenu={(e) => handleRightClick(e, node, pathKey)}
@@ -598,6 +658,11 @@ export function DatapackTree({ paths, className, folderName, rootId, rootName, r
                   exp
                 </span>
               )}
+              {isRoot && isDatapackDisabled && (
+                <span className="pillbox bg-red-700 text-red-100">
+                  disabled
+                </span>
+              )}
             </div>
 
             <div className="ml-auto flex shrink-0 items-center">
@@ -627,7 +692,7 @@ export function DatapackTree({ paths, className, folderName, rootId, rootName, r
 
   return (
     <>
-      <div ref={treeContainerRef} className={`${className} overflow-x-hidden overflow-y-auto`}>
+      <div ref={treeContainerRef} className={`${className} overflow-x-hidden overflow-y-auto ${isDatapackDisabled ? 'bg-red-800/10 hover:bg-red-800/20' : ''}`}>
         <ul className="space-y-1">
           {renderNode(tree, 0, tree.name)}
         </ul>

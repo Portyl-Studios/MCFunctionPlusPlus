@@ -265,7 +265,7 @@ ipcMain.handle('add-datapack-existing', async (_event, { datapackDir }) => {
   // Validate the folder is a datapack
   const isValidDatapack = await validateDatapackFolder(datapackDir)
   if (!isValidDatapack) {
-    throw new Error('Folder does not contain a valid datapack (pack.mcmeta not found)')
+    throw new Error('Folder does not contain a valid datapack (pack.mcmeta or pack.mcmeta.disabled not found)')
   }
 
   // Load or create datapack metadata

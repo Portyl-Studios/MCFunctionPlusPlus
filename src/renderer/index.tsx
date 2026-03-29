@@ -2367,6 +2367,7 @@ function CodeEditor() {
               }
               treeContainerRef={getExplorerContainerRef(datapack.dir)}
               onFolderCreated={handleRefreshExplorer}
+              onRefreshRequested={handleRefreshExplorer}
               onSelect={(pathKey, isFile) => handleExplorerSelect(datapack.dir, pathKey, isFile)}
               onFileRenamed={(oldRelativePath, newName) => handleFileRenamed(datapack.dir, oldRelativePath, newName)}
               onFileDeleted={(relativePath) => handleFileDeleted(datapack.dir, relativePath)}

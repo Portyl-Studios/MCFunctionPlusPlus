@@ -431,10 +431,28 @@ export async function validateDatapackFolder(folderPath: string): Promise<boolea
       throw new Error('Path is not a directory')
     }
 
-    // Check for pack.mcmeta in the root directory (not recursive)
+    // Accept either enabled or disabled datapack metadata file in the root directory.
     const packMcmetaPath = path.join(folderPath, 'pack.mcmeta')
-    const packMcmetaStats = await withFileBusyRetry('Inspect pack.mcmeta', () => fs.stat(packMcmetaPath))
-    return packMcmetaStats.isFile()
+    const packMcmetaDisabledPath = path.join(folderPath, 'pack.mcmeta.disabled')
+
+    try {
+      const packMcmetaStats = await withFileBusyRetry('Inspect pack.mcmeta', () => fs.stat(packMcmetaPath))
+      if (packMcmetaStats.isFile()) return true
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'EBUSY') {
+        throw error
+      }
+    }
+
+    try {
+      const packMcmetaDisabledStats = await withFileBusyRetry('Inspect pack.mcmeta.disabled', () => fs.stat(packMcmetaDisabledPath))
+      return packMcmetaDisabledStats.isFile()
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'EBUSY') {
+        throw error
+      }
+      return false
+    }
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === 'EBUSY') {
       throw error
