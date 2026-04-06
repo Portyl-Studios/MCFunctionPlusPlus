@@ -63,6 +63,16 @@ type DatapackEntry = {
   tags?: string[]
 }
 
+const isDatapackEntryDisabled = (entry: DatapackEntry): boolean => {
+  const hasEnabledMcmeta = entry.paths.some(
+    (path) => path.replace(/\\/g, "/").replace(/^\/+/, "") === "pack.mcmeta",
+  )
+  const hasDisabledMcmeta = entry.paths.some(
+    (path) => path.replace(/\\/g, "/").replace(/^\/+/, "") === "pack.mcmeta.disabled",
+  )
+  return hasDisabledMcmeta && !hasEnabledMcmeta
+}
+
 type OpenedFile = {
   datapackDir: string
   relativePath: string
@@ -2387,6 +2397,27 @@ function CodeEditor() {
     return nextEntries
   }
 
+  const collapseDatapacks = (predicate?: (entry: DatapackEntry) => boolean) => {
+    setExplorerExpandedPathsByDatapack((prev) => {
+      const next: Record<string, Set<string>> = { ...prev }
+
+      for (const datapack of datapacksRef.current) {
+        if (predicate && !predicate(datapack)) continue
+        next[datapack.dir] = datapack.name ? new Set([datapack.name]) : new Set<string>()
+      }
+
+      return next
+    })
+  }
+
+  const handleCollapseAllDatapacks = () => {
+    collapseDatapacks()
+  }
+
+  const handleCollapseDisabledDatapacks = () => {
+    collapseDatapacks(isDatapackEntryDisabled)
+  }
+
   const persistDatapackOrder = async (entries: DatapackEntry[]) => {
     const metadataPaths = entries.map((entry) => getDatapackMetadataPath(entry.dir))
     const savedPaths = await handleSetDatapacks(metadataPaths)
@@ -2487,6 +2518,7 @@ function CodeEditor() {
   const openedFileKeys = getOpenedFileKeys()
   const hasSavedTabs = openedFileKeys.some((fileKey) => !modifiedFiles.has(fileKey))
   const hasAnyOpenTabs = openedFileKeys.length > 0
+  const disabledDatapackCount = datapacks.filter(isDatapackEntryDisabled).length
 
   const createTabContextItems = (targetFileKey: string): MenuItem[] => {
     const contextTabIndex = openedFileKeys.indexOf(targetFileKey)
@@ -2993,7 +3025,23 @@ function CodeEditor() {
               onTabChange={setActiveLeftTabId}
               onTabReorder={handleReorderLeftTab}
               menuItems={[
-                {label: "Refresh", onClick: handleRefreshExplorer}
+                { label: "Refresh All Datapacks", onClick: handleRefreshExplorer },
+                {},
+                {
+                  label: "Collapse",
+                  children: [
+                    {
+                      label: "Collapse Disabled Datapacks",
+                      onClick: handleCollapseDisabledDatapacks,
+                      disabled: disabledDatapackCount === 0,
+                    },
+                    {
+                      label: "Collapse All Datapacks",
+                      onClick: handleCollapseAllDatapacks,
+                      disabled: datapacks.length === 0,
+                    },
+                  ],
+                },
               ] as MenuItem[]}
               tabs={orderedLeftPanelTabs}
             />
