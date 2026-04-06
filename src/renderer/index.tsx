@@ -2403,7 +2403,7 @@ function CodeEditor() {
 
       for (const datapack of datapacksRef.current) {
         if (predicate && !predicate(datapack)) continue
-        next[datapack.dir] = datapack.name ? new Set([datapack.name]) : new Set<string>()
+        next[datapack.dir] = new Set<string>()
       }
 
       return next
