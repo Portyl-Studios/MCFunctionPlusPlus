@@ -858,20 +858,48 @@ function CodeEditor() {
     
     // Pre-rename check: if newName is empty, just validate unsaved changes
     if (!newName) {
-      if (!modifiedFiles.has(oldFileKey)) return true
-      
-      const openedFile = openedFiles.find((f) => createFileKey(f.datapackDir, f.relativePath) === oldFileKey)
-      const fileName = openedFile?.fileName || "this file"
-      
-      const choice = await dialog.showUnsavedConfirm("Rename File?", `${fileName} has unsaved changes. What would you like to do?`)
-      if (choice === "cancel") return false
-      if (choice === "save") {
-        const didSave = await saveFileInternal(oldFileKey)
+      const normalizedTarget = oldRelativePath.replace(/\\/g, '/').replace(/^\/+|\/+$/g, '')
+      const targetPrefix = normalizedTarget ? `${normalizedTarget}/` : ''
+
+      const affectedModifiedFileKeys = Array.from(modifiedFiles).filter((fileKey) => {
+        const parsed = parseFileKey(fileKey)
+        if (parsed.datapackDir !== datapackDir) return false
+
+        const normalizedRelative = parsed.relativePath.replace(/\\/g, '/').replace(/^\/+/, '')
+        if (!normalizedTarget) {
+          return true
+        }
+
+        return normalizedRelative === normalizedTarget || normalizedRelative.startsWith(targetPrefix)
+      })
+
+      if (affectedModifiedFileKeys.length === 0) return true
+
+      const itemLabel = affectedModifiedFileKeys.length === 1 ? 'file has' : 'files have'
+      const choice = await dialog.showUnsavedConfirm(
+        'Rename File?',
+        `${affectedModifiedFileKeys.length} ${itemLabel} unsaved changes. What would you like to do?`
+      )
+
+      if (choice === 'cancel') return false
+
+      if (choice === 'discard') {
+        setModifiedFiles((prev) => {
+          const next = new Set(prev)
+          for (const fileKey of affectedModifiedFileKeys) {
+            next.delete(fileKey)
+          }
+          return next
+        })
+
+        return true
+      }
+
+      for (const fileKey of affectedModifiedFileKeys) {
+        const didSave = await saveFileInternal(fileKey)
         if (!didSave) return false
       }
-      if (choice === "discard") {
-        removeFileFromModifiedFiles(oldFileKey)
-      }
+
       return true
     }
 
@@ -882,12 +910,8 @@ function CodeEditor() {
     // Calculate new relative path
     const newRelativePath = oldRelativePath.split("/").slice(0, -1).concat(newName).join("/")
     const newFileKey = createFileKey(datapackDir, newRelativePath)
+    const newFileName = newRelativePath.split('/').filter(Boolean).pop() || newName
     const wasActive = activeFile === oldFileKey
-
-    const cachedState = fileEditorStatesRef.current.get(oldFileKey)
-    if (cachedState) {
-      fileEditorStatesRef.current.set(newFileKey, cachedState)
-    }
 
     const cachedContext = fileContextParseCacheRef.current.get(oldFileKey)
     if (cachedContext) {
@@ -905,7 +929,7 @@ function CodeEditor() {
         const newFile: OpenedFile = {
           datapackDir,
           relativePath: newRelativePath,
-          fileName: newName,
+          fileName: newFileName,
           content: freshContents,
         }
         filtered.splice(openedFileIndex, 0, newFile)
@@ -931,7 +955,7 @@ function CodeEditor() {
       })
 
       if (wasActive) {
-        await openFile(newFileKey)
+        await openFile(newFileKey, { initialContent: freshContents })
       }
 
       fileEditorStatesRef.current.delete(oldFileKey)

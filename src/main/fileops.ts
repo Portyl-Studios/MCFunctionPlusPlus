@@ -479,14 +479,33 @@ export async function renameFileOrFolder(oldPath: string, newName: string): Prom
     throw new Error('Invalid path')
   }
 
-  // Validate the new name doesn't contain path separators
-  if (newName.includes('/') || newName.includes('\\')) {
-    throw new Error('New name cannot contain path separators')
+  const normalizedTarget = newName.replace(/\\/g, '/').trim()
+  if (!normalizedTarget) {
+    throw new Error('New name cannot be empty')
   }
 
-  // Validate the new name as a filename
-  if (isInvalidFilename(newName)) {
-    throw new Error('Invalid new name')
+  // Disallow absolute targets and parent traversal; renames must stay within source parent.
+  if (path.isAbsolute(normalizedTarget)) {
+    throw new Error('New name must be relative, not absolute')
+  }
+
+  const targetSegments = normalizedTarget
+    .split('/')
+    .map((segment) => segment.trim())
+    .filter((segment) => segment.length > 0)
+
+  if (targetSegments.length === 0) {
+    throw new Error('New name cannot be empty')
+  }
+
+  for (const segment of targetSegments) {
+    if (segment === '.' || segment === '..') {
+      throw new Error('New name cannot contain . or .. path segments')
+    }
+
+    if (isInvalidPathSegment(segment)) {
+      throw new Error(`Invalid path segment: "${segment}"`)
+    }
   }
 
   try {
@@ -495,7 +514,13 @@ export async function renameFileOrFolder(oldPath: string, newName: string): Prom
     
     // Construct new path in the same directory
     const directory = path.dirname(oldPath)
-    const newPath = path.join(directory, newName)
+    const newPath = path.resolve(directory, ...targetSegments)
+
+    if (!isValidFileAccess(newPath, directory)) {
+      throw new Error('New name resolves outside the current folder')
+    }
+
+    await withFileBusyRetry('Create target parent directories', () => fs.mkdir(path.dirname(newPath), { recursive: true }))
 
     // Check if target already exists
     try {
