@@ -376,6 +376,13 @@ function CodeEditor() {
   const [dragOverPosition, setDragOverPosition] = useState<"before" | "after" | null>(null)
   const dragGhostRef = useRef<HTMLDivElement | null>(null)
 
+  // Datapack drag-and-drop state
+  const [draggingDatapackDir, setDraggingDatapackDir] = useState<string | null>(null)
+  const [dragOverDatapackDir, setDragOverDatapackDir] = useState<string | null>(null)
+  const [dragOverDatapackPosition, setDragOverDatapackPosition] = useState<"before" | "after" | null>(null)
+  const [isDragOverDatapackEndZone, setIsDragOverDatapackEndZone] = useState(false)
+  const datapackDragGhostRef = useRef<HTMLDivElement | null>(null)
+
   const [explorerSelectedPathsByDatapack, setExplorerSelectedPathsByDatapack] = useState<Record<string, string | null>>({})
   const [explorerSelectedFileKeysByDatapack, setExplorerSelectedFileKeysByDatapack] = useState<Record<string, string | null>>({})
   const [explorerExpandedPathsByDatapack, setExplorerExpandedPathsByDatapack] = useState<Record<string, Set<string>>>({})
@@ -409,6 +416,7 @@ function CodeEditor() {
     handleNewWorkspace,
     handleOpenDefaultWorkspace,
     handleGetDatapacks,
+    handleSetDatapacks,
   } = useWorkspace()
 
   const {
@@ -2352,6 +2360,64 @@ function CodeEditor() {
     setOpenedFiles(newFiles)
   }
 
+  const getDatapackMetadataPath = (datapackDir: string) => {
+    const normalizedDir = datapackDir.replace(/\\/g, "/").replace(/\/+$/, "")
+    return `${normalizedDir}/.mpp-datapack`
+  }
+
+  const reorderDatapacks = (entries: DatapackEntry[], draggedDir: string, targetDir: string, position: "before" | "after") => {
+    const draggedIndex = entries.findIndex((entry) => entry.dir === draggedDir)
+    const targetIndex = entries.findIndex((entry) => entry.dir === targetDir)
+
+    if (draggedIndex === -1 || targetIndex === -1) return entries
+    if (draggedIndex === targetIndex) return entries
+
+    const nextEntries = [...entries]
+    const [draggedEntry] = nextEntries.splice(draggedIndex, 1)
+
+    const insertIndex = position === "after"
+      ? draggedIndex < targetIndex
+        ? targetIndex
+        : targetIndex + 1
+      : draggedIndex < targetIndex
+        ? targetIndex - 1
+        : targetIndex
+
+    nextEntries.splice(insertIndex, 0, draggedEntry)
+    return nextEntries
+  }
+
+  const persistDatapackOrder = async (entries: DatapackEntry[]) => {
+    const metadataPaths = entries.map((entry) => getDatapackMetadataPath(entry.dir))
+    const savedPaths = await handleSetDatapacks(metadataPaths)
+    return savedPaths.length === metadataPaths.length
+      && savedPaths.every((savedPath, index) => savedPath === metadataPaths[index])
+  }
+
+  const handleDatapackReorder = async (draggedDir: string, targetDir: string, position: "before" | "after") => {
+    const previousEntries = datapacksRef.current
+    const nextEntries = reorderDatapacks(previousEntries, draggedDir, targetDir, position)
+
+    if (nextEntries === previousEntries) {
+      return
+    }
+
+    setDatapacks(nextEntries)
+
+    const didPersist = await persistDatapackOrder(nextEntries)
+    if (didPersist) return
+
+    setDatapacks(previousEntries)
+    await dialog.showAlert("Error", "Failed to save datapack order in workspace")
+  }
+
+  const handleDatapackDropToEnd = async (draggedDir: string) => {
+    const entries = datapacksRef.current
+    const lastDatapack = entries[entries.length - 1]
+    if (!lastDatapack || lastDatapack.dir === draggedDir) return
+    await handleDatapackReorder(draggedDir, lastDatapack.dir, "after")
+  }
+
   const closeTabsSequentially = async (fileKeys: string[]): Promise<boolean> => {
     for (const fileKey of fileKeys) {
       const didClose = await closeTab(fileKey)
@@ -2549,38 +2615,169 @@ function CodeEditor() {
       visible: visibleLeftPanelTabs.has("explorer"),
       content: datapacks.length ? (
         <div className="space-y-4">
-          {datapacks.map((datapack) => (
-            <DatapackTree
-              key={datapack.dir}
-              paths={datapack.paths}
-              folderName={datapack.name}
-              rootId={datapack.id}
-              rootName={datapack.displayName}
-              rootPackVersion={datapack.packVersion}
-              rootTags={datapack.tags}
-              basePath={datapack.dir}
-              className="mt-2"
-              externalSelectedPath={explorerSelectedPathsByDatapack[datapack.dir]}
-              externalSelectedFileKey={explorerSelectedFileKeysByDatapack[datapack.dir]}
-              externalExpandedPaths={explorerExpandedPathsByDatapack[datapack.dir]}
-              onExpandedPathsChange={(paths) =>
-                setExplorerExpandedPathsByDatapack((prev) => ({
-                  ...prev,
-                  [datapack.dir]: paths,
-                }))
+          {datapacks.map((datapack) => {
+            const showTopIndicator = dragOverDatapackDir === datapack.dir && dragOverDatapackPosition === "before"
+            const showBottomIndicator = dragOverDatapackDir === datapack.dir && dragOverDatapackPosition === "after"
+            const isDraggingDatapack = draggingDatapackDir === datapack.dir
+            const datapackLabel = datapack.displayName || datapack.name
+
+            return (
+              <div
+                key={datapack.dir}
+                draggable
+                onDragStart={(event) => {
+                  event.dataTransfer.effectAllowed = "move"
+                  event.dataTransfer.setData("text/plain", datapack.dir)
+                  setDraggingDatapackDir(datapack.dir)
+                  setIsDragOverDatapackEndZone(false)
+
+                  if (datapackDragGhostRef.current) {
+                    datapackDragGhostRef.current.remove()
+                    datapackDragGhostRef.current = null
+                  }
+
+                  const ghost = document.createElement("div")
+                  ghost.className = "px-2 py-1 bg-codemirror-600 rounded border border-codemirror-400 text-sm text-codemirror-100 whitespace-nowrap"
+                  ghost.textContent = datapackLabel
+
+                  if (datapack.packVersion) {
+                    const versionLabel = document.createElement("span")
+                    versionLabel.className = "text-xs text-codemirror-300 italic ml-1"
+                    versionLabel.textContent = `v${datapack.packVersion}`
+                    ghost.appendChild(versionLabel)
+                  }
+
+                  ghost.style.position = "fixed"
+                  ghost.style.top = "-1000px"
+                  ghost.style.left = "-1000px"
+                  ghost.style.pointerEvents = "none"
+                  document.body.appendChild(ghost)
+                  datapackDragGhostRef.current = ghost
+
+                  event.dataTransfer.setDragImage(ghost, 0, 0)
+                }}
+                onDragEnd={() => {
+                  setDraggingDatapackDir(null)
+                  setDragOverDatapackDir(null)
+                  setDragOverDatapackPosition(null)
+                  setIsDragOverDatapackEndZone(false)
+
+                  if (datapackDragGhostRef.current) {
+                    datapackDragGhostRef.current.remove()
+                    datapackDragGhostRef.current = null
+                  }
+                }}
+                onDragOver={(event) => {
+                  event.preventDefault()
+                  event.dataTransfer.dropEffect = "move"
+                  setIsDragOverDatapackEndZone(false)
+                  const rect = (event.currentTarget as HTMLElement).getBoundingClientRect()
+                  const midpoint = rect.top + rect.height / 2
+                  const nextPosition = event.clientY < midpoint ? "before" : "after"
+
+                  if (dragOverDatapackDir !== datapack.dir || dragOverDatapackPosition !== nextPosition) {
+                    setDragOverDatapackDir(datapack.dir)
+                    setDragOverDatapackPosition(nextPosition)
+                  }
+                }}
+                onDragLeave={(event) => {
+                  const relatedTarget = event.relatedTarget as Node | null
+                  if (relatedTarget && (event.currentTarget as HTMLElement).contains(relatedTarget)) {
+                    return
+                  }
+                  setDragOverDatapackDir(null)
+                  setDragOverDatapackPosition(null)
+                }}
+                onDrop={(event) => {
+                  event.preventDefault()
+                  const draggedDir = event.dataTransfer.getData("text/plain")
+                  if (draggedDir && draggedDir !== datapack.dir) {
+                    const position = dragOverDatapackPosition === "after" ? "after" : "before"
+                    void handleDatapackReorder(draggedDir, datapack.dir, position)
+                  }
+
+                  setDragOverDatapackDir(null)
+                  setDragOverDatapackPosition(null)
+                  setDraggingDatapackDir(null)
+                  setIsDragOverDatapackEndZone(false)
+                }}
+                className={`relative ${isDraggingDatapack ? "opacity-10" : ""}`}
+              >
+                {showTopIndicator && (
+                  <div className="absolute left-0 right-0 top-0 h-0.5 bg-codemirror-100 pointer-events-none" />
+                )}
+
+                <DatapackTree
+                  paths={datapack.paths}
+                  folderName={datapack.name}
+                  rootId={datapack.id}
+                  rootName={datapack.displayName}
+                  rootPackVersion={datapack.packVersion}
+                  rootTags={datapack.tags}
+                  basePath={datapack.dir}
+                  className="mt-2"
+                  externalSelectedPath={explorerSelectedPathsByDatapack[datapack.dir]}
+                  externalSelectedFileKey={explorerSelectedFileKeysByDatapack[datapack.dir]}
+                  externalExpandedPaths={explorerExpandedPathsByDatapack[datapack.dir]}
+                  onExpandedPathsChange={(paths) =>
+                    setExplorerExpandedPathsByDatapack((prev) => ({
+                      ...prev,
+                      [datapack.dir]: paths,
+                    }))
+                  }
+                  treeContainerRef={getExplorerContainerRef(datapack.dir)}
+                  onFolderCreated={handleRefreshExplorer}
+                  onRefreshRequested={handleRefreshExplorer}
+                  onRemoveFromWorkspaceRequested={() => handleRemoveDatapack(datapack.dir)}
+                  onSelect={(pathKey, isFile) => handleExplorerSelect(datapack.dir, pathKey, isFile)}
+                  onFileRenamed={(oldRelativePath, newName) => handleFileRenamed(datapack.dir, oldRelativePath, newName)}
+                  onFileDeleted={(relativePath) => handleFileDeleted(datapack.dir, relativePath)}
+                  onContextMenuRequest={handleDatapackTreeContextMenu}
+                  modifiedFileKeys={modifiedFiles}
+                  fileDiagnosticSummaries={fileDiagnosticSummaries}
+                />
+
+                {showBottomIndicator && (
+                  <div className="absolute left-0 right-0 bottom-0 h-0.5 bg-codemirror-100 pointer-events-none" />
+                )}
+              </div>
+            )
+          })}
+
+          <div
+            onDragOver={(event) => {
+              if (!draggingDatapackDir) return
+              event.preventDefault()
+              event.dataTransfer.dropEffect = "move"
+              setDragOverDatapackDir(null)
+              setDragOverDatapackPosition(null)
+              setIsDragOverDatapackEndZone(true)
+            }}
+            onDragLeave={(event) => {
+              const relatedTarget = event.relatedTarget as Node | null
+              if (relatedTarget && (event.currentTarget as HTMLElement).contains(relatedTarget)) {
+                return
               }
-              treeContainerRef={getExplorerContainerRef(datapack.dir)}
-              onFolderCreated={handleRefreshExplorer}
-              onRefreshRequested={handleRefreshExplorer}
-              onRemoveFromWorkspaceRequested={() => handleRemoveDatapack(datapack.dir)}
-              onSelect={(pathKey, isFile) => handleExplorerSelect(datapack.dir, pathKey, isFile)}
-              onFileRenamed={(oldRelativePath, newName) => handleFileRenamed(datapack.dir, oldRelativePath, newName)}
-              onFileDeleted={(relativePath) => handleFileDeleted(datapack.dir, relativePath)}
-              onContextMenuRequest={handleDatapackTreeContextMenu}
-              modifiedFileKeys={modifiedFiles}
-              fileDiagnosticSummaries={fileDiagnosticSummaries}
-            />
-          ))}
+              setIsDragOverDatapackEndZone(false)
+            }}
+            onDrop={(event) => {
+              if (!draggingDatapackDir) return
+              event.preventDefault()
+              const draggedDir = event.dataTransfer.getData("text/plain")
+              if (draggedDir) {
+                void handleDatapackDropToEnd(draggedDir)
+              }
+              setDraggingDatapackDir(null)
+              setDragOverDatapackDir(null)
+              setDragOverDatapackPosition(null)
+              setIsDragOverDatapackEndZone(false)
+            }}
+            className="relative h-5 mt-1"
+          >
+            {isDragOverDatapackEndZone && (
+              <div className="absolute left-0 right-0 bottom-0 h-0.5 bg-codemirror-100 pointer-events-none" />
+            )}
+          </div>
         </div>
       ) : (
         <>

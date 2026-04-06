@@ -6,6 +6,7 @@ import {
   createDefaultWorkspace,
   addDatapackPath,
   removeDatapackPath,
+  setDatapackPaths,
   getDatapackPaths,
   type WorkspaceData
 } from './workspace-parser'
@@ -82,6 +83,12 @@ class WorkspaceManager {
 
   getDatapacks(): string[] {
     if (!this.currentWorkspaceData) return []
+    return getDatapackPaths(this.currentWorkspaceData)
+  }
+
+  setDatapacks(metadataPaths: string[]): string[] {
+    if (!this.currentWorkspaceData) return []
+    this.currentWorkspaceData = setDatapackPaths(this.currentWorkspaceData, metadataPaths)
     return getDatapackPaths(this.currentWorkspaceData)
   }
 
@@ -219,6 +226,16 @@ export const registerWorkspaceHandlers = (getMainWindow: () => BrowserWindow | n
 
   ipcMain.handle('workspace-get-datapacks', async () => {
     return workspaceManager.getDatapacks()
+  })
+
+  ipcMain.handle('workspace-set-datapacks', async (_event, { metadataPaths }) => {
+    if (!Array.isArray(metadataPaths)) {
+      throw new Error('Invalid metadata paths payload')
+    }
+
+    const nextDatapacks = workspaceManager.setDatapacks(metadataPaths)
+    await workspaceManager.saveWorkspace()
+    return nextDatapacks
   })
 
   ipcMain.handle('workspace-new', async () => {

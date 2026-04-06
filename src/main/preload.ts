@@ -127,6 +127,9 @@ const electronApi: ElectronAPI = {
   workspaceGetDatapacks: () => {
     return ipcRenderer.invoke('workspace-get-datapacks')
   },
+  workspaceSetDatapacks: (metadataPaths: string[]) => {
+    return ipcRenderer.invoke('workspace-set-datapacks', { metadataPaths })
+  },
   workspaceNew: () => {
     return ipcRenderer.invoke('workspace-new')
   },

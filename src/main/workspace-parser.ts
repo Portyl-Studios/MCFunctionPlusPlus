@@ -67,6 +67,17 @@ export const removeDatapackPath = (data: WorkspaceData, metadataPath: string): W
   return data
 }
 
+export const setDatapackPaths = (data: WorkspaceData, metadataPaths: string[]): WorkspaceData => {
+  const uniqueOrderedPaths = metadataPaths
+    .filter((path): path is string => typeof path === 'string')
+    .map((path) => path.trim())
+    .filter((path) => path.length > 0)
+    .filter((path, index, list) => list.indexOf(path) === index)
+
+  data.datapacks = uniqueOrderedPaths
+  return data
+}
+
 export const getDatapackPaths = (data: WorkspaceData): string[] => {
   return data.datapacks ?? []
 }

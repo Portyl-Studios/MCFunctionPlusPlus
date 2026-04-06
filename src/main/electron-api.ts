@@ -88,6 +88,7 @@ export interface ElectronAPI {
   workspaceAddDatapack: (metadataPath: string) => Promise<string[]>
   workspaceRemoveDatapack: (metadataPath: string) => Promise<string[]>
   workspaceGetDatapacks: () => Promise<string[]>
+  workspaceSetDatapacks: (metadataPaths: string[]) => Promise<string[]>
   workspaceNew: () => Promise<{ success: boolean }>
   createFolder: (folderPath: string) => Promise<string>
   addDatapackFromMetadata: (metadataPath: string) => Promise<AddDatapackExistingResult>

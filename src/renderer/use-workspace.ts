@@ -190,6 +190,15 @@ export function useWorkspace() {
     }
   }
 
+  const handleSetDatapacks = async (metadataPaths: string[]) => {
+    try {
+      return await window.electron.workspaceSetDatapacks(metadataPaths)
+    } catch (error) {
+      console.error('Failed to set datapacks in workspace:', error)
+      return []
+    }
+  }
+
   const handleNewWorkspace = async (): Promise<boolean> => {
     const previousWorkspace = workspaceInfo
 
@@ -232,7 +241,8 @@ export function useWorkspace() {
     handleOpenDefaultWorkspace,
     handleAddDatapack,
     handleRemoveDatapack,
-    handleGetDatapacks
+    handleGetDatapacks,
+    handleSetDatapacks
   }
 }
 
