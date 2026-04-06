@@ -416,6 +416,7 @@ function CodeEditor() {
   const dialog = useDialogRequest()
   const openDialogRef = useRef(dialog.openDialog)
   const isDialogOpenRef = useRef(dialog.isOpen)
+  const isEditorFocusedRef = useRef(false)
   const openedFilesRef = useRef(openedFiles)
   const modifiedFilesRef = useRef(modifiedFiles)
   const datapacksRef = useRef(datapacks)
@@ -1908,10 +1909,14 @@ function CodeEditor() {
         }),
         EditorView.domEventHandlers({
           focus: () => {
+            isEditorFocusedRef.current = true
             window.requestAnimationFrame(() => {
               scrollTabIntoView(activeFileRef.current, "smooth")
               focusFileInExplorer(activeFileRef.current)
             })
+          },
+          blur: () => {
+            isEditorFocusedRef.current = false
           },
         }),
         ...getLanguageProcessingExtensions(language.id, handleDiagnosticSummaryChange),
@@ -2212,6 +2217,36 @@ function CodeEditor() {
       }
     }
   }, [activeFile, modifiedFiles, handleOpenWorkspaceWithConfirm, handleQuitWithConfirm, saveCurrentFile, saveAllFiles, closeTab])
+
+  useEffect(() => {
+    const handleKeyDown = async (event: KeyboardEvent) => {
+      if (event.key !== 'F2' || event.defaultPrevented) return
+      if (isDialogOpenRef.current) return
+      if (!isEditorFocusedRef.current) return
+
+      const fileKey = activeFileRef.current
+      if (!fileKey) return
+
+      const { datapackDir, relativePath } = parseFileKey(fileKey)
+      const openedFile = openedFilesRef.current.find((file) => createFileKey(file.datapackDir, file.relativePath) === fileKey)
+      const currentName = openedFile?.fileName || relativePath.split('/').filter(Boolean).pop() || 'this file'
+
+      event.preventDefault()
+
+      const readyToRename = await handleFileRenamed(datapackDir, relativePath, '')
+      if (!readyToRename) return
+
+      const newName = await dialog.showPrompt('Rename', 'Enter new name:', currentName)
+      if (!newName || newName === currentName) return
+
+      await handleFileRenamed(datapackDir, relativePath, newName)
+    }
+
+    window.addEventListener('keydown', handleKeyDown)
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown)
+    }
+  }, [dialog.showPrompt, handleFileRenamed])
 
   useEffect(() => {
     const loadWorkspaceDatapacks = async () => {
