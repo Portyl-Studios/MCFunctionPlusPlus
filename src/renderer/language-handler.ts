@@ -137,7 +137,7 @@ const LANGUAGE_DEFINITIONS_INTERNAL: EditorLanguageDefinition[] = [
     id: "json",
     label: "JSON",
     codicon: "codicon-json",
-    extensions: [".json", ".mcmeta", ".mpp-datapack", ".mpp-workspace"],
+    extensions: [".json", ".mcmeta", ".mcmeta.disabled", ".mpp-datapack", ".mpp-workspace"],
     supportsDiagnostics: true,
     createExtensions: (onDiagnosticSummaryChange) => [
       autocompletion({
