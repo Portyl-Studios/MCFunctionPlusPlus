@@ -12,11 +12,13 @@ interface UseTooltipRequestOptions {
 }
 
 const TOOLTIP_MOUSE_IDLE_DELAY_MS = 300
+const TOOLTIP_POINTER_FOCUS_SUPPRESS_MS = 250
 
 export function useTooltipRequest({ content, disabled = false, offset = 8 }: UseTooltipRequestOptions) {
   const triggerRef = React.useRef<HTMLElement | null>(null)
   const tooltipRef = React.useRef<HTMLDivElement | null>(null)
   const hoverTimerRef = React.useRef<number | null>(null)
+  const suppressFocusUntilRef = React.useRef(0)
 
   const [isOpen, setIsOpen] = React.useState(false)
   const [position, setPosition] = React.useState<TooltipPosition>({ x: 0, y: 0 })
@@ -106,8 +108,16 @@ export function useTooltipRequest({ content, disabled = false, offset = 8 }: Use
       }
     }
 
+    const handleGlobalPointerDown = () => {
+      suppressFocusUntilRef.current = Date.now() + TOOLTIP_POINTER_FOCUS_SUPPRESS_MS
+      closeTooltip()
+    }
+
+    // Capture phase ensures stale tooltips close even if downstream click handlers block bubbling.
+    document.addEventListener('pointerdown', handleGlobalPointerDown, true)
     document.addEventListener('keydown', handleEscape)
     return () => {
+      document.removeEventListener('pointerdown', handleGlobalPointerDown, true)
       document.removeEventListener('keydown', handleEscape)
     }
   }, [shouldRender, closeTooltip])
@@ -132,6 +142,10 @@ export function useTooltipRequest({ content, disabled = false, offset = 8 }: Use
   }
 
   const handleFocus = () => {
+    if (Date.now() < suppressFocusUntilRef.current) {
+      return
+    }
+
     if (hasReadyData) {
       clearHoverTimer()
       setCursorAnchor(null)
