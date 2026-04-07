@@ -51,7 +51,7 @@ import { runGlobalDiagnosticsScan } from "./diagnostics/global-diagnostics"
 import { Tooltip } from "./overlays/tooltip"
 import { useExternalFileWatcher } from "./use-external-file-watcher"
 import { useAppUpdate } from "./use-app-update"
-import { renamePathWithPrompt } from "./path-actions"
+import { deletePathWithConfirm, renamePathWithPrompt } from "./path-actions"
 import type { ShortcutAction } from "../main/electron-api"
 
 type DatapackEntry = {
@@ -387,6 +387,7 @@ function CodeEditor() {
   const [isFullScreen, setIsFullScreen] = useState(false)
   const [openedFiles, setOpenedFiles] = useState<OpenedFile[]>([])
   const [activeFile, setActiveFile] = useState<string | null>(null)
+  const [previewFileKey, setPreviewFileKey] = useState<string | null>(null)
   const [modifiedFiles, setModifiedFiles] = useState<Set<string>>(new Set())
   const [fileDiagnosticSummaries, setFileDiagnosticSummaries] = useState<Record<string, DiagnosticSummary>>({})
   const [cursorMarkerInfo, setCursorMarkerInfo] = useState<CursorMarkerInfo>(defaultCursorMarkerInfo)
@@ -433,6 +434,7 @@ function CodeEditor() {
   const pendingExternalDatapackPathRef = useRef<string | null>(null)
   const fileContextParseCacheRef = useRef<Map<string, ParsedContextCacheEntry>>(new Map())
   const openFileRequestIdRef = useRef(0)
+  const previewFileKeyRef = useRef<string | null>(null)
   const dialog = useDialogRequest()
   const openDialogRef = useRef(dialog.openDialog)
   const isDialogOpenRef = useRef(dialog.isOpen)
@@ -861,6 +863,7 @@ function CodeEditor() {
   }
 
   const removeFileFromOpenedFiles = (fileKey: string) => {
+    setPreviewFileKey((prev) => (prev === fileKey ? null : prev))
     setOpenedFiles((prev) => prev.filter((f) => createFileKey(f.datapackDir, f.relativePath) !== fileKey))
   }
 
@@ -892,6 +895,8 @@ function CodeEditor() {
     
     // Pre-rename check: if newName is empty, just validate unsaved changes
     if (!newName) {
+      setPreviewFileKey((prev) => (prev === oldFileKey ? null : prev))
+
       const normalizedTarget = oldRelativePath.replace(/\\/g, '/').replace(/^\/+|\/+$/g, '')
       const targetPrefix = normalizedTarget ? `${normalizedTarget}/` : ''
 
@@ -954,6 +959,7 @@ function CodeEditor() {
     }
 
     clearAutoSaveTimer(oldFileKey)
+    setPreviewFileKey((prev) => (prev === oldFileKey ? newFileKey : prev))
     
     try {
       const freshContents = await window.electron.readFile(datapackDir, newRelativePath)
@@ -1110,7 +1116,6 @@ function CodeEditor() {
       if (openFileRequestIdRef.current !== requestId) return
       view.setState(cachedState)
       setCursorMarkerInfo(getCursorMarkerInfo(view.state))
-      view.focus()
       return
     }
 
@@ -1118,10 +1123,9 @@ function CodeEditor() {
     fileEditorStatesRef.current.set(fileKey, newState)
     view.setState(newState)
     setCursorMarkerInfo(getCursorMarkerInfo(view.state))
-    view.focus()
   }
 
-  const handleExplorerSelect = async (datapackDir: string, pathKey: string, isFile: boolean) => {
+  const handleExplorerSelect = async (datapackDir: string, pathKey: string, isFile: boolean, mode: 'preview' | 'pinned' = 'preview') => {
     setExplorerSelectedPathsByDatapack((prev) => {
       const next: Record<string, string | null> = {}
       for (const key of Object.keys(prev)) {
@@ -1162,8 +1166,26 @@ function CodeEditor() {
       [datapackDir]: fileKey,
     }))
     
-    // Check if file is already open
-    const existingFile = openedFiles.find((f) => createFileKey(f.datapackDir, f.relativePath) === fileKey)
+    // Replace the current preview tab only when opening a new file via preview click.
+    const shouldOpenAsPreview = mode === 'preview'
+    const currentPreviewFileKey = previewFileKeyRef.current
+    const existingFile = openedFilesRef.current.find((f) => createFileKey(f.datapackDir, f.relativePath) === fileKey)
+    const isAlreadyOpen = !!existingFile
+    const isCurrentPreview = currentPreviewFileKey === fileKey
+
+    if (
+      shouldOpenAsPreview
+      && currentPreviewFileKey
+      && currentPreviewFileKey !== fileKey
+      && !isAlreadyOpen
+      && !modifiedFilesRef.current.has(currentPreviewFileKey)
+    ) {
+      clearAutoSaveTimer(currentPreviewFileKey)
+      fileEditorStatesRef.current.delete(currentPreviewFileKey)
+      removeFileFromDiagnosticSummaries(currentPreviewFileKey)
+      setOpenedFiles((prev) => prev.filter((f) => createFileKey(f.datapackDir, f.relativePath) !== currentPreviewFileKey))
+    }
+
     let loadedContent: string | undefined
     if (!existingFile) {
       // Load content from disk for new files
@@ -1182,8 +1204,18 @@ function CodeEditor() {
       }
     }
     
+    if (shouldOpenAsPreview && (!isAlreadyOpen || isCurrentPreview)) {
+      setPreviewFileKey(fileKey)
+    } else if (!shouldOpenAsPreview) {
+      setPreviewFileKey((prev) => (prev === fileKey ? null : prev))
+    }
+
     // Set as active and load content
     await openFile(fileKey, loadedContent !== undefined ? { initialContent: loadedContent } : undefined)
+
+    if (mode === 'pinned') {
+      viewRef.current?.focus()
+    }
   }
 
   const clearAutoSaveTimer = (fileKey: string) => {
@@ -1986,8 +2018,26 @@ function CodeEditor() {
   }, [openedFiles])
 
   useEffect(() => {
+    previewFileKeyRef.current = previewFileKey
+  }, [previewFileKey])
+
+  useEffect(() => {
     modifiedFilesRef.current = modifiedFiles
   }, [modifiedFiles])
+
+  useEffect(() => {
+    if (previewFileKey && modifiedFiles.has(previewFileKey)) {
+      setPreviewFileKey(null)
+    }
+  }, [modifiedFiles, previewFileKey])
+
+  useEffect(() => {
+    if (!previewFileKey) return
+    const exists = openedFiles.some((file) => createFileKey(file.datapackDir, file.relativePath) === previewFileKey)
+    if (!exists) {
+      setPreviewFileKey(null)
+    }
+  }, [openedFiles, previewFileKey])
 
   // Handle workspace tab restoration on workspace load
   useEffect(() => {
@@ -2252,10 +2302,24 @@ function CodeEditor() {
   }, [activeFile, modifiedFiles, handleOpenWorkspaceWithConfirm, handleQuitWithConfirm, saveCurrentFile, saveAllFiles, closeTab])
 
   useEffect(() => {
+    const isExplorerFocused = () => {
+      const activeElement = document.activeElement
+      if (!activeElement) return false
+
+      for (const containerRef of explorerContainerRefs.current.values()) {
+        const container = containerRef.current
+        if (container && (container === activeElement || container.contains(activeElement))) {
+          return true
+        }
+      }
+
+      return false
+    }
+
     const handleKeyDown = async (event: KeyboardEvent) => {
-      if (event.key !== 'F2' || event.defaultPrevented) return
+      if ((event.key !== 'F2' && event.key !== 'Delete') || event.defaultPrevented) return
       if (isDialogOpenRef.current) return
-      if (!isEditorFocusedRef.current) return
+      if (!isExplorerFocused()) return
 
       const fileKey = activeFileRef.current
       if (!fileKey) return
@@ -2267,14 +2331,29 @@ function CodeEditor() {
 
       event.preventDefault()
 
-      await renamePathWithPrompt({
+      if (event.key === 'F2') {
+        await renamePathWithPrompt({
+          fullPath,
+          currentName,
+          promptRename: dialog.showPrompt,
+          showError: dialog.showAlert,
+          preRenameCheck: () => handleFileRenamed(datapackDir, relativePath, ''),
+          onRenamed: async (newName) => {
+            await handleFileRenamed(datapackDir, relativePath, newName)
+            await refreshDatapacks(datapacksRef.current.map((datapack) => datapack.dir))
+          },
+        })
+        return
+      }
+
+      await deletePathWithConfirm({
         fullPath,
-        currentName,
-        promptRename: dialog.showPrompt,
+        itemName: currentName,
+        itemType: "file",
+        confirmDelete: dialog.showConfirm,
         showError: dialog.showAlert,
-        preRenameCheck: () => handleFileRenamed(datapackDir, relativePath, ''),
-        onRenamed: async (newName) => {
-          await handleFileRenamed(datapackDir, relativePath, newName)
+        preDeleteCheck: () => handleFileDeleted(datapackDir, relativePath),
+        onDeleted: async () => {
           await refreshDatapacks(datapacksRef.current.map((datapack) => datapack.dir))
         },
       })
@@ -2284,7 +2363,7 @@ function CodeEditor() {
     return () => {
       window.removeEventListener('keydown', handleKeyDown)
     }
-  }, [dialog.showPrompt, dialog.showAlert, handleFileRenamed, refreshDatapacks])
+  }, [dialog.showPrompt, dialog.showConfirm, dialog.showAlert, handleFileRenamed, handleFileDeleted, refreshDatapacks])
 
   useEffect(() => {
     const loadWorkspaceDatapacks = async () => {
@@ -2441,6 +2520,10 @@ function CodeEditor() {
 
   const getOpenedFileKeys = () =>
     openedFiles.map((file) => createFileKey(file.datapackDir, file.relativePath))
+
+  const pinPreviewTab = (fileKey: string) => {
+    setPreviewFileKey((prev) => (prev === fileKey ? null : prev))
+  }
 
   const reorderOpenedFiles = (draggedFileKey: string, targetFileKey: string, position: "before" | "after") => {
     const draggedIndex = openedFiles.findIndex(
@@ -2631,6 +2714,25 @@ function CodeEditor() {
     })
   }
 
+  const deleteTabFile = async (fileKey: string) => {
+    const { datapackDir, relativePath } = parseFileKey(fileKey)
+    const openedFile = openedFiles.find((file) => createFileKey(file.datapackDir, file.relativePath) === fileKey)
+    const currentName = openedFile?.fileName || relativePath.split('/').filter(Boolean).pop() || 'this file'
+
+    const fullPath = `${datapackDir}/${relativePath}`.replace(/\//g, "\\")
+    await deletePathWithConfirm({
+      fullPath,
+      itemName: currentName,
+      itemType: "file",
+      confirmDelete: dialog.showConfirm,
+      showError: dialog.showAlert,
+      preDeleteCheck: () => handleFileDeleted(datapackDir, relativePath),
+      onDeleted: async () => {
+        await refreshDatapacks(datapacksRef.current.map((datapack) => datapack.dir))
+      },
+    })
+  }
+
   const openedFileKeys = getOpenedFileKeys()
   const hasSavedTabs = openedFileKeys.some((fileKey) => !modifiedFiles.has(fileKey))
   const hasAnyOpenTabs = openedFileKeys.length > 0
@@ -2706,6 +2808,15 @@ function CodeEditor() {
         onClick: () => {
           if (contextTabIndex === -1) return
           void renameTabFile(targetFileKey)
+        },
+      },
+      {
+        label: "Delete",
+        shortcut: "Del",
+        disabled: contextTabIndex === -1,
+        onClick: () => {
+          if (contextTabIndex === -1) return
+          void deleteTabFile(targetFileKey)
         },
       },
       {},
@@ -2887,7 +2998,7 @@ function CodeEditor() {
                   onFolderCreated={handleRefreshExplorer}
                   onRefreshRequested={handleRefreshExplorer}
                   onRemoveFromWorkspaceRequested={() => handleRemoveDatapack(datapack.dir)}
-                  onSelect={(pathKey, isFile) => handleExplorerSelect(datapack.dir, pathKey, isFile)}
+                  onSelect={(pathKey, isFile, selectMode) => handleExplorerSelect(datapack.dir, pathKey, isFile, selectMode)}
                   onFileRenamed={(oldRelativePath, newName) => handleFileRenamed(datapack.dir, oldRelativePath, newName)}
                   onFileDeleted={(relativePath) => handleFileDeleted(datapack.dir, relativePath)}
                   onContextMenuRequest={handleDatapackTreeContextMenu}
@@ -3196,6 +3307,7 @@ function CodeEditor() {
               {openedFiles.map((file, idx) => {
                 const fileKey = createFileKey(file.datapackDir, file.relativePath)
                 const isActive = activeFile === fileKey
+                const isPreview = previewFileKey === fileKey
                 const duplicateFolderLabel = getDuplicateTabFolderLabel(file)
                 const tabDiagnosticSummary = fileDiagnosticSummaries[fileKey]
                 const tabHasDiagnosticError = (tabDiagnosticSummary?.errors ?? 0) > 0
@@ -3215,12 +3327,17 @@ function CodeEditor() {
                       draggable
                       onContextMenu={(event) => handleTabRightClick(event, fileKey)}
                       onClick={() => {
-                        openFile(fileKey)
+                        void openFile(fileKey)
+                      }}
+                      onDoubleClick={() => {
+                        pinPreviewTab(fileKey)
+                        viewRef.current?.focus()
                       }}
                       onDragStart={(event) => {
                         event.dataTransfer.effectAllowed = "move"
                         event.dataTransfer.setData("text/plain", fileKey)
                         setDraggingFileKey(fileKey)
+                        pinPreviewTab(fileKey)
 
                         // Clean up old ghost if it exists
                         if (dragGhostRef.current) {
@@ -3301,7 +3418,7 @@ function CodeEditor() {
                       `}
                     >
 
-                      <span className="text-sm">{file.fileName}</span>
+                      <span className={`text-sm ${isPreview ? 'italic' : ''}`}>{file.fileName}</span>
 
                       {/* Duplicate Disambiguation Label */}
                       {duplicateFolderLabel && (

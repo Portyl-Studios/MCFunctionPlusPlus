@@ -16,7 +16,7 @@ interface DataPackTreeProps {
   rootPackVersion?: string
   rootTags?: string[]
   basePath?: string
-  onSelect?: (path: string, isFile: boolean) => void
+  onSelect?: (path: string, isFile: boolean, mode?: 'preview' | 'pinned') => void
   onFolderCreated?: () => void
   onRefreshRequested?: () => void
   onRemoveFromWorkspaceRequested?: () => void
@@ -332,10 +332,16 @@ export function DatapackTree({ paths, className, folderName, rootId, rootName, r
       toggleExpanded(pathKey)
     }
     if (isFile && onSelect) {
-      onSelect(pathKey, true)
+      onSelect(pathKey, true, 'preview')
     } else if (!isFile && onSelect) {
       onSelect(pathKey, false)
     }
+  }
+
+  const handleDoubleClick = (pathKey: string, isFile: boolean) => {
+    if (!isFile || !onSelect) return
+    setSelectedPathSafe(pathKey)
+    onSelect(pathKey, true, 'pinned')
   }
 
   const normalizePath = (value: string) => value.replace(/\\/g, '/').replace(/\/+$/, '')
@@ -635,6 +641,7 @@ export function DatapackTree({ paths, className, folderName, rootId, rootName, r
       },
       {
         label: 'Delete',
+        shortcut: 'Del',
         onClick: () => handleDelete(pathKey, node.name, !!node.isFile),
         disabled: !canRenameOrDelete
       },
@@ -690,6 +697,7 @@ export function DatapackTree({ paths, className, folderName, rootId, rootName, r
             className={`flex min-w-0 items-center cursor-pointer rounded px-1  ${isSelected ? 'bg-codemirror-select' : isRoot && isDatapackDisabled ? 'bg-rose-800/20 hover:bg-rose-800/30' : 'hover:bg-codemirror-highlight'} ${isRoot ? 'py-2' : ''}`}
             style={{ paddingLeft: padding }}
             onClick={() => handleSelect(pathKey, !!node.isFile, !!hasChildren)}
+            onDoubleClick={() => handleDoubleClick(pathKey, !!node.isFile)}
             onContextMenu={(e) => handleRightClick(e, node, pathKey)}
           >
             {/* Chevron */}
@@ -800,7 +808,14 @@ export function DatapackTree({ paths, className, folderName, rootId, rootName, r
 
   return (
     <>
-      <div ref={treeContainerRef} className={`${className} overflow-x-hidden overflow-y-auto ${isDatapackDisabled ? 'bg-red-800/10 hover:bg-red-800/20' : ''}`}>
+      <div
+        ref={treeContainerRef}
+        tabIndex={0}
+        className={`${className} overflow-x-hidden overflow-y-auto focus:outline-none ${isDatapackDisabled ? 'bg-red-800/10 hover:bg-red-800/20' : ''}`}
+        onMouseDown={(event) => {
+          event.currentTarget.focus()
+        }}
+      >
         <ul className="space-y-1">
           {renderNode(tree, 0, tree.name)}
         </ul>
