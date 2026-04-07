@@ -12,7 +12,6 @@ import { createFileWithPrompt, deletePathWithConfirm, renamePathWithPrompt } fro
 const TREE_DRAG_PAYLOAD_MIME = 'application/x-mcpp-tree-entry'
 const HOVER_EXPAND_CURSOR_SETTLE_MS = 280
 const HOVER_EXPAND_COUNTDOWN_MS = 600
-const HOVER_EXPAND_CURSOR_MOVE_TOLERANCE_PX = 4
 
 interface DataPackTreeProps {
   paths: string[]
