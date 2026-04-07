@@ -117,6 +117,7 @@ const defaultDiagnosticSummary: DiagnosticSummary = {
 }
 
 const appVersionLabel = `v${packageJson.version}`
+const EMPTY_EXPANDED_PATHS = new Set<string>()
 
 const getCursorMarkerInfo = (state: EditorState): CursorMarkerInfo => {
   const selection = state.selection.main
@@ -780,6 +781,19 @@ function CodeEditor() {
       const datapackDir = metadataPath.replace(/\\/g, '/').split('/').slice(0, -1).join('/')
       const existingDirs = datapacks.map((datapack) => datapack.dir)
       await refreshDatapacks([...existingDirs, datapackDir])
+
+      setExplorerExpandedPathsByDatapack((prev) => {
+        if (prev[datapackDir] !== undefined) {
+          return prev
+        }
+
+        const datapackName = datapackDir.split(/[\\/]/).filter(Boolean).pop() || 'Datapack'
+        return {
+          ...prev,
+          [datapackDir]: new Set([datapackName, `${datapackName}/data`]),
+        }
+      })
+
       const datapackName = datapackDir.split(/[\\/]/).filter(Boolean).pop() || 'Datapack'
       showToastEvent(`Added datapack to workspace: ${datapackName}`)
       return true
@@ -2809,7 +2823,7 @@ function CodeEditor() {
                   className="mt-2"
                   externalSelectedPath={explorerSelectedPathsByDatapack[datapack.dir]}
                   externalSelectedFileKey={explorerSelectedFileKeysByDatapack[datapack.dir]}
-                  externalExpandedPaths={explorerExpandedPathsByDatapack[datapack.dir]}
+                  externalExpandedPaths={explorerExpandedPathsByDatapack[datapack.dir] ?? EMPTY_EXPANDED_PATHS}
                   onExpandedPathsChange={(paths) =>
                     setExplorerExpandedPathsByDatapack((prev) => ({
                       ...prev,

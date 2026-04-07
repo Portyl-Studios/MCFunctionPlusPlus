@@ -8,7 +8,6 @@ import {
   removeDatapackPath,
   setDatapackPaths,
   getDatapackPaths,
-  toAbsoluteWorkspaceDatapackPath,
   toRelativeWorkspaceDatapackPath,
   type WorkspaceData
 } from './workspace-parser'
@@ -32,7 +31,7 @@ class WorkspaceManager {
     return toRelativeWorkspaceDatapackPath(this.currentWorkspaceDir, trimmed)
   }
 
-  private toAbsoluteDatapackPath(storedPath: string): string {
+  private toAbsoluteDatapackDir(storedPath: string): string {
     const trimmed = storedPath.trim()
     if (!trimmed) return ''
 
@@ -41,10 +40,28 @@ class WorkspaceManager {
       if (!normalized) return ''
 
       if (normalized.toLowerCase().endsWith('/.mpp-datapack') || normalized.toLowerCase() === '.mpp-datapack') {
-        return path.normalize(normalized)
+        return path.normalize(path.dirname(normalized))
       }
 
-      return path.normalize(path.join(normalized, '.mpp-datapack'))
+      return path.normalize(normalized)
+    }
+
+    const normalizedStored = toRelativeWorkspaceDatapackPath(this.currentWorkspaceDir, trimmed)
+    if (!normalizedStored) return ''
+
+    const absoluteDir = path.resolve(this.currentWorkspaceDir, normalizedStored)
+    return path.normalize(absoluteDir)
+  }
+
+  private toAbsoluteDatapackPath(storedPath: string): string {
+    const trimmed = storedPath.trim()
+    if (!trimmed) return ''
+
+    const absoluteDatapackDir = this.toAbsoluteDatapackDir(storedPath)
+    if (!absoluteDatapackDir) return ''
+
+    if (!this.currentWorkspaceDir) {
+      return path.normalize(path.join(absoluteDatapackDir, '.mpp-datapack'))
     }
 
     const cached = this.datapackPathCache.get(trimmed)
@@ -52,7 +69,7 @@ class WorkspaceManager {
       return cached
     }
 
-    const absolutePath = toAbsoluteWorkspaceDatapackPath(this.currentWorkspaceDir, trimmed)
+    const absolutePath = path.normalize(path.join(absoluteDatapackDir, '.mpp-datapack'))
     this.datapackPathCache.set(trimmed, absolutePath)
     return absolutePath
   }
@@ -148,7 +165,7 @@ class WorkspaceManager {
             if (!entry || typeof entry !== 'object') return entry
             const openedFile = entry as Record<string, unknown>
             const datapackDir = typeof openedFile.datapackDir === 'string'
-              ? this.toAbsoluteDatapackPath(openedFile.datapackDir)
+              ? this.toAbsoluteDatapackDir(openedFile.datapackDir)
               : openedFile.datapackDir
 
             return {
@@ -159,7 +176,7 @@ class WorkspaceManager {
         : session.openedFiles
 
       const activeFile = typeof session.activeFile === 'string'
-        ? this.mapFileKeyDatapackDir(session.activeFile, (datapackDir) => this.toAbsoluteDatapackPath(datapackDir))
+        ? this.mapFileKeyDatapackDir(session.activeFile, (datapackDir) => this.toAbsoluteDatapackDir(datapackDir))
         : session.activeFile
 
       return {
@@ -175,7 +192,7 @@ class WorkspaceManager {
       const payload = value as Record<string, unknown>
       const next: Record<string, unknown> = {}
       for (const [storedDatapackDir, expandedPaths] of Object.entries(payload)) {
-        const absoluteDatapackDir = this.toAbsoluteDatapackPath(storedDatapackDir)
+        const absoluteDatapackDir = this.toAbsoluteDatapackDir(storedDatapackDir)
         if (!absoluteDatapackDir) continue
         next[absoluteDatapackDir] = expandedPaths
       }
