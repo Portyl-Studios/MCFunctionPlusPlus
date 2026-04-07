@@ -207,6 +207,7 @@ export function DatapackTree({ paths, className, folderName, rootId, rootName, r
     return new Set(dirs)
   })
   const [dragOverPathKey, setDragOverPathKey] = React.useState<string | null>(null)
+  const [draggingSourcePathKey, setDraggingSourcePathKey] = React.useState<string | null>(null)
   const [dragHoverCursor, setDragHoverCursor] = React.useState<{ x: number; y: number } | null>(null)
   const [dragHoverCountdownElapsedMs, setDragHoverCountdownElapsedMs] = React.useState(0)
   const [isDragHoverCountdownActive, setIsDragHoverCountdownActive] = React.useState(false)
@@ -1224,6 +1225,7 @@ export function DatapackTree({ paths, className, folderName, rootId, rootName, r
       ? externalSelectedFileKey === nodeFileKey
       : effectiveSelectedPath === pathKey
     const isDragOverTarget = !node.isFile && dragOverPathKey === pathKey
+    const isDraggingSource = draggingSourcePathKey === pathKey
     const isRoot = depth === 0
     const isDisabledMetaFile = node.isFile && (relativePath || node.name) === 'pack.mcmeta.disabled'
     const nodeNameWeightClass = node.isFile ? 'font-normal' : (isRoot ? 'font-bold' : 'font-semibold')
@@ -1248,8 +1250,8 @@ export function DatapackTree({ paths, className, folderName, rootId, rootName, r
             } : null}
             data-datapack-tree-root={isRoot ? 'true' : undefined}
             data-tree-entry-draggable={!isRoot ? 'true' : undefined}
-            className={`flex min-w-0 items-center cursor-pointer rounded border px-1 ${isSelected ? 'bg-codemirror-select' : isRoot && isDatapackDisabled ? 'bg-rose-800/20 hover:bg-rose-800/30' : 'hover:bg-codemirror-highlight'} ${isDragOverTarget ? 'border-cyan-300' : 'border-transparent'} ${isRoot ? 'py-2' : ''}`}
-            style={{ paddingLeft: padding }}
+            className={`flex min-w-0 items-center cursor-pointer rounded border px-1 ${isSelected ? 'bg-codemirror-select' : isRoot && isDatapackDisabled ? 'bg-rose-800/20 hover:bg-rose-800/30' : 'hover:bg-codemirror-highlight'} ${isDragOverTarget ? 'border-cyan-300 bg-cyan-800/20' : 'border-transparent'} ${isRoot ? 'py-2' : ''}`}
+            style={{ paddingLeft: padding, opacity: isDraggingSource ? 0.1 : 1 }}
             onClick={() => handleSelect(pathKey, !!node.isFile, !!hasChildren)}
             onDoubleClick={() => handleDoubleClick(pathKey, !!node.isFile)}
             onContextMenu={(e) => handleRightClick(e, node, pathKey)}
@@ -1267,6 +1269,7 @@ export function DatapackTree({ paths, className, folderName, rootId, rootName, r
                 name: node.name,
                 isFile: !!node.isFile,
               }
+              setDraggingSourcePathKey(pathKey)
               activeTreeDragPayload = payload
               event.dataTransfer.setData(TREE_DRAG_PAYLOAD_MIME, JSON.stringify(payload))
               event.dataTransfer.setData('text/plain', payload.fullPath)
@@ -1275,6 +1278,7 @@ export function DatapackTree({ paths, className, folderName, rootId, rootName, r
             onDragEnd={() => {
               // No stopPropagation needed on dragend; this only clears local drag state.
               activeTreeDragPayload = null
+              setDraggingSourcePathKey(null)
               setDragOverPathKey(null)
               clearHoverExpandTimers(true)
             }}
