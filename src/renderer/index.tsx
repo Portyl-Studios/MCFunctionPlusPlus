@@ -1011,16 +1011,8 @@ function CodeEditor() {
   const confirmFileDelete = async (datapackDir: string, relativePath: string): Promise<boolean> => {
     const fileKey = createFileKey(datapackDir, relativePath)
     if (modifiedFiles.has(fileKey)) {
-      const fileName = openedFiles.find((f) => createFileKey(f.datapackDir, f.relativePath) === fileKey)?.fileName || "this file"
-      const choice = await dialog.showUnsavedConfirm("Delete File?", `${fileName} has unsaved changes. What would you like to do?`)
-      if (choice === "cancel") return false
-      if (choice === "save") {
-        const didSave = await saveFileInternal(fileKey)
-        if (!didSave) return false
-      }
-      if (choice === "discard") {
-        removeFileFromModifiedFiles(fileKey)
-      }
+      // Deleting a file discards unsaved changes by design.
+      removeFileFromModifiedFiles(fileKey)
     }
 
     return true
