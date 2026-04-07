@@ -779,12 +779,11 @@ export function DatapackTree({ paths, className, folderName, rootId, rootName, r
     const sourceParentDirectory = splitAbsolutePath(sourcePath).directory
 
     if (!entry.isFile && (destinationDirectoryPath === sourcePath || destinationDirectoryPath.startsWith(`${sourcePath}/`))) {
-      await showAlertEvent('Error', 'Cannot move a folder into itself')
+      showToastEvent('Error: Cannot move a folder into itself')
       return false
     }
 
     if (entry.mode === 'cut' && destinationDirectoryPath === sourceParentDirectory) {
-      showToastEvent('Item is already in this location')
       return false
     }
 
