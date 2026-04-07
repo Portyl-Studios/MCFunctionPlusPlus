@@ -599,6 +599,7 @@ export function DatapackTree({ paths, className, folderName, rootId, rootName, r
       {},
       {
         label: 'Rename',
+        shortcut: 'F2',
         onClick: () => handleRename(pathKey, node.name),
         disabled: !canRenameOrDelete
       },
