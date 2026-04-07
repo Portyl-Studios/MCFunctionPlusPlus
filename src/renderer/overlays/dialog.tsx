@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 import { CircleTimer } from '../circletimer'
 import { defocusActiveElement } from '../utils'
 
@@ -22,6 +22,7 @@ interface DialogProps {
 export function Dialog({ isOpen, title, message, buttons, autoCloseMs, onClose, inputValue, onInputChange }: DialogProps) {
   const [elapsedMs, setElapsedMs] = useState(0)
   const [localInputValue, setLocalInputValue] = useState(inputValue || '')
+  const dialogContainerRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     if (isOpen) {
@@ -69,6 +70,17 @@ export function Dialog({ isOpen, title, message, buttons, autoCloseMs, onClose, 
 
     defocusActiveElement()
 
+    const focusFirstEditableId = window.setTimeout(() => {
+      const container = dialogContainerRef.current
+      if (!container) return
+
+      const firstEditable = container.querySelector<HTMLElement>(
+        'input:not([type="hidden"]):not([disabled]), textarea:not([disabled]), select:not([disabled]), [contenteditable="true"]',
+      )
+
+      firstEditable?.focus()
+    }, 0)
+
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
         onClose()
@@ -77,6 +89,7 @@ export function Dialog({ isOpen, title, message, buttons, autoCloseMs, onClose, 
 
     window.addEventListener('keydown', handleKeyDown)
     return () => {
+      window.clearTimeout(focusFirstEditableId)
       window.removeEventListener('keydown', handleKeyDown)
     }
   }, [isOpen, onClose])
@@ -92,6 +105,7 @@ export function Dialog({ isOpen, title, message, buttons, autoCloseMs, onClose, 
       onClick={onClose}
     >
       <div
+        ref={dialogContainerRef}
         className="flex flex-col min-w-sm max-w-xl min-h-auto max-h-[42%] p-2 bg-codemirror-700 border border-codemirror-400 rounded shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
