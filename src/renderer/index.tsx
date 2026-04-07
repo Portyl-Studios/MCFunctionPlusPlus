@@ -1008,16 +1008,8 @@ function CodeEditor() {
     return true
   }
 
-  const handleFileDeleted = async (datapackDir: string, relativePath: string): Promise<boolean> => {
+  const confirmFileDelete = async (datapackDir: string, relativePath: string): Promise<boolean> => {
     const fileKey = createFileKey(datapackDir, relativePath)
-    const openedFileIndex = openedFiles.findIndex((f) => createFileKey(f.datapackDir, f.relativePath) === fileKey)
-    
-    if (openedFileIndex === -1) {
-      // File wasn"t open, nothing to do
-      return true
-    }
-
-    // Check if the file is modified
     if (modifiedFiles.has(fileKey)) {
       const fileName = openedFiles.find((f) => createFileKey(f.datapackDir, f.relativePath) === fileKey)?.fileName || "this file"
       const choice = await dialog.showUnsavedConfirm("Delete File?", `${fileName} has unsaved changes. What would you like to do?`)
@@ -1029,6 +1021,18 @@ function CodeEditor() {
       if (choice === "discard") {
         removeFileFromModifiedFiles(fileKey)
       }
+    }
+
+    return true
+  }
+
+  const closeDeletedFileTab = async (datapackDir: string, relativePath: string): Promise<void> => {
+    const fileKey = createFileKey(datapackDir, relativePath)
+    const openedFileIndex = openedFiles.findIndex((f) => createFileKey(f.datapackDir, f.relativePath) === fileKey)
+
+    if (openedFileIndex === -1) {
+      // File wasn't open, nothing to do
+      return
     }
 
     // Close the file
@@ -1053,7 +1057,6 @@ function CodeEditor() {
       }
     }
 
-    return true
   }
 
   const openFile = async (fileKey: string | null, options?: { initialContent?: string }) => {
@@ -2352,8 +2355,9 @@ function CodeEditor() {
         itemType: "file",
         confirmDelete: dialog.showConfirm,
         showError: dialog.showAlert,
-        preDeleteCheck: () => handleFileDeleted(datapackDir, relativePath),
+        preDeleteCheck: () => confirmFileDelete(datapackDir, relativePath),
         onDeleted: async () => {
+          await closeDeletedFileTab(datapackDir, relativePath)
           await refreshDatapacks(datapacksRef.current.map((datapack) => datapack.dir))
         },
       })
@@ -2363,7 +2367,7 @@ function CodeEditor() {
     return () => {
       window.removeEventListener('keydown', handleKeyDown)
     }
-  }, [dialog.showPrompt, dialog.showConfirm, dialog.showAlert, handleFileRenamed, handleFileDeleted, refreshDatapacks])
+  }, [dialog.showPrompt, dialog.showConfirm, dialog.showAlert, handleFileRenamed, confirmFileDelete, refreshDatapacks])
 
   useEffect(() => {
     const loadWorkspaceDatapacks = async () => {
@@ -2726,8 +2730,9 @@ function CodeEditor() {
       itemType: "file",
       confirmDelete: dialog.showConfirm,
       showError: dialog.showAlert,
-      preDeleteCheck: () => handleFileDeleted(datapackDir, relativePath),
+      preDeleteCheck: () => confirmFileDelete(datapackDir, relativePath),
       onDeleted: async () => {
+        await closeDeletedFileTab(datapackDir, relativePath)
         await refreshDatapacks(datapacksRef.current.map((datapack) => datapack.dir))
       },
     })
@@ -3000,7 +3005,10 @@ function CodeEditor() {
                   onRemoveFromWorkspaceRequested={() => handleRemoveDatapack(datapack.dir)}
                   onSelect={(pathKey, isFile, selectMode) => handleExplorerSelect(datapack.dir, pathKey, isFile, selectMode)}
                   onFileRenamed={(oldRelativePath, newName) => handleFileRenamed(datapack.dir, oldRelativePath, newName)}
-                  onFileDeleted={(relativePath) => handleFileDeleted(datapack.dir, relativePath)}
+                  onFileDeleted={async (relativePath) => {
+                    await closeDeletedFileTab(datapack.dir, relativePath)
+                    return true
+                  }}
                   onContextMenuRequest={handleDatapackTreeContextMenu}
                   modifiedFileKeys={modifiedFiles}
                   fileDiagnosticSummaries={fileDiagnosticSummaries}
