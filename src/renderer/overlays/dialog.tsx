@@ -78,7 +78,15 @@ export function Dialog({ isOpen, title, message, buttons, autoCloseMs, onClose, 
         'input:not([type="hidden"]):not([disabled]), textarea:not([disabled]), select:not([disabled]), [contenteditable="true"]',
       )
 
-      firstEditable?.focus()
+      if (firstEditable) {
+        firstEditable.focus()
+        return
+      }
+
+      const firstButton = container.querySelector<HTMLButtonElement>('button')
+      if (firstButton && !firstButton.disabled) {
+        firstButton.focus()
+      }
     }, 0)
 
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -129,9 +137,15 @@ export function Dialog({ isOpen, title, message, buttons, autoCloseMs, onClose, 
               className="w-full mt-2 px-2 py-1 bg-codemirror-default border border-codemirror-400 rounded text-codemirror-100 focus:outline-none focus:border-codemirror-200"
               autoFocus
               onKeyDown={(e) => {
-                if (e.key === 'Enter' && buttons[0]) {
-                  buttons[0].onClick()
-                  onClose()
+                if (e.key === 'Enter') {
+                  const container = dialogContainerRef.current
+                  if (!container) return
+
+                  const firstButton = container.querySelector<HTMLButtonElement>('button')
+                  if (!firstButton || firstButton.disabled) return
+
+                  e.preventDefault()
+                  firstButton.click()
                 }
               }}
             />
