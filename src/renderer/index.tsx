@@ -118,6 +118,8 @@ const defaultDiagnosticSummary: DiagnosticSummary = {
 }
 
 const EMPTY_EXPANDED_PATHS = new Set<string>()
+const DATAPACK_DRAG_PAYLOAD_MIME = "application/x-mcpp-datapack-entry"
+const TREE_DRAG_PAYLOAD_MIME = "application/x-mcpp-tree-entry"
 
 const getCursorMarkerInfo = (state: EditorState): CursorMarkerInfo => {
   const selection = state.selection.main
@@ -2600,10 +2602,11 @@ function CodeEditor() {
   }
 
   const persistDatapackOrder = async (entries: DatapackEntry[]) => {
+    const normalizeMetadataPath = (value: string) => value.replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase()
     const metadataPaths = entries.map((entry) => getDatapackMetadataPath(entry.dir))
     const savedPaths = await handleSetDatapacks(metadataPaths)
     return savedPaths.length === metadataPaths.length
-      && savedPaths.every((savedPath, index) => savedPath === metadataPaths[index])
+      && savedPaths.every((savedPath, index) => normalizeMetadataPath(savedPath) === normalizeMetadataPath(metadataPaths[index]))
   }
 
   const handleDatapackReorder = async (draggedDir: string, targetDir: string, position: "before" | "after") => {
@@ -2878,6 +2881,23 @@ function CodeEditor() {
     }
   }, [activeFile, openedFiles])
 
+  const hasDatapackDragPayload = (event: React.DragEvent): boolean => {
+    if (draggingDatapackDir) return true
+    return event.dataTransfer.types.includes(DATAPACK_DRAG_PAYLOAD_MIME)
+  }
+
+  const hasTreeDragPayload = (event: React.DragEvent): boolean => {
+    return event.dataTransfer.types.includes(TREE_DRAG_PAYLOAD_MIME)
+  }
+
+  const resolveDraggedDatapackDir = (event: React.DragEvent): string | null => {
+    const fromMime = event.dataTransfer.getData(DATAPACK_DRAG_PAYLOAD_MIME)
+    if (fromMime) return fromMime
+    if (draggingDatapackDir) return draggingDatapackDir
+    const fromText = event.dataTransfer.getData("text/plain")
+    return fromText || null
+  }
+
   const leftPanelTabs: PanelTab[] = [
     {
       id: "explorer",
@@ -2897,6 +2917,12 @@ function CodeEditor() {
                 key={datapack.dir}
                 draggable
                 onDragStart={(event) => {
+                  const targetElement = event.target as HTMLElement | null
+                  const isTreeEntryDrag = !!targetElement?.closest('[data-tree-entry-draggable="true"]')
+                  if (isTreeEntryDrag) {
+                    return
+                  }
+
                   const containerElement = event.currentTarget as HTMLElement
                   const rootElement = containerElement.querySelector<HTMLElement>('[data-datapack-tree-root="true"]')
                   const isRootDragStart = !!rootElement && rootElement.matches(':hover')
@@ -2906,6 +2932,7 @@ function CodeEditor() {
                   }
 
                   event.dataTransfer.effectAllowed = "move"
+                  event.dataTransfer.setData(DATAPACK_DRAG_PAYLOAD_MIME, datapack.dir)
                   event.dataTransfer.setData("text/plain", datapack.dir)
                   setDraggingDatapackDir(datapack.dir)
                   setIsDragOverDatapackEndZone(false)
@@ -2947,11 +2974,14 @@ function CodeEditor() {
                   }
                 }}
                 onDragOver={(event) => {
-                  const targetElement = event.target as HTMLElement | null
-                  const isRootDropScope = !!targetElement?.closest('[data-datapack-tree-root="true"]')
-                  if (!isRootDropScope) {
+                  if (hasTreeDragPayload(event)) {
                     setDragOverDatapackDir(null)
                     setDragOverDatapackPosition(null)
+                    setIsDragOverDatapackEndZone(false)
+                    return
+                  }
+
+                  if (!hasDatapackDragPayload(event)) {
                     return
                   }
 
@@ -2976,16 +3006,19 @@ function CodeEditor() {
                   setDragOverDatapackPosition(null)
                 }}
                 onDrop={(event) => {
-                  const targetElement = event.target as HTMLElement | null
-                  const isRootDropScope = !!targetElement?.closest('[data-datapack-tree-root="true"]')
-                  if (!isRootDropScope) {
+                  if (hasTreeDragPayload(event)) {
                     setDragOverDatapackDir(null)
                     setDragOverDatapackPosition(null)
+                    setIsDragOverDatapackEndZone(false)
+                    return
+                  }
+
+                  const draggedDir = resolveDraggedDatapackDir(event)
+                  if (!draggedDir) {
                     return
                   }
 
                   event.preventDefault()
-                  const draggedDir = event.dataTransfer.getData("text/plain")
                   if (draggedDir && draggedDir !== datapack.dir) {
                     const position = dragOverDatapackPosition === "after" ? "after" : "before"
                     void handleDatapackReorder(draggedDir, datapack.dir, position)
@@ -3044,7 +3077,16 @@ function CodeEditor() {
 
           <div
             onDragOver={(event) => {
-              if (!draggingDatapackDir) return
+              if (hasTreeDragPayload(event)) {
+                event.preventDefault()
+                event.dataTransfer.dropEffect = "none"
+                setDragOverDatapackDir(null)
+                setDragOverDatapackPosition(null)
+                setIsDragOverDatapackEndZone(false)
+                return
+              }
+
+              if (!hasDatapackDragPayload(event)) return
               event.preventDefault()
               event.dataTransfer.dropEffect = "move"
               setDragOverDatapackDir(null)
@@ -3059,9 +3101,18 @@ function CodeEditor() {
               setIsDragOverDatapackEndZone(false)
             }}
             onDrop={(event) => {
-              if (!draggingDatapackDir) return
+              if (hasTreeDragPayload(event)) {
+                event.preventDefault()
+                setDraggingDatapackDir(null)
+                setDragOverDatapackDir(null)
+                setDragOverDatapackPosition(null)
+                setIsDragOverDatapackEndZone(false)
+                return
+              }
+
+              const draggedDir = resolveDraggedDatapackDir(event)
+              if (!draggedDir) return
               event.preventDefault()
-              const draggedDir = event.dataTransfer.getData("text/plain")
               if (draggedDir) {
                 void handleDatapackDropToEnd(draggedDir)
               }

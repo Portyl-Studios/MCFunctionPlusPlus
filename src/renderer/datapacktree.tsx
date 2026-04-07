@@ -1,11 +1,18 @@
 import React from 'react'
+import ReactDOM from 'react-dom'
 import datapackSchema from '../../resources/datapackschema/94.1.json'
 import type { MenuItem } from './menuitem'
+import { CircleTimer } from './circletimer'
 import { showAlertEvent, showConfirmEvent, showPromptEvent } from './overlays/dialog-events'
 import { showToastEvent } from './overlays/toast-events'
 import { Tooltip } from './overlays/tooltip'
 import { detectEditorLanguage, type DiagnosticSummary } from './language-handler'
 import { createFileWithPrompt, deletePathWithConfirm, renamePathWithPrompt } from './path-actions'
+
+const TREE_DRAG_PAYLOAD_MIME = 'application/x-mcpp-tree-entry'
+const HOVER_EXPAND_CURSOR_SETTLE_MS = 280
+const HOVER_EXPAND_COUNTDOWN_MS = 600
+const HOVER_EXPAND_CURSOR_MOVE_TOLERANCE_PX = 4
 
 interface DataPackTreeProps {
   paths: string[]
@@ -66,7 +73,14 @@ type TreeClipboardEntry = {
   mode: 'copy' | 'cut'
 }
 
+type TreeDragPayload = {
+  fullPath: string
+  name: string
+  isFile: boolean
+}
+
 let treeClipboardEntry: TreeClipboardEntry | null = null
+let activeTreeDragPayload: TreeDragPayload | null = null
 
 const buildTree = (paths: string[], rootName: string = 'root'): TreeNode => {
   const root: TreeNode = { name: rootName, children: new Map() }
@@ -192,6 +206,17 @@ export function DatapackTree({ paths, className, folderName, rootId, rootName, r
     }
     return new Set(dirs)
   })
+  const [dragOverPathKey, setDragOverPathKey] = React.useState<string | null>(null)
+  const [dragHoverCursor, setDragHoverCursor] = React.useState<{ x: number; y: number } | null>(null)
+  const [dragHoverCountdownElapsedMs, setDragHoverCountdownElapsedMs] = React.useState(0)
+  const [isDragHoverCountdownActive, setIsDragHoverCountdownActive] = React.useState(false)
+
+  const hoverExpandTargetPathRef = React.useRef<string | null>(null)
+  const hoverExpandLastCursorRef = React.useRef<{ x: number; y: number } | null>(null)
+  const hoverExpandSettleTimerRef = React.useRef<number | null>(null)
+  const hoverExpandCountdownTimerRef = React.useRef<number | null>(null)
+  const hoverExpandCountdownTickRef = React.useRef<number | null>(null)
+  const hoverExpandCountdownStartAtRef = React.useRef<number | null>(null)
 
   const hasEnabledMcmeta = React.useMemo(
     () => paths.some((entry) => entry.replace(/\\/g, '/').replace(/^\/+/, '') === 'pack.mcmeta'),
@@ -229,6 +254,34 @@ export function DatapackTree({ paths, className, folderName, rootId, rootName, r
     setSelectedPath(next)
   }
 
+  const hasBlockingOverlayOpen = () => {
+    return document.querySelector('[data-overlay-menu="true"]') !== null
+      || document.querySelector('[data-overlay-dialog="true"]') !== null
+  }
+
+  const clearHoverExpandTimers = React.useCallback((clearTarget: boolean = true) => {
+    if (hoverExpandSettleTimerRef.current !== null) {
+      window.clearTimeout(hoverExpandSettleTimerRef.current)
+      hoverExpandSettleTimerRef.current = null
+    }
+    if (hoverExpandCountdownTimerRef.current !== null) {
+      window.clearTimeout(hoverExpandCountdownTimerRef.current)
+      hoverExpandCountdownTimerRef.current = null
+    }
+    if (hoverExpandCountdownTickRef.current !== null) {
+      window.clearInterval(hoverExpandCountdownTickRef.current)
+      hoverExpandCountdownTickRef.current = null
+    }
+    hoverExpandCountdownStartAtRef.current = null
+    hoverExpandLastCursorRef.current = null
+    setIsDragHoverCountdownActive(false)
+    setDragHoverCountdownElapsedMs(0)
+    setDragHoverCursor(null)
+    if (clearTarget) {
+      hoverExpandTargetPathRef.current = null
+    }
+  }, [])
+
   React.useEffect(() => {
     if (externalSelectedPath !== undefined) {
       setSelectedPath(externalSelectedPath)
@@ -253,6 +306,48 @@ export function DatapackTree({ paths, className, folderName, rootId, rootName, r
     setExpandedPaths(new Set(dirs))
     setSelectedPath(null)
   }, [tree, isExternalExpanded, externalSelectedPath])
+
+  React.useEffect(() => {
+    if (!isDragHoverCountdownActive && hoverExpandSettleTimerRef.current === null) return
+
+    const overlayCheckTimer = window.setInterval(() => {
+      if (hasBlockingOverlayOpen()) {
+        clearHoverExpandTimers(true)
+      }
+    }, 50)
+
+    return () => {
+      window.clearInterval(overlayCheckTimer)
+    }
+  }, [isDragHoverCountdownActive, clearHoverExpandTimers])
+
+  React.useEffect(() => {
+    return () => {
+      clearHoverExpandTimers(true)
+    }
+  }, [clearHoverExpandTimers])
+
+  React.useEffect(() => {
+    const handleDocumentDragOver = (event: DragEvent) => {
+      const container = treeContainerRef?.current
+      if (!container) {
+        return
+      }
+
+      const elementUnderPointer = document.elementFromPoint(event.clientX, event.clientY)
+      if ((elementUnderPointer && container.contains(elementUnderPointer)) || container.matches(':hover')) {
+        return
+      }
+
+      setDragOverPathKey(null)
+      clearHoverExpandTimers(true)
+    }
+
+    document.addEventListener('dragover', handleDocumentDragOver)
+    return () => {
+      document.removeEventListener('dragover', handleDocumentDragOver)
+    }
+  }, [treeContainerRef, clearHoverExpandTimers])
 
   const modifiedPathKeys = React.useMemo(() => {
     const next = new Set<string>()
@@ -672,6 +767,47 @@ export function DatapackTree({ paths, className, folderName, rootId, rootName, r
     showToastEvent(`${mode === 'copy' ? 'Copied' : 'Cut'} ${isFile ? 'file' : 'folder'}: ${itemName}`)
   }
 
+  const transferEntryToDirectory = async (
+    entry: TreeClipboardEntry,
+    destinationDirectoryPath: string,
+    options?: {
+      clearClipboardOnCut?: boolean
+      modeLabel?: 'pasted' | 'dragged'
+    },
+  ) => {
+    const sourcePath = normalizePath(entry.fullPath)
+    const sourceParentDirectory = splitAbsolutePath(sourcePath).directory
+
+    if (!entry.isFile && (destinationDirectoryPath === sourcePath || destinationDirectoryPath.startsWith(`${sourcePath}/`))) {
+      await showAlertEvent('Error', 'Cannot move a folder into itself')
+      return false
+    }
+
+    if (entry.mode === 'cut' && destinationDirectoryPath === sourceParentDirectory) {
+      showToastEvent('Item is already in this location')
+      return false
+    }
+
+    const targetName = await ensureUniqueChildName(destinationDirectoryPath, entry.name)
+    await copyPath(sourcePath, destinationDirectoryPath, targetName, entry.isFile)
+
+    if (entry.mode === 'cut') {
+      await window.electron.deleteFileOrFolder(sourcePath)
+      if (options?.clearClipboardOnCut) {
+        treeClipboardEntry = null
+      }
+    }
+
+    const modeLabel = options?.modeLabel ?? 'pasted'
+    if (modeLabel === 'dragged') {
+      showToastEvent('Moved item')
+    } else {
+      showToastEvent(entry.mode === 'cut' ? 'Moved item' : 'Pasted copy')
+    }
+
+    return true
+  }
+
   const handlePaste = async (pathKey: string, targetIsFile: boolean) => {
     if (!treeClipboardEntry) return
 
@@ -686,35 +822,210 @@ export function DatapackTree({ paths, className, folderName, rootId, rootName, r
       ? splitAbsolutePath(normalizedTargetPath).directory
       : normalizedTargetPath
 
-    const sourcePath = normalizePath(treeClipboardEntry.fullPath)
-    const sourceParentDirectory = splitAbsolutePath(sourcePath).directory
-
-    if (!treeClipboardEntry.isFile && (destinationDirectoryPath === sourcePath || destinationDirectoryPath.startsWith(`${sourcePath}/`))) {
-      await showAlertEvent('Error', 'Cannot paste a folder into itself')
-      return
-    }
-
-    if (treeClipboardEntry.mode === 'cut' && destinationDirectoryPath === sourceParentDirectory) {
-      showToastEvent('Item is already in this location')
-      return
-    }
-
     try {
-      const clipboardMode = treeClipboardEntry.mode
-      const targetName = await ensureUniqueChildName(destinationDirectoryPath, treeClipboardEntry.name)
-      await copyPath(sourcePath, destinationDirectoryPath, targetName, treeClipboardEntry.isFile)
-
-      if (clipboardMode === 'cut') {
-        await window.electron.deleteFileOrFolder(sourcePath)
-        treeClipboardEntry = null
+      const didTransfer = await transferEntryToDirectory(treeClipboardEntry, destinationDirectoryPath, {
+        clearClipboardOnCut: true,
+        modeLabel: 'pasted',
+      })
+      if (didTransfer) {
+        onFolderCreated?.()
       }
-
-      onFolderCreated?.()
-      showToastEvent(clipboardMode === 'cut' ? 'Moved item' : 'Pasted copy')
     } catch (error) {
       console.error('Failed to paste item:', error)
       await showAlertEvent('Error', `Failed to paste: ${error instanceof Error ? error.message : 'Unknown error'}`)
     }
+  }
+
+  const parseDragPayload = (event: React.DragEvent): TreeDragPayload | null => {
+    try {
+      const rawPayload = event.dataTransfer.getData(TREE_DRAG_PAYLOAD_MIME)
+      if (!rawPayload) {
+        return activeTreeDragPayload
+      }
+      const parsed = JSON.parse(rawPayload) as Partial<TreeDragPayload>
+      if (!parsed || typeof parsed !== 'object') return null
+      if (typeof parsed.fullPath !== 'string') return null
+      if (typeof parsed.name !== 'string') return null
+      if (typeof parsed.isFile !== 'boolean') return null
+      return {
+        fullPath: parsed.fullPath,
+        name: parsed.name,
+        isFile: parsed.isFile,
+      }
+    } catch {
+      return activeTreeDragPayload
+    }
+  }
+
+  const hasTreeDragPayload = (event: React.DragEvent): boolean => {
+    if (activeTreeDragPayload) return true
+    return event.dataTransfer.types.includes(TREE_DRAG_PAYLOAD_MIME)
+  }
+
+  const getParentPathKey = (pathKey: string) => {
+    const normalizedPathKey = pathKey.replace(/\\/g, '/')
+    const lastSeparatorIndex = normalizedPathKey.lastIndexOf('/')
+    if (lastSeparatorIndex <= 0) {
+      return tree.name
+    }
+    return normalizedPathKey.slice(0, lastSeparatorIndex)
+  }
+
+  const resolveDropTargetPathKey = (pathKey: string, nodeIsFile: boolean) => {
+    if (!nodeIsFile) {
+      return pathKey
+    }
+    return getParentPathKey(pathKey)
+  }
+
+  const startHoverExpandWithSettle = (pathKey: string, cursorX: number, cursorY: number) => {
+    clearHoverExpandTimers(false)
+    hoverExpandTargetPathRef.current = pathKey
+    setDragHoverCursor({ x: cursorX, y: cursorY })
+
+    hoverExpandSettleTimerRef.current = window.setTimeout(() => {
+      hoverExpandSettleTimerRef.current = null
+      if (hoverExpandTargetPathRef.current !== pathKey) return
+      if (hasBlockingOverlayOpen()) {
+        clearHoverExpandTimers(true)
+        return
+      }
+
+      hoverExpandCountdownStartAtRef.current = Date.now()
+      setDragHoverCountdownElapsedMs(0)
+      setIsDragHoverCountdownActive(true)
+
+      hoverExpandCountdownTickRef.current = window.setInterval(() => {
+        const startAt = hoverExpandCountdownStartAtRef.current
+        if (!startAt) return
+        const elapsed = Math.min(Date.now() - startAt, HOVER_EXPAND_COUNTDOWN_MS)
+        setDragHoverCountdownElapsedMs(elapsed)
+      }, 50)
+
+      hoverExpandCountdownTimerRef.current = window.setTimeout(() => {
+        hoverExpandCountdownTimerRef.current = null
+        if (hoverExpandTargetPathRef.current === pathKey && !hasBlockingOverlayOpen()) {
+          const next = new Set(effectiveExpandedPaths)
+          next.add(pathKey)
+          setExpandedPathsSafe(next)
+        }
+        clearHoverExpandTimers(true)
+      }, HOVER_EXPAND_COUNTDOWN_MS)
+    }, HOVER_EXPAND_CURSOR_SETTLE_MS)
+  }
+
+  const isHoverExpandRunningFor = (pathKey: string) => {
+    return hoverExpandTargetPathRef.current === pathKey
+      && (hoverExpandSettleTimerRef.current !== null || isDragHoverCountdownActive)
+  }
+
+  const handleDragOverForNode = (
+    event: React.DragEvent,
+    pathKey: string,
+    nodeIsFile: boolean,
+    hasChildren: boolean,
+    isExpanded: boolean,
+  ) => {
+    if (!hasTreeDragPayload(event)) return
+
+    const dropTargetPathKey = resolveDropTargetPathKey(pathKey, nodeIsFile)
+
+    event.preventDefault()
+    event.dataTransfer.dropEffect = 'move'
+    setDragOverPathKey(dropTargetPathKey)
+
+    if (hasBlockingOverlayOpen()) {
+      clearHoverExpandTimers(true)
+      return
+    }
+
+    if (nodeIsFile || !hasChildren || isExpanded) {
+      clearHoverExpandTimers(true)
+      return
+    }
+
+    if (isHoverExpandRunningFor(dropTargetPathKey)) {
+      setDragHoverCursor({ x: event.clientX, y: event.clientY })
+      return
+    }
+
+    startHoverExpandWithSettle(dropTargetPathKey, event.clientX, event.clientY)
+  }
+
+  const handleDropOnNode = async (event: React.DragEvent, pathKey: string, targetIsFile: boolean) => {
+    const payload = parseDragPayload(event)
+    setDragOverPathKey(null)
+    clearHoverExpandTimers(true)
+    if (!payload) return
+
+    event.preventDefault()
+
+    const dropTargetPathKey = resolveDropTargetPathKey(pathKey, targetIsFile)
+    const actualPath = getActualPath(dropTargetPathKey)
+    if (!actualPath) {
+      await showAlertEvent('Error', 'Cannot determine drop destination')
+      return
+    }
+
+    const normalizedTargetPath = normalizePath(actualPath)
+    // dropTargetPathKey always resolves to a folder/root target path.
+    const destinationDirectoryPath = normalizedTargetPath
+
+    try {
+      const dragEntry: TreeClipboardEntry = {
+        fullPath: payload.fullPath,
+        name: payload.name,
+        isFile: payload.isFile,
+        mode: 'cut',
+      }
+      const didTransfer = await transferEntryToDirectory(dragEntry, destinationDirectoryPath, {
+        clearClipboardOnCut: false,
+        modeLabel: 'dragged',
+      })
+      if (didTransfer) {
+        onFolderCreated?.()
+      }
+    } catch (error) {
+      console.error('Failed to move dropped item:', error)
+      await showAlertEvent('Error', `Failed to move item: ${error instanceof Error ? error.message : 'Unknown error'}`)
+    }
+  }
+
+  const handleDragOverForFolderGap = (event: React.DragEvent, folderPathKey: string) => {
+    if (!hasTreeDragPayload(event)) return
+
+    event.preventDefault()
+    event.stopPropagation()
+    event.dataTransfer.dropEffect = 'move'
+    setDragOverPathKey(folderPathKey)
+
+    if (hasBlockingOverlayOpen()) {
+      clearHoverExpandTimers(true)
+      return
+    }
+
+    const folderNode = findNodeByPathKey(folderPathKey)
+    const hasChildren = !!(folderNode?.children && folderNode.children.size > 0)
+    const isExpanded = hasChildren && effectiveExpandedPaths.has(folderPathKey)
+
+    if (!hasChildren || isExpanded) {
+      clearHoverExpandTimers(true)
+      return
+    }
+
+    if (isHoverExpandRunningFor(folderPathKey)) {
+      setDragHoverCursor({ x: event.clientX, y: event.clientY })
+      return
+    }
+
+    startHoverExpandWithSettle(folderPathKey, event.clientX, event.clientY)
+  }
+
+  const handleDropOnFolderGap = async (event: React.DragEvent, folderPathKey: string) => {
+    if (!hasTreeDragPayload(event)) return
+
+    event.stopPropagation()
+    await handleDropOnNode(event, folderPathKey, false)
   }
 
   const findNodeByPathKey = (pathKey: string): TreeNode | null => {
@@ -913,6 +1224,7 @@ export function DatapackTree({ paths, className, folderName, rootId, rootName, r
     const isSelected = node.isFile && externalSelectedFileKey && nodeFileKey
       ? externalSelectedFileKey === nodeFileKey
       : effectiveSelectedPath === pathKey
+    const isDragOverTarget = !node.isFile && dragOverPathKey === pathKey
     const isRoot = depth === 0
     const isDisabledMetaFile = node.isFile && (relativePath || node.name) === 'pack.mcmeta.disabled'
     const nodeNameWeightClass = node.isFile ? 'font-normal' : (isRoot ? 'font-bold' : 'font-semibold')
@@ -936,11 +1248,54 @@ export function DatapackTree({ paths, className, folderName, rootId, rootName, r
               }
             } : null}
             data-datapack-tree-root={isRoot ? 'true' : undefined}
-            className={`flex min-w-0 items-center cursor-pointer rounded px-1  ${isSelected ? 'bg-codemirror-select' : isRoot && isDatapackDisabled ? 'bg-rose-800/20 hover:bg-rose-800/30' : 'hover:bg-codemirror-highlight'} ${isRoot ? 'py-2' : ''}`}
+            data-tree-entry-draggable={!isRoot ? 'true' : undefined}
+            className={`flex min-w-0 items-center cursor-pointer rounded border px-1 ${isSelected ? 'bg-codemirror-select' : isRoot && isDatapackDisabled ? 'bg-rose-800/20 hover:bg-rose-800/30' : 'hover:bg-codemirror-highlight'} ${isDragOverTarget ? 'border-cyan-300' : 'border-transparent'} ${isRoot ? 'py-2' : ''}`}
             style={{ paddingLeft: padding }}
             onClick={() => handleSelect(pathKey, !!node.isFile, !!hasChildren)}
             onDoubleClick={() => handleDoubleClick(pathKey, !!node.isFile)}
             onContextMenu={(e) => handleRightClick(e, node, pathKey)}
+            draggable={!isRoot}
+            onDragStart={(event) => {
+              event.stopPropagation()
+              const actualPath = getActualPath(pathKey)
+              if (!actualPath) {
+                event.preventDefault()
+                return
+              }
+
+              const payload: TreeDragPayload = {
+                fullPath: normalizePath(actualPath),
+                name: node.name,
+                isFile: !!node.isFile,
+              }
+              activeTreeDragPayload = payload
+              event.dataTransfer.setData(TREE_DRAG_PAYLOAD_MIME, JSON.stringify(payload))
+              event.dataTransfer.setData('text/plain', payload.fullPath)
+              event.dataTransfer.effectAllowed = 'move'
+            }}
+            onDragEnd={() => {
+              // No stopPropagation needed on dragend; this only clears local drag state.
+              activeTreeDragPayload = null
+              setDragOverPathKey(null)
+              clearHoverExpandTimers(true)
+            }}
+            onDragOver={(event) => {
+              if (hasTreeDragPayload(event)) {
+                event.stopPropagation()
+              }
+              handleDragOverForNode(event, pathKey, !!node.isFile, !!hasChildren, !!isExpanded)
+            }}
+            onDragLeave={(event) => {
+              if (hasTreeDragPayload(event)) {
+                event.stopPropagation()
+              }
+            }}
+            onDrop={(event) => {
+              if (hasTreeDragPayload(event)) {
+                event.stopPropagation()
+              }
+              void handleDropOnNode(event, pathKey, !!node.isFile)
+            }}
           >
             {/* Chevron */}
             <div className="mr-2 flex items-center text-codemirror-100">
@@ -1038,7 +1393,16 @@ export function DatapackTree({ paths, className, folderName, rootId, rootName, r
           </div>
         </Tooltip>
         {hasChildren && isExpanded && (
-          <ul className="mt-1 space-y-1">
+          <ul
+            className="mt-1 space-y-1"
+            data-tree-children-of={pathKey}
+            onDragOver={(event) => {
+              handleDragOverForFolderGap(event, pathKey)
+            }}
+            onDrop={(event) => {
+              void handleDropOnFolderGap(event, pathKey)
+            }}
+          >
             {sortChildren(node.children!).map((child) =>
               renderNode(child, depth + 1, `${pathKey}/${child.name}`)
             )}
@@ -1060,8 +1424,46 @@ export function DatapackTree({ paths, className, folderName, rootId, rootName, r
         onKeyDown={(event) => {
           void handleTreeKeyDown(event)
         }}
+        onDragLeave={(event) => {
+          if (event.currentTarget.matches(':hover')) {
+            return
+          }
+
+          const relatedTarget = event.relatedTarget as Node | null
+          if (relatedTarget && event.currentTarget.contains(relatedTarget)) {
+            return
+          }
+          setDragOverPathKey(null)
+          clearHoverExpandTimers(true)
+        }}
       >
-        <ul className="space-y-1">
+        {isDragHoverCountdownActive && dragHoverCursor && ReactDOM.createPortal(
+          <div
+            className="fixed pointer-events-none"
+            style={{ left: dragHoverCursor.x - 12, top: dragHoverCursor.y - 12, zIndex: 2147483647 }}
+          >
+            <CircleTimer
+              elapsed={dragHoverCountdownElapsedMs}
+              total={HOVER_EXPAND_COUNTDOWN_MS}
+              size={40}
+              thickness={4}
+              reverse={false}
+              progressClassName="text-cyan-300"
+              trackClassName="text-codemirror-500"
+            />
+          </div>,
+          document.body,
+        )}
+        <ul
+          className="space-y-1"
+          data-tree-children-of={tree.name}
+          onDragOver={(event) => {
+            handleDragOverForFolderGap(event, tree.name)
+          }}
+          onDrop={(event) => {
+            void handleDropOnFolderGap(event, tree.name)
+          }}
+        >
           {renderNode(tree, 0, tree.name)}
         </ul>
       </div>
