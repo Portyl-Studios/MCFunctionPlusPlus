@@ -51,6 +51,7 @@ import { runGlobalDiagnosticsScan } from "./diagnostics/global-diagnostics"
 import { Tooltip } from "./overlays/tooltip"
 import { useExternalFileWatcher } from "./use-external-file-watcher"
 import { useAppUpdate } from "./use-app-update"
+import { deletePathWithConfirm, renamePathWithPrompt } from "./path-actions"
 import type { ShortcutAction } from "../main/electron-api"
 
 type DatapackEntry = {
@@ -2606,6 +2607,44 @@ function CodeEditor() {
     }
   }
 
+  const renameTabFile = async (fileKey: string) => {
+    const { datapackDir, relativePath } = parseFileKey(fileKey)
+    const openedFile = openedFiles.find((file) => createFileKey(file.datapackDir, file.relativePath) === fileKey)
+    const currentName = openedFile?.fileName || relativePath.split('/').filter(Boolean).pop() || 'this file'
+
+    const fullPath = `${datapackDir}/${relativePath}`.replace(/\//g, "\\")
+    await renamePathWithPrompt({
+      fullPath,
+      currentName,
+      promptRename: dialog.showPrompt,
+      showError: dialog.showAlert,
+      preRenameCheck: () => handleFileRenamed(datapackDir, relativePath, ''),
+      onRenamed: async (newName) => {
+        await handleFileRenamed(datapackDir, relativePath, newName)
+        await refreshDatapacks(datapacksRef.current.map((datapack) => datapack.dir))
+      },
+    })
+  }
+
+  const deleteTabFile = async (fileKey: string) => {
+    const { datapackDir, relativePath } = parseFileKey(fileKey)
+    const openedFile = openedFiles.find((file) => createFileKey(file.datapackDir, file.relativePath) === fileKey)
+    const itemName = openedFile?.fileName || relativePath.split('/').filter(Boolean).pop() || 'this file'
+
+    const fullPath = `${datapackDir}/${relativePath}`.replace(/\//g, "\\")
+    await deletePathWithConfirm({
+      fullPath,
+      itemName,
+      itemType: 'file',
+      confirmDelete: dialog.showConfirm,
+      showError: dialog.showAlert,
+      preDeleteCheck: () => handleFileDeleted(datapackDir, relativePath),
+      onDeleted: async () => {
+        await refreshDatapacks(datapacksRef.current.map((datapack) => datapack.dir))
+      },
+    })
+  }
+
   const openedFileKeys = getOpenedFileKeys()
   const hasSavedTabs = openedFileKeys.some((fileKey) => !modifiedFiles.has(fileKey))
   const hasAnyOpenTabs = openedFileKeys.length > 0
@@ -2671,6 +2710,24 @@ function CodeEditor() {
         onClick: () => {
           if (contextTabIndex === -1) return
           void copyTabRelativePath(targetFileKey)
+        },
+      },
+      {},
+      {
+        label: "Rename",
+        shortcut: "F2",
+        disabled: contextTabIndex === -1,
+        onClick: () => {
+          if (contextTabIndex === -1) return
+          void renameTabFile(targetFileKey)
+        },
+      },
+      {
+        label: "Delete",
+        disabled: contextTabIndex === -1,
+        onClick: () => {
+          if (contextTabIndex === -1) return
+          void deleteTabFile(targetFileKey)
         },
       },
       {},

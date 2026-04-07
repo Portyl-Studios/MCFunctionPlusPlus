@@ -5,6 +5,7 @@ import { showAlertEvent, showConfirmEvent, showPromptEvent } from './overlays/di
 import { showToastEvent } from './overlays/toast-events'
 import { Tooltip } from './overlays/tooltip'
 import { detectEditorLanguage, type DiagnosticSummary } from './language-handler'
+import { deletePathWithConfirm, renamePathWithPrompt } from './path-actions'
 
 interface DataPackTreeProps {
   paths: string[]
@@ -474,34 +475,24 @@ export function DatapackTree({ paths, className, folderName, rootId, rootName, r
         ? normalizedKey.slice(rootPrefix.length)
         : normalizedKey
 
-    // If there's a callback to check if the file is open and modified, ask for confirmation
-    if (onFileRenamed && relativePath) {
-      const canProceed = await onFileRenamed(relativePath, '')
-      if (!canProceed) {
-        return // User cancelled
-      }
-    }
+    await renamePathWithPrompt({
+      fullPath: actualPath,
+      currentName,
+      promptRename: showPromptEvent,
+      showError: showAlertEvent,
+      preRenameCheck: onFileRenamed && relativePath
+        ? () => onFileRenamed(relativePath, '')
+        : undefined,
+      onRenamed: async (newName) => {
+        if (onFileRenamed && relativePath) {
+          await onFileRenamed(relativePath, newName)
+        }
 
-    const newName = await showPromptEvent('Rename', 'Enter new name:', currentName)
-    if (!newName || newName === currentName) {
-      return
-    }
-
-    try {
-      await window.electron.renameFileOrFolder(actualPath, newName)
-      
-      // Notify parent about the rename so it can update open files
-      if (onFileRenamed && relativePath) {
-        await onFileRenamed(relativePath, newName)
-      }
-      
-      if (onFolderCreated) {
-        onFolderCreated() // Trigger refresh
-      }
-    } catch (error) {
-      console.error('Failed to rename:', error)
-      await showAlertEvent('Error', `Failed to rename: ${error instanceof Error ? error.message : 'Unknown error'}`)
-    }
+        if (onFolderCreated) {
+          onFolderCreated()
+        }
+      },
+    })
   }
 
   const handleDelete = async (pathKey: string, itemName: string, isFile: boolean) => {
@@ -521,29 +512,21 @@ export function DatapackTree({ paths, className, folderName, rootId, rootName, r
         ? normalizedKey.slice(rootPrefix.length)
         : normalizedKey
 
-    // If there's a callback to check if the file is open and modified, ask for confirmation
-    if (onFileDeleted && relativePath && isFile) {
-      const canProceed = await onFileDeleted(relativePath)
-      if (!canProceed) {
-        return // User cancelled
-      }
-    }
-
-    const itemType = isFile ? 'file' : 'folder'
-    const confirmed = await showConfirmEvent('Delete', `Are you sure you want to delete the ${itemType} "${itemName}"?${isFile ? '' : ' This will delete all contents.'}`)
-    if (!confirmed) {
-      return
-    }
-
-    try {
-      await window.electron.deleteFileOrFolder(actualPath)
-      if (onFolderCreated) {
-        onFolderCreated() // Trigger refresh
-      }
-    } catch (error) {
-      console.error('Failed to delete:', error)
-      await showAlertEvent('Error', `Failed to delete: ${error instanceof Error ? error.message : 'Unknown error'}`)
-    }
+    await deletePathWithConfirm({
+      fullPath: actualPath,
+      itemName,
+      itemType: isFile ? 'file' : 'folder',
+      confirmDelete: showConfirmEvent,
+      showError: showAlertEvent,
+      preDeleteCheck: onFileDeleted && relativePath && isFile
+        ? () => onFileDeleted(relativePath)
+        : undefined,
+      onDeleted: async () => {
+        if (onFolderCreated) {
+          onFolderCreated()
+        }
+      },
+    })
   }
 
   const handleRightClick = (e: React.MouseEvent, node: TreeNode, pathKey: string) => {
