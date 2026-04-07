@@ -1494,7 +1494,7 @@ export function DatapackTree({ paths, className, folderName, rootId, rootName, r
               total={HOVER_EXPAND_COUNTDOWN_MS}
               size={40}
               thickness={4}
-              reverse={false}
+              reverse={true}
               progressClassName="text-cyan-300"
               trackClassName="text-codemirror-500"
             />
