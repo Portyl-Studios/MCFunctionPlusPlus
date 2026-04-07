@@ -2558,16 +2558,21 @@ function CodeEditor() {
     if (draggedIndex === -1 || targetIndex === -1) return entries
     if (draggedIndex === targetIndex) return entries
 
+    const destinationIndex = position === "after"
+      ? targetIndex + 1
+      : targetIndex
+    const normalizedInsertIndex = destinationIndex > draggedIndex
+      ? destinationIndex - 1
+      : destinationIndex
+
+    if (normalizedInsertIndex === draggedIndex) {
+      return entries
+    }
+
     const nextEntries = [...entries]
     const [draggedEntry] = nextEntries.splice(draggedIndex, 1)
 
-    const insertIndex = position === "after"
-      ? draggedIndex < targetIndex
-        ? targetIndex
-        : targetIndex + 1
-      : draggedIndex < targetIndex
-        ? targetIndex - 1
-        : targetIndex
+    const insertIndex = normalizedInsertIndex
 
     nextEntries.splice(insertIndex, 0, draggedEntry)
     return nextEntries
@@ -2892,6 +2897,14 @@ function CodeEditor() {
                 key={datapack.dir}
                 draggable
                 onDragStart={(event) => {
+                  const containerElement = event.currentTarget as HTMLElement
+                  const rootElement = containerElement.querySelector<HTMLElement>('[data-datapack-tree-root="true"]')
+                  const isRootDragStart = !!rootElement && rootElement.matches(':hover')
+                  if (!isRootDragStart) {
+                    event.preventDefault()
+                    return
+                  }
+
                   event.dataTransfer.effectAllowed = "move"
                   event.dataTransfer.setData("text/plain", datapack.dir)
                   setDraggingDatapackDir(datapack.dir)
@@ -2934,6 +2947,14 @@ function CodeEditor() {
                   }
                 }}
                 onDragOver={(event) => {
+                  const targetElement = event.target as HTMLElement | null
+                  const isRootDropScope = !!targetElement?.closest('[data-datapack-tree-root="true"]')
+                  if (!isRootDropScope) {
+                    setDragOverDatapackDir(null)
+                    setDragOverDatapackPosition(null)
+                    return
+                  }
+
                   event.preventDefault()
                   event.dataTransfer.dropEffect = "move"
                   setIsDragOverDatapackEndZone(false)
@@ -2955,6 +2976,14 @@ function CodeEditor() {
                   setDragOverDatapackPosition(null)
                 }}
                 onDrop={(event) => {
+                  const targetElement = event.target as HTMLElement | null
+                  const isRootDropScope = !!targetElement?.closest('[data-datapack-tree-root="true"]')
+                  if (!isRootDropScope) {
+                    setDragOverDatapackDir(null)
+                    setDragOverDatapackPosition(null)
+                    return
+                  }
+
                   event.preventDefault()
                   const draggedDir = event.dataTransfer.getData("text/plain")
                   if (draggedDir && draggedDir !== datapack.dir) {

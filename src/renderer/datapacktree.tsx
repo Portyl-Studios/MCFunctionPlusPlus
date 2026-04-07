@@ -935,6 +935,7 @@ export function DatapackTree({ paths, className, folderName, rootId, rootName, r
                 el.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'nearest' })
               }
             } : null}
+            data-datapack-tree-root={isRoot ? 'true' : undefined}
             className={`flex min-w-0 items-center cursor-pointer rounded px-1  ${isSelected ? 'bg-codemirror-select' : isRoot && isDatapackDisabled ? 'bg-rose-800/20 hover:bg-rose-800/30' : 'hover:bg-codemirror-highlight'} ${isRoot ? 'py-2' : ''}`}
             style={{ paddingLeft: padding }}
             onClick={() => handleSelect(pathKey, !!node.isFile, !!hasChildren)}
