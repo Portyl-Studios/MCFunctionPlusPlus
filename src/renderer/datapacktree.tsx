@@ -59,6 +59,15 @@ type DatapackSchemaNode = {
   maxMinecraftVersion?: string
 }
 
+type TreeClipboardEntry = {
+  fullPath: string
+  name: string
+  isFile: boolean
+  mode: 'copy' | 'cut'
+}
+
+let treeClipboardEntry: TreeClipboardEntry | null = null
+
 const buildTree = (paths: string[], rootName: string = 'root'): TreeNode => {
   const root: TreeNode = { name: rootName, children: new Map() }
 
@@ -346,6 +355,92 @@ export function DatapackTree({ paths, className, folderName, rootId, rootName, r
 
   const normalizePath = (value: string) => value.replace(/\\/g, '/').replace(/\/+$/, '')
 
+  const splitAbsolutePath = (value: string) => {
+    const normalized = normalizePath(value)
+    const separatorIndex = normalized.lastIndexOf('/')
+    if (separatorIndex <= 0) {
+      return { directory: normalized, name: normalized }
+    }
+
+    return {
+      directory: normalized.slice(0, separatorIndex),
+      name: normalized.slice(separatorIndex + 1),
+    }
+  }
+
+  const splitNameAndExtension = (name: string) => {
+    const lastDotIndex = name.lastIndexOf('.')
+    if (lastDotIndex <= 0) {
+      return { stem: name, extension: '' }
+    }
+    return {
+      stem: name.slice(0, lastDotIndex),
+      extension: name.slice(lastDotIndex),
+    }
+  }
+
+  const ensureUniqueChildName = async (directoryPath: string, desiredName: string) => {
+    const normalizedDirectoryPath = normalizePath(directoryPath)
+    const existingEntries = await window.electron.listFiles(normalizedDirectoryPath)
+    const existingPaths = new Set(existingEntries.map((entry) => normalizePath(entry)))
+
+    let candidateName = desiredName
+    let suffix = 1
+    while (existingPaths.has(`${normalizedDirectoryPath}/${candidateName}`)) {
+      const { stem, extension } = splitNameAndExtension(desiredName)
+      candidateName = suffix === 1
+        ? `${stem} copy${extension}`
+        : `${stem} copy ${suffix}${extension}`
+      suffix += 1
+    }
+
+    return candidateName
+  }
+
+  const copyPath = async (sourcePath: string, destinationDirectoryPath: string, destinationName: string, isFile: boolean) => {
+    const normalizedSourcePath = normalizePath(sourcePath)
+    const normalizedDestinationDirectoryPath = normalizePath(destinationDirectoryPath)
+
+    if (isFile) {
+      const sourceParts = splitAbsolutePath(normalizedSourcePath)
+      const sourceContents = await window.electron.readFile(sourceParts.directory, sourceParts.name)
+      await window.electron.writeFile(normalizedDestinationDirectoryPath, destinationName, sourceContents)
+      return
+    }
+
+    const destinationRootPath = `${normalizedDestinationDirectoryPath}/${destinationName}`
+    await window.electron.createFolder(destinationRootPath)
+
+    const sourceEntries = await window.electron.listFiles(normalizedSourcePath)
+    const normalizedEntries = Array.from(new Set(sourceEntries.map((entry) => normalizePath(entry))))
+      .sort((left, right) => left.length - right.length)
+
+    for (const sourceEntryPath of normalizedEntries) {
+      if (sourceEntryPath === normalizedSourcePath) continue
+
+      const relativeEntryPath = sourceEntryPath.slice(normalizedSourcePath.length).replace(/^\/+/, '')
+      if (!relativeEntryPath) continue
+
+      const destinationEntryPath = `${destinationRootPath}/${relativeEntryPath}`
+      const hasChildren = normalizedEntries.some((candidate) => candidate.startsWith(`${sourceEntryPath}/`))
+
+      if (hasChildren) {
+        await window.electron.createFolder(destinationEntryPath)
+        continue
+      }
+
+      const sourceEntryParts = splitAbsolutePath(sourceEntryPath)
+      try {
+        const sourceContents = await window.electron.readFile(sourceEntryParts.directory, sourceEntryParts.name)
+        const destinationEntryParts = splitAbsolutePath(destinationEntryPath)
+        await window.electron.createFolder(destinationEntryParts.directory)
+        await window.electron.writeFile(destinationEntryParts.directory, destinationEntryParts.name, sourceContents)
+      } catch {
+        await window.electron.createFolder(destinationEntryPath)
+      }
+    }
+  }
+
   const getRelativePathFromPathKey = (pathKey: string) => {
     const normalizedKey = pathKey.replace(/\\/g, '/')
     const rootPrefix = `${tree.name}/`
@@ -560,6 +655,130 @@ export function DatapackTree({ paths, className, folderName, rootId, rootName, r
     })
   }
 
+  const handleCutOrCopy = async (pathKey: string, itemName: string, isFile: boolean, mode: 'copy' | 'cut') => {
+    const actualPath = getActualPath(pathKey)
+    if (!actualPath) {
+      await showAlertEvent('Error', 'Cannot determine actual path')
+      return
+    }
+
+    treeClipboardEntry = {
+      fullPath: normalizePath(actualPath),
+      name: itemName,
+      isFile,
+      mode,
+    }
+
+    showToastEvent(`${mode === 'copy' ? 'Copied' : 'Cut'} ${isFile ? 'file' : 'folder'}: ${itemName}`)
+  }
+
+  const handlePaste = async (pathKey: string, targetIsFile: boolean) => {
+    if (!treeClipboardEntry) return
+
+    const actualPath = getActualPath(pathKey)
+    if (!actualPath) {
+      await showAlertEvent('Error', 'Cannot determine paste destination')
+      return
+    }
+
+    const normalizedTargetPath = normalizePath(actualPath)
+    const destinationDirectoryPath = targetIsFile
+      ? splitAbsolutePath(normalizedTargetPath).directory
+      : normalizedTargetPath
+
+    const sourcePath = normalizePath(treeClipboardEntry.fullPath)
+    const sourceParentDirectory = splitAbsolutePath(sourcePath).directory
+
+    if (!treeClipboardEntry.isFile && (destinationDirectoryPath === sourcePath || destinationDirectoryPath.startsWith(`${sourcePath}/`))) {
+      await showAlertEvent('Error', 'Cannot paste a folder into itself')
+      return
+    }
+
+    if (treeClipboardEntry.mode === 'cut' && destinationDirectoryPath === sourceParentDirectory) {
+      showToastEvent('Item is already in this location')
+      return
+    }
+
+    try {
+      const clipboardMode = treeClipboardEntry.mode
+      const targetName = await ensureUniqueChildName(destinationDirectoryPath, treeClipboardEntry.name)
+      await copyPath(sourcePath, destinationDirectoryPath, targetName, treeClipboardEntry.isFile)
+
+      if (clipboardMode === 'cut') {
+        await window.electron.deleteFileOrFolder(sourcePath)
+        treeClipboardEntry = null
+      }
+
+      onFolderCreated?.()
+      showToastEvent(clipboardMode === 'cut' ? 'Moved item' : 'Pasted copy')
+    } catch (error) {
+      console.error('Failed to paste item:', error)
+      await showAlertEvent('Error', `Failed to paste: ${error instanceof Error ? error.message : 'Unknown error'}`)
+    }
+  }
+
+  const findNodeByPathKey = (pathKey: string): TreeNode | null => {
+    const normalizedKey = pathKey.replace(/\\/g, '/')
+    if (normalizedKey === tree.name) return tree
+
+    const rootPrefix = `${tree.name}/`
+    const relative = normalizedKey.startsWith(rootPrefix)
+      ? normalizedKey.slice(rootPrefix.length)
+      : normalizedKey
+    const segments = relative.split('/').filter(Boolean)
+
+    let current: TreeNode = tree
+    for (const segment of segments) {
+      const next = current.children?.get(segment)
+      if (!next) return null
+      current = next
+    }
+
+    return current
+  }
+
+  const handleTreeKeyDown = async (event: React.KeyboardEvent<HTMLDivElement>) => {
+    if (event.defaultPrevented) return
+    if (!(event.ctrlKey || event.metaKey) || event.altKey) return
+
+    const hasBlockingOverlayOpen =
+      document.querySelector('[data-overlay-menu="true"]') !== null
+      || document.querySelector('[data-overlay-dialog="true"]') !== null
+    if (hasBlockingOverlayOpen) return
+
+    const treeElement = treeContainerRef?.current
+    const activeElement = document.activeElement
+    if (treeElement && activeElement && treeElement !== activeElement && !treeElement.contains(activeElement)) {
+      return
+    }
+
+    const key = event.key.toLowerCase()
+    if (key !== 'x' && key !== 'c' && key !== 'v') return
+
+    const selectedPathKey = effectiveSelectedPath ?? tree.name
+    const selectedNode = findNodeByPathKey(selectedPathKey)
+    const isRootNode = selectedPathKey === tree.name
+    const canOperateOnSelection = !!selectedNode && !isRootNode && !!basePath
+
+    if (key === 'x') {
+      if (!canOperateOnSelection || !selectedNode) return
+      event.preventDefault()
+      await handleCutOrCopy(selectedPathKey, selectedNode.name, !!selectedNode.isFile, 'cut')
+      return
+    }
+
+    if (key === 'c') {
+      if (!canOperateOnSelection || !selectedNode) return
+      event.preventDefault()
+      await handleCutOrCopy(selectedPathKey, selectedNode.name, !!selectedNode.isFile, 'copy')
+      return
+    }
+
+    if (!treeClipboardEntry || !basePath || !selectedNode) return
+    event.preventDefault()
+    await handlePaste(selectedPathKey, !!selectedNode.isFile)
+  }
+
   const handleRightClick = (e: React.MouseEvent, node: TreeNode, pathKey: string) => {
     const allowedChildren = node.allowedChildren ?? []
     const submenuItems: MenuItem[] = allowedChildren.map((child) => {
@@ -595,6 +814,13 @@ export function DatapackTree({ paths, className, folderName, rootId, rootName, r
 
     const rootItems: MenuItem[] = [
       {
+        label: 'Paste',
+        shortcut: 'Ctrl+V',
+        onClick: () => handlePaste(pathKey, false),
+        disabled: !treeClipboardEntry || !basePath,
+      },
+      {},
+      {
         label: 'Refresh',
         onClick: onRefreshRequested,
         disabled: !onRefreshRequested,
@@ -624,9 +850,24 @@ export function DatapackTree({ paths, className, folderName, rootId, rootName, r
     ]
 
     const items: MenuItem[] = [
-      {label: 'Cut', onClick: undefined, disabled: true},
-      {label: 'Copy', onClick: undefined, disabled: true},
-      {label: 'Paste', onClick: undefined, disabled: true},
+      {
+        label: 'Cut',
+        shortcut: 'Ctrl+X',
+        onClick: () => handleCutOrCopy(pathKey, node.name, !!node.isFile, 'cut'),
+        disabled: !canRenameOrDelete,
+      },
+      {
+        label: 'Copy',
+        shortcut: 'Ctrl+C',
+        onClick: () => handleCutOrCopy(pathKey, node.name, !!node.isFile, 'copy'),
+        disabled: !canRenameOrDelete,
+      },
+      {
+        label: 'Paste',
+        shortcut: 'Ctrl+V',
+        onClick: () => handlePaste(pathKey, !!node.isFile),
+        disabled: !treeClipboardEntry || !basePath,
+      },
       {},
       {
         label: 'New File',
@@ -814,6 +1055,9 @@ export function DatapackTree({ paths, className, folderName, rootId, rootName, r
         className={`${className} overflow-x-hidden overflow-y-auto focus:outline-none ${isDatapackDisabled ? 'bg-red-800/10 hover:bg-red-800/20' : ''}`}
         onMouseDown={(event) => {
           event.currentTarget.focus()
+        }}
+        onKeyDown={(event) => {
+          void handleTreeKeyDown(event)
         }}
       >
         <ul className="space-y-1">
