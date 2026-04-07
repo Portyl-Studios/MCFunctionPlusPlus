@@ -57,6 +57,7 @@ export type ExternalDirectoryChangeEvent = {
 }
 
 export interface ElectronAPI {
+  isDevMode: () => Promise<boolean>
   minimize: () => Promise<void>
   toggleFullscreen: () => Promise<void>
   isFullScreen: () => Promise<boolean>

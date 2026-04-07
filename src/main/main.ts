@@ -435,6 +435,10 @@ ipcMain.handle('watch-directory-stop-all', async () => {
 
 registerAutoUpdaterHandlers(ipcMain)
 
+ipcMain.handle('app-is-dev-mode', async () => {
+  return !app.isPackaged
+})
+
 // IPC handler to get or create default workspace
 ipcMain.handle('workspace-get-or-create-default', async () => {
   try {

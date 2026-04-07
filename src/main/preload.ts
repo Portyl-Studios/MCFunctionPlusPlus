@@ -6,6 +6,9 @@ import type { AppUpdateStatus, ElectronAPI, ExternalDirectoryChangeEvent, Extern
 import type { AppPreferences } from './preferences'
 
 const electronApi: ElectronAPI = {
+  isDevMode: () => {
+    return ipcRenderer.invoke('app-is-dev-mode')
+  },
   minimize: () => {
     return ipcRenderer.invoke('minimize')
   },

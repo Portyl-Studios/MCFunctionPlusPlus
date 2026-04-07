@@ -116,7 +116,6 @@ const defaultDiagnosticSummary: DiagnosticSummary = {
   warnings: 0,
 }
 
-const appVersionLabel = `v${packageJson.version}`
 const EMPTY_EXPANDED_PATHS = new Set<string>()
 
 const getCursorMarkerInfo = (state: EditorState): CursorMarkerInfo => {
@@ -187,6 +186,25 @@ function CodeEditor() {
   const [activeLeftTabId, setActiveLeftTabId] = useState("explorer")
   const [activeRightTabId, setActiveRightTabId] = useState("preferences")
   const [activeBottomTabId, setActiveBottomTabId] = useState("debug")
+  const [isDevMode, setIsDevMode] = useState(false)
+  const appVersionLabel = `v${packageJson.version}${isDevMode ? " (dev)" : ""}`
+
+  useEffect(() => {
+    let isDisposed = false
+    void window.electron.isDevMode().then((value) => {
+      if (!isDisposed) {
+        setIsDevMode(value)
+      }
+    }).catch(() => {
+      if (!isDisposed) {
+        setIsDevMode(false)
+      }
+    })
+
+    return () => {
+      isDisposed = true
+    }
+  }, [])
   
   // Panel tab visibility state
   const [visibleLeftPanelTabs, setVisibleLeftPanelTabs] = useState<Set<string>>(new Set(["explorer"]))
