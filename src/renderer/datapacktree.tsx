@@ -5,7 +5,7 @@ import { showAlertEvent, showConfirmEvent, showPromptEvent } from './overlays/di
 import { showToastEvent } from './overlays/toast-events'
 import { Tooltip } from './overlays/tooltip'
 import { detectEditorLanguage, type DiagnosticSummary } from './language-handler'
-import { deletePathWithConfirm, renamePathWithPrompt } from './path-actions'
+import { createFileWithPrompt, deletePathWithConfirm, renamePathWithPrompt } from './path-actions'
 
 interface DataPackTreeProps {
   paths: string[]
@@ -529,6 +529,31 @@ export function DatapackTree({ paths, className, folderName, rootId, rootName, r
     })
   }
 
+  const handleCreateFile = async (pathKey: string, isFile: boolean) => {
+    const actualPath = getActualPath(pathKey)
+    if (!actualPath) {
+      console.error('Cannot determine actual path')
+      await showAlertEvent('Error', 'Cannot determine actual path')
+      return
+    }
+
+    const normalizedPath = actualPath.replace(/\\/g, '/')
+    const parentDirectoryPath = isFile
+      ? normalizedPath.split('/').slice(0, -1).join('/')
+      : normalizedPath
+
+    await createFileWithPrompt({
+      parentDirectoryPath,
+      promptFileName: showPromptEvent,
+      showError: showAlertEvent,
+      onCreated: async () => {
+        if (onFolderCreated) {
+          onFolderCreated()
+        }
+      },
+    })
+  }
+
   const handleRightClick = (e: React.MouseEvent, node: TreeNode, pathKey: string) => {
     const allowedChildren = node.allowedChildren ?? []
     const submenuItems: MenuItem[] = allowedChildren.map((child) => {
@@ -597,6 +622,11 @@ export function DatapackTree({ paths, className, folderName, rootId, rootName, r
       {label: 'Copy', onClick: undefined, disabled: true},
       {label: 'Paste', onClick: undefined, disabled: true},
       {},
+      {
+        label: 'New File',
+        onClick: () => handleCreateFile(pathKey, !!node.isFile),
+        disabled: !canRenameOrDelete
+      },
       {
         label: 'Rename',
         shortcut: 'F2',

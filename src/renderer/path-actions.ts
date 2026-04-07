@@ -82,3 +82,39 @@ export const deletePathWithConfirm = async ({
     return false
   }
 }
+
+export interface CreateFileActionOptions {
+  parentDirectoryPath: string
+  defaultFileName?: string
+  promptFileName: (title: string, message: string, defaultValue: string) => Promise<string | null>
+  showError: (title: string, message: string) => Promise<void>
+  onCreated?: (createdName: string) => Promise<void>
+}
+
+export const createFileWithPrompt = async ({
+  parentDirectoryPath,
+  defaultFileName = 'new.mcfunction',
+  promptFileName,
+  showError,
+  onCreated,
+}: CreateFileActionOptions): Promise<boolean> => {
+  const createdNameRaw = await promptFileName('New File', 'Enter file name:', defaultFileName)
+  if (!createdNameRaw) {
+    return false
+  }
+
+  const createdName = createdNameRaw.trim()
+  if (!createdName) {
+    return false
+  }
+
+  try {
+    await window.electron.writeFile(parentDirectoryPath, createdName, '')
+    await onCreated?.(createdName)
+    return true
+  } catch (error) {
+    console.error('Failed to create file:', error)
+    await showError('Error', `Failed to create file: ${error instanceof Error ? error.message : 'Unknown error'}`)
+    return false
+  }
+}
