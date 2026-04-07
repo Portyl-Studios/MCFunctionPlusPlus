@@ -207,6 +207,7 @@ export function DatapackTree({ paths, className, folderName, rootId, rootName, r
     return new Set(dirs)
   })
   const [dragOverPathKey, setDragOverPathKey] = React.useState<string | null>(null)
+  const [dragBlockedPathKey, setDragBlockedPathKey] = React.useState<string | null>(null)
   const [draggingSourcePathKey, setDraggingSourcePathKey] = React.useState<string | null>(null)
   const [dragHoverCursor, setDragHoverCursor] = React.useState<{ x: number; y: number } | null>(null)
   const [dragHoverCountdownElapsedMs, setDragHoverCountdownElapsedMs] = React.useState(0)
@@ -341,6 +342,7 @@ export function DatapackTree({ paths, className, folderName, rootId, rootName, r
       }
 
       setDragOverPathKey(null)
+      setDragBlockedPathKey(null)
       clearHoverExpandTimers(true)
     }
 
@@ -928,11 +930,30 @@ export function DatapackTree({ paths, className, folderName, rootId, rootName, r
   ) => {
     if (!hasTreeDragPayload(event)) return
 
+    const payload = parseDragPayload(event)
+    if (!payload) return
+
     const dropTargetPathKey = resolveDropTargetPathKey(pathKey, nodeIsFile)
+    const actualTargetPath = getActualPath(dropTargetPathKey)
+    if (!actualTargetPath) return
+
+    const destinationDirectoryPath = normalizePath(actualTargetPath)
+    const sourcePath = normalizePath(payload.fullPath)
+    const sourceParentDirectory = splitAbsolutePath(sourcePath).directory
+    const isFolderIntoSelf = !payload.isFile
+      && (destinationDirectoryPath === sourcePath || destinationDirectoryPath.startsWith(`${sourcePath}/`))
+    const isNoOpSameParent = destinationDirectoryPath === sourceParentDirectory
+    const isBlockedTarget = isFolderIntoSelf || isNoOpSameParent
 
     event.preventDefault()
-    event.dataTransfer.dropEffect = 'move'
+    event.dataTransfer.dropEffect = isBlockedTarget ? 'none' : 'move'
     setDragOverPathKey(dropTargetPathKey)
+    setDragBlockedPathKey(isBlockedTarget ? dropTargetPathKey : null)
+
+    if (isBlockedTarget) {
+      clearHoverExpandTimers(true)
+      return
+    }
 
     if (hasBlockingOverlayOpen()) {
       clearHoverExpandTimers(true)
@@ -994,10 +1015,30 @@ export function DatapackTree({ paths, className, folderName, rootId, rootName, r
   const handleDragOverForFolderGap = (event: React.DragEvent, folderPathKey: string) => {
     if (!hasTreeDragPayload(event)) return
 
+    const payload = parseDragPayload(event)
+    if (!payload) return
+
+    const actualTargetPath = getActualPath(folderPathKey)
+    if (!actualTargetPath) return
+
+    const destinationDirectoryPath = normalizePath(actualTargetPath)
+    const sourcePath = normalizePath(payload.fullPath)
+    const sourceParentDirectory = splitAbsolutePath(sourcePath).directory
+    const isFolderIntoSelf = !payload.isFile
+      && (destinationDirectoryPath === sourcePath || destinationDirectoryPath.startsWith(`${sourcePath}/`))
+    const isNoOpSameParent = destinationDirectoryPath === sourceParentDirectory
+    const isBlockedTarget = isFolderIntoSelf || isNoOpSameParent
+
     event.preventDefault()
     event.stopPropagation()
-    event.dataTransfer.dropEffect = 'move'
+    event.dataTransfer.dropEffect = isBlockedTarget ? 'none' : 'move'
     setDragOverPathKey(folderPathKey)
+    setDragBlockedPathKey(isBlockedTarget ? folderPathKey : null)
+
+    if (isBlockedTarget) {
+      clearHoverExpandTimers(true)
+      return
+    }
 
     if (hasBlockingOverlayOpen()) {
       clearHoverExpandTimers(true)
@@ -1224,7 +1265,8 @@ export function DatapackTree({ paths, className, folderName, rootId, rootName, r
     const isSelected = node.isFile && externalSelectedFileKey && nodeFileKey
       ? externalSelectedFileKey === nodeFileKey
       : effectiveSelectedPath === pathKey
-    const isDragOverTarget = !node.isFile && dragOverPathKey === pathKey
+    const isDragOverTarget = !node.isFile && dragOverPathKey === pathKey && dragBlockedPathKey !== pathKey
+    const isDragBlockedTarget = !node.isFile && dragBlockedPathKey === pathKey
     const isDraggingSource = draggingSourcePathKey === pathKey
     const isRoot = depth === 0
     const isDisabledMetaFile = node.isFile && (relativePath || node.name) === 'pack.mcmeta.disabled'
@@ -1280,6 +1322,7 @@ export function DatapackTree({ paths, className, folderName, rootId, rootName, r
               activeTreeDragPayload = null
               setDraggingSourcePathKey(null)
               setDragOverPathKey(null)
+              setDragBlockedPathKey(null)
               clearHoverExpandTimers(true)
             }}
             onDragOver={(event) => {
@@ -1437,6 +1480,7 @@ export function DatapackTree({ paths, className, folderName, rootId, rootName, r
             return
           }
           setDragOverPathKey(null)
+          setDragBlockedPathKey(null)
           clearHoverExpandTimers(true)
         }}
       >
