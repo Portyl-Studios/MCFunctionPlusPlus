@@ -72,6 +72,59 @@
     ;
   }
 
+  .explorer-filter-floating-row {
+    @apply
+      sticky top-0 z-40 isolate
+      flex justify-center
+      py-1
+    ;
+  }
+
+  .explorer-filter-pillbox-button {
+    @apply
+      inline-flex items-center justify-center
+      bg-codemirror-500/90
+      text-codemirror-200/90 text-xs
+      border border-codemirror-500
+      rounded-lg
+      h-7 px-2 min-w-28
+      hover:bg-codemirror-highlight hover:text-codemirror-100
+      hover:border-codemirror-400
+      cursor-pointer
+      select-none
+      transition-colors
+    ;
+  }
+
+  .explorer-filter-pillbox-button-active {
+    @apply
+      bg-codemirror-select
+      hover:bg-codemirror-highlight
+      text-codemirror-100
+      border-codemirror-400
+    ;
+  }
+
+  .explorer-filter-pillbox-label {
+    @apply
+      flex items-center justify-center gap-1.5
+      leading-none
+      max-w-44
+    ;
+  }
+
+  .explorer-filter-pillbox-text {
+    @apply
+      py-1
+      truncate
+      max-w-28
+    ;
+  }
+
+  .explorer-filter-floating-row [data-overlay-menu="true"] {
+    z-index: 9000;
+  }
+
   .footer-element {
     @apply
       flex flex-row items-center gap-1

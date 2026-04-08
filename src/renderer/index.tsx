@@ -99,6 +99,7 @@ type ParsedContextCacheEntry = {
 
 const OPEN_TABS_PREFERENCE_KEY = "openTabs"
 const EXPLORER_EXPANDED_PREFERENCE_KEY = "explorerExpandedPaths"
+const EXPLORER_TAG_FILTER_PREFERENCE_KEY = "explorerTagFilter"
 
 type CursorMarkerInfo = {
   line: number
@@ -380,6 +381,9 @@ function CodeEditor() {
   }
   
   const [datapacks, setDatapacks] = useState<DatapackEntry[]>([])
+  const [selectedExplorerTags, setSelectedExplorerTags] = useState<Set<string>>(new Set())
+  const [explorerTagMatchMode, setExplorerTagMatchMode] = useState<"any" | "exact">("any")
+  const [isExplorerTagFilterMenuOpen, setIsExplorerTagFilterMenuOpen] = useState(false)
   const [isHeaderMenuOneOpen, setIsHeaderMenuOneOpen] = useState(false)
   const [isHeaderMenuTwoOpen, setIsHeaderMenuTwoOpen] = useState(false)
   const [isHeaderMenuThreeOpen, setIsHeaderMenuThreeOpen] = useState(false)
@@ -399,6 +403,7 @@ function CodeEditor() {
   const [isAutoSaveEnabled, setIsAutoSaveEnabled] = useState(false)
   const isRestoringTabsRef = useRef(false)
   const isRestoringExplorerRef = useRef(false)
+  const isRestoringExplorerTagFilterRef = useRef(false)
   const lastSavedTabSessionSignatureRef = useRef("")
   const fileEditorStatesRef = useRef<Map<string, EditorState>>(new Map())
   const contextMenuRequest = useContextMenuRequest()
@@ -547,6 +552,24 @@ function CodeEditor() {
       next[dir] = new Set(filtered)
     }
     return next
+  }
+
+  const parseWorkspaceExplorerTagFilter = (value: unknown): { selectedTags: Set<string>; matchAny: boolean } | null => {
+    if (!value || typeof value !== "object") return null
+
+    const maybeFilter = value as { selectedTags?: unknown; matchAny?: unknown }
+    const selectedTagsRaw = Array.isArray(maybeFilter.selectedTags) ? maybeFilter.selectedTags : []
+    const selectedTags = new Set(
+      selectedTagsRaw
+        .filter((tag): tag is string => typeof tag === "string")
+        .map((tag) => tag.trim().toLowerCase())
+        .filter((tag) => tag.length > 0),
+    )
+
+    return {
+      selectedTags,
+      matchAny: maybeFilter.matchAny !== false,
+    }
   }
 
   const loadDatapackEntry = async (datapackDir: string): Promise<DatapackEntry | null> => {
@@ -2133,6 +2156,38 @@ function CodeEditor() {
   }, [workspaceInfo.dir])
 
   useEffect(() => {
+    const restoreExplorerTagFilter = async () => {
+      if (!workspaceInfo.dir) {
+        setSelectedExplorerTags(new Set())
+        setExplorerTagMatchMode("any")
+        return
+      }
+
+      isRestoringExplorerTagFilterRef.current = true
+      try {
+        const savedValue = await window.electron.workspaceGetPreference(EXPLORER_TAG_FILTER_PREFERENCE_KEY)
+        const parsed = parseWorkspaceExplorerTagFilter(savedValue)
+        if (parsed) {
+          setSelectedExplorerTags(parsed.selectedTags)
+          setExplorerTagMatchMode(parsed.matchAny ? "any" : "exact")
+        } else {
+          setSelectedExplorerTags(new Set())
+          setExplorerTagMatchMode("any")
+        }
+      } catch (error) {
+        console.error("Failed to restore explorer tag filter state:", error)
+        await dialog.showAlert("Error", `Failed to restore explorer tag filter state: ${error instanceof Error ? error.message : "Unknown error"}`)
+        setSelectedExplorerTags(new Set())
+        setExplorerTagMatchMode("any")
+      } finally {
+        isRestoringExplorerTagFilterRef.current = false
+      }
+    }
+
+    restoreExplorerTagFilter()
+  }, [workspaceInfo.dir])
+
+  useEffect(() => {
     const persistWorkspaceTabs = async () => {
       if (!workspaceInfo.dir) return
       if (isRestoringTabsRef.current) return
@@ -2180,6 +2235,27 @@ function CodeEditor() {
 
     persistExplorerExpanded()
   }, [workspaceInfo.dir, explorerExpandedPathsByDatapack])
+
+  useEffect(() => {
+    const persistExplorerTagFilter = async () => {
+      if (!workspaceInfo.dir) return
+      if (isRestoringExplorerTagFilterRef.current) return
+
+      const payload = {
+        selectedTags: Array.from(selectedExplorerTags).sort((left, right) => left.localeCompare(right)),
+        matchAny: explorerTagMatchMode === "any",
+      }
+
+      try {
+        await window.electron.workspaceUpdatePreference(EXPLORER_TAG_FILTER_PREFERENCE_KEY, payload)
+      } catch (error) {
+        console.error("Failed to save explorer tag filter state:", error)
+        await dialog.showAlert("Error", `Failed to save explorer tag filter state: ${error instanceof Error ? error.message : "Unknown error"}`)
+      }
+    }
+
+    persistExplorerTagFilter()
+  }, [workspaceInfo.dir, selectedExplorerTags, explorerTagMatchMode])
 
   // Pause auto-save while dialogs are open to prevent saves during user confirmation prompts
   // Resume auto-save when dialog closes to continue saving modified files
@@ -2890,6 +2966,125 @@ function CodeEditor() {
     return event.dataTransfer.types.includes(TREE_DRAG_PAYLOAD_MIME)
   }
 
+  const explorerTagOptions = React.useMemo(() => {
+    const tagsByKey = new Map<string, string>()
+
+    for (const datapack of datapacks) {
+      if (!Array.isArray(datapack.tags)) continue
+
+      for (const rawTag of datapack.tags) {
+        const normalizedTag = rawTag.trim()
+        if (!normalizedTag) continue
+
+        const key = normalizedTag.toLowerCase()
+        if (!tagsByKey.has(key)) {
+          tagsByKey.set(key, normalizedTag)
+        }
+      }
+    }
+
+    return Array.from(tagsByKey.values()).sort((left, right) =>
+      left.localeCompare(right, undefined, { sensitivity: "base" }),
+    )
+  }, [datapacks])
+
+  useEffect(() => {
+    if (selectedExplorerTags.size === 0) return
+
+    const validKeys = new Set(explorerTagOptions.map((tag) => tag.toLowerCase()))
+    const nextSelected = new Set(Array.from(selectedExplorerTags).filter((tag) => validKeys.has(tag)))
+    if (nextSelected.size !== selectedExplorerTags.size) {
+      setSelectedExplorerTags(nextSelected)
+    }
+  }, [selectedExplorerTags, explorerTagOptions])
+
+  const filteredDatapacks = React.useMemo(() => {
+    if (selectedExplorerTags.size === 0) {
+      return datapacks
+    }
+
+    return datapacks.filter((datapack) => {
+      const datapackTags = new Set((datapack.tags ?? []).map((tag) => tag.trim().toLowerCase()).filter(Boolean))
+      if (datapackTags.size === 0) return false
+
+      if (explorerTagMatchMode === "any") {
+        for (const selectedTag of selectedExplorerTags) {
+          if (datapackTags.has(selectedTag)) return true
+        }
+        return false
+      }
+
+      // Strict mode requires all selected tags to exist; additional datapack tags are allowed.
+      for (const selectedTag of selectedExplorerTags) {
+        if (!datapackTags.has(selectedTag)) return false
+      }
+      return true
+    })
+  }, [datapacks, selectedExplorerTags, explorerTagMatchMode])
+
+  const explorerTagMenuItems = React.useMemo<MenuItem[]>(() => {
+    const items: MenuItem[] = [
+      {
+        label: "Clear Selection",
+        onClick: () => setSelectedExplorerTags(new Set()),
+      },
+      {},
+      {
+        label: "Match Any",
+        toggleable: true,
+        toggled: explorerTagMatchMode === "any",
+        onToggle: (nextState) => {
+          setExplorerTagMatchMode(nextState ? "any" : "exact")
+        },
+      },
+    ]
+
+    if (explorerTagOptions.length > 0) {
+      items.push({})
+      for (const tag of explorerTagOptions) {
+        const tagKey = tag.toLowerCase()
+        items.push({
+          label: tag,
+          toggleable: true,
+          toggled: selectedExplorerTags.has(tagKey),
+          onToggle: (nextState) => {
+            setSelectedExplorerTags((prev) => {
+              const next = new Set(prev)
+              if (nextState) {
+                next.add(tagKey)
+              } else {
+                next.delete(tagKey)
+              }
+              return next
+            })
+          },
+        })
+      }
+    }
+
+    return items
+  }, [explorerTagOptions, selectedExplorerTags, explorerTagMatchMode])
+
+  const explorerTagFilterLabel = React.useMemo(() => {
+    const selectedCount = selectedExplorerTags.size
+    if (selectedCount === 0) {
+      return "All tags"
+    }
+
+    if (selectedCount === 1) {
+      const [singleTag] = Array.from(selectedExplorerTags)
+      const displayTag = explorerTagOptions.find((tag) => tag.toLowerCase() === singleTag) ?? singleTag
+      const maxLength = 20
+      if (displayTag.length <= maxLength) {
+        return displayTag
+      }
+      return `${displayTag.slice(0, maxLength - 1)}...`
+    }
+
+    const modeLabel = explorerTagMatchMode === "any" ? "ANY" : "EXACT"
+    return `${selectedCount} tags (${modeLabel})`
+  }, [selectedExplorerTags, explorerTagOptions, explorerTagMatchMode])
+
   const resolveDraggedDatapackDir = (event: React.DragEvent): string | null => {
     const fromMime = event.dataTransfer.getData(DATAPACK_DRAG_PAYLOAD_MIME)
     if (fromMime) return fromMime
@@ -2904,9 +3099,30 @@ function CodeEditor() {
       title: "Explorer",
       icon: "codicon-file-directory",
       visible: visibleLeftPanelTabs.has("explorer"),
-      content: datapacks.length ? (
-        <div className="space-y-4">
-          {datapacks.map((datapack) => {
+      content: (
+        <div>
+          <div className="explorer-filter-floating-row">
+            <DropdownMenu
+              label={
+                <div className="explorer-filter-pillbox-label" title="Filter datapacks by tags">
+                  <span className="codicon codicon-filter text-xs" />
+                  <span className="explorer-filter-pillbox-text">{explorerTagFilterLabel}</span>
+                  <span className="codicon codicon-chevron-down text-[10px]" />
+                </div>
+              }
+              items={explorerTagMenuItems}
+              isOpen={isExplorerTagFilterMenuOpen}
+              setIsOpen={setIsExplorerTagFilterMenuOpen}
+              horizontalAlign="center"
+              buttonClassName={`explorer-filter-pillbox-button ${selectedExplorerTags.size > 0 ? "explorer-filter-pillbox-button-active" : ""}`}
+              disabled={explorerTagOptions.length === 0}
+            />
+          </div>
+
+          <div className="space-y-4">
+          {filteredDatapacks.length ? (
+            <>
+          {filteredDatapacks.map((datapack) => {
             const showTopIndicator = dragOverDatapackDir === datapack.dir && dragOverDatapackPosition === "before"
             const showBottomIndicator = dragOverDatapackDir === datapack.dir && dragOverDatapackPosition === "after"
             const isDraggingDatapack = draggingDatapackDir === datapack.dir
@@ -3127,14 +3343,19 @@ function CodeEditor() {
               <div className="absolute left-0 right-0 bottom-0 h-0.5 bg-codemirror-100 pointer-events-none" />
             )}
           </div>
-        </div>
-      ) : (
-        <>
-          <div className="text-sm text-codemirror-300">No datapacks added</div>
-          <div className="flex flex-col items-center m-4 button" onClick={handleAddDatapackToWorkspace}>
-            <div className="text-sm text-codemirror-100">Add Datapack to Workspace</div>
+            </>
+          ) : datapacks.length ? (
+            <div className="text-sm text-codemirror-300">No datapacks match the selected tag</div>
+          ) : (
+            <>
+              <div className="text-sm text-codemirror-300">No datapacks added</div>
+              <div className="flex flex-col items-center m-4 button" onClick={handleAddDatapackToWorkspace}>
+                <div className="text-sm text-codemirror-100">Add Datapack to Workspace</div>
+              </div>
+            </>
+          )}
           </div>
-        </>
+        </div>
       )
     }
   ]
