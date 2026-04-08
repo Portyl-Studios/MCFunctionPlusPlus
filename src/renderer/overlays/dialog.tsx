@@ -134,7 +134,7 @@ export function Dialog({ isOpen, title, message, buttons, autoCloseMs, onClose, 
               type="text"
               value={localInputValue}
               onChange={(e) => handleInputChange(e.target.value)}
-              className="w-full mt-2 px-2 py-1 bg-codemirror-default border border-codemirror-400 rounded text-codemirror-100 focus:outline-none focus:border-codemirror-200"
+              className="w-full mt-2 px-2 py-1 bg-codemirror-default border border-codemirror-400 rounded text-codemirror-100 focus:outline-none focus:border-cyan-300 focus-visible:ring-2 focus-visible:ring-cyan-300/80 focus-visible:ring-offset-1 focus-visible:ring-offset-codemirror-700"
               autoFocus
               onKeyDown={(e) => {
                 if (e.key === 'Enter') {
@@ -176,7 +176,7 @@ export function Dialog({ isOpen, title, message, buttons, autoCloseMs, onClose, 
               className={`px-4 py-2 rounded text-sm font-medium ${
                 button.disabled
                   ? 'bg-codemirror-600 text-codemirror-400 cursor-not-allowed'
-                  : 'bg-codemirror-default text-codemirror-100 hover:bg-codemirror-select cursor-pointer'
+                  : 'bg-codemirror-default text-codemirror-100 hover:bg-codemirror-select cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300/80 focus-visible:ring-offset-1 focus-visible:ring-offset-codemirror-700'
               }`}
             >
               {button.label}

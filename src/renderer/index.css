@@ -164,3 +164,8 @@
   scrollbar-color: var(--color-codemirror-500) var(--color-codemirror-700);
   scrollbar-width: auto;
 }
+
+button:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--color-cyan-300/80), 0 0 0 3px var(--color-codemirror-700);
+}

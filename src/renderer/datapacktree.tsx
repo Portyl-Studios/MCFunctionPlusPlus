@@ -1291,7 +1291,7 @@ export function DatapackTree({ paths, className, folderName, rootId, rootName, r
             } : null}
             data-datapack-tree-root={isRoot ? 'true' : undefined}
             data-tree-entry-draggable={!isRoot ? 'true' : undefined}
-            className={`flex min-w-0 items-center cursor-pointer rounded border px-1 ${isSelected ? 'bg-codemirror-select' : isRoot && isDatapackDisabled ? 'bg-rose-800/20 hover:bg-rose-800/30' : 'hover:bg-codemirror-highlight'} ${isDragOverTarget ? 'border-cyan-300 bg-cyan-800/20' : 'border-transparent'} ${isRoot ? 'py-2' : ''}`}
+            className={`flex min-w-0 items-center cursor-pointer rounded px-1 ${isSelected ? 'bg-codemirror-select' : isRoot && isDatapackDisabled ? 'bg-rose-800/20 hover:bg-rose-800/30' : 'hover:bg-codemirror-highlight'} ${isDragOverTarget ? 'bg-cyan-800/20 ring-2 ring-cyan-300/80 ring-inset' : ''} ${isRoot ? 'py-2' : ''}`}
             style={{ paddingLeft: padding, opacity: isDraggingSource ? 0.1 : 1 }}
             onClick={() => handleSelect(pathKey, !!node.isFile, !!hasChildren)}
             onDoubleClick={() => handleDoubleClick(pathKey, !!node.isFile)}
