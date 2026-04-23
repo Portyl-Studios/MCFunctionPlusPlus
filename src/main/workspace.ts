@@ -414,6 +414,32 @@ export const registerWorkspaceHandlers = (getMainWindow: () => BrowserWindow | n
     return { dir, name, filePath }
   })
 
+  ipcMain.handle('workspace-resolve-file-path', async (_event, { filePath }) => {
+    if (typeof filePath !== 'string') {
+      return null
+    }
+
+    const trimmed = filePath.trim()
+    if (!trimmed) {
+      return null
+    }
+
+    const ext = path.extname(trimmed)
+    if (ext.toLowerCase() !== '.mpp-workspace') {
+      return null
+    }
+
+    const dir = path.dirname(trimmed)
+    const baseName = path.basename(trimmed, ext)
+    const name = baseName.trim()
+
+    if (!dir || !name) {
+      return null
+    }
+
+    return { dir, name }
+  })
+
   ipcMain.handle('workspace-save-dialog', async (_event, { defaultName }) => {
     const mainWindow = getMainWindow()
     if (!mainWindow) throw new Error('No main window')

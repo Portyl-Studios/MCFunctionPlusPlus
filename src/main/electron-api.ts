@@ -15,6 +15,11 @@ export type WorkspaceSaveResult = {
   name: string
 }
 
+export type WorkspaceFilePathResolution = {
+  dir: string
+  name: string
+}
+
 export type WorkspaceDefaultResult = {
   dir: string
   name: string
@@ -98,6 +103,7 @@ export interface ElectronAPI {
   workspaceGet: () => Promise<WorkspaceData | null>
   workspaceInfo: () => Promise<{ dir: string | null; name: string | null }>
   workspaceOpenDialog: () => Promise<WorkspaceFileSelection | null>
+  workspaceResolveFilePath: (filePath: string) => Promise<WorkspaceFilePathResolution | null>
   workspaceSaveDialog: (defaultName: string) => Promise<string | null>
   workspaceSaveAs: (directory: string, name: string) => Promise<WorkspaceSaveResult>
   workspaceUpdatePreference: (key: string, value: unknown) => Promise<void>

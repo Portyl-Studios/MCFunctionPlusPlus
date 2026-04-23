@@ -109,6 +109,9 @@ const electronApi: ElectronAPI = {
   workspaceOpenDialog: () => {
     return ipcRenderer.invoke('workspace-open-dialog')
   },
+  workspaceResolveFilePath: (filePath: string) => {
+    return ipcRenderer.invoke('workspace-resolve-file-path', { filePath })
+  },
   workspaceSaveDialog: (defaultName: string) => {
     return ipcRenderer.invoke('workspace-save-dialog', { defaultName })
   },

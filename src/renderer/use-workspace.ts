@@ -31,25 +31,13 @@ export function useWorkspace() {
   }
 
   const openWorkspaceFromFilePath = async (filePath: string, showToast: boolean = true): Promise<boolean> => {
-    if (!filePath || !filePath.toLowerCase().endsWith('.mpp-workspace')) {
-      return false
-    }
-
-    const normalizedPath = filePath.replace(/\\/g, '/')
-    const lastSlash = normalizedPath.lastIndexOf('/')
-    if (lastSlash <= 0) {
-      return false
-    }
-
-    const dir = normalizedPath.slice(0, lastSlash)
-    const filename = normalizedPath.slice(lastSlash + 1)
-    const name = filename.replace(/\.mpp-workspace$/, '')
-    if (!dir || !name) {
+    const resolved = await window.electron.workspaceResolveFilePath(filePath)
+    if (!resolved) {
       return false
     }
 
     try {
-      await loadWorkspaceAndPersist(dir, name, showToast)
+      await loadWorkspaceAndPersist(resolved.dir, resolved.name, showToast)
       return true
     } catch (error) {
       console.error('Failed to open workspace from file path:', error)
@@ -147,12 +135,12 @@ export function useWorkspace() {
     const filePath = await window.electron.workspaceSaveDialog(defaultName)
     if (filePath) {
       try {
-        // Extract directory and name from the file path
-        const lastSlash = Math.max(filePath.lastIndexOf('\\'), filePath.lastIndexOf('/'))
-        const dir = filePath.substring(0, lastSlash)
-        const filename = filePath.substring(lastSlash + 1)
-        const name = filename.replace(/\.mpp-workspace$/, '')
-        const result = await window.electron.workspaceSaveAs(dir, name)
+        const resolved = await window.electron.workspaceResolveFilePath(filePath)
+        if (!resolved) {
+          return false
+        }
+
+        const result = await window.electron.workspaceSaveAs(resolved.dir, resolved.name)
         setWorkspaceInfo({ dir: result.dir, name: result.name })
         await saveLastActiveWorkspace(result.dir, result.name)
         return true
