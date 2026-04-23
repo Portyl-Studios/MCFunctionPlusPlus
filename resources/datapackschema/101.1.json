@@ -1,0 +1,407 @@
+{
+  "packFormatVersion": "101.1",
+  "minMinecraftVersion": "26.1.2",
+  "maxMinecraftVersion": "26.1.2",
+  "name": "<datapack>",
+  "description": "Root data pack directory",
+  "experimental": false,
+  "children": [
+    {
+      "name": "pack.mcmeta",
+      "description": "Metadata of the data pack. This is the only mandatory file.",
+      "isFile": true,
+      "experimental": false
+    },
+    {
+      "name": "pack.png",
+      "description": "The picture to display next to the data pack in the Data Pack Selection screen.",
+      "isFile": true,
+      "experimental": false
+    },
+    {
+      "name": "data",
+      "description": "Root directory containing all data pack content organized by namespace",
+      "experimental": false,
+      "children": [
+        {
+          "name": "<namespace>",
+          "description": "Namespace folder (e.g., 'minecraft' for vanilla overrides). Multiple namespaces can exist. The minecraft namespace is used for vanilla files and can be used to override them.",
+          "experimental": false,
+          "children": [
+            {
+              "name": "advancement",
+              "description": "Definitions of advancements",
+              "contentType": ".json",
+              "experimental": false,
+              "children": []
+            },
+            {
+              "name": "banner_pattern",
+              "description": "Textures and names to use for banner patterns",
+              "contentType": ".json",
+              "experimental": true,
+              "children": []
+            },
+            {
+              "name": "cat_variant",
+              "description": "Textures and spawn conditions of cat variants",
+              "contentType": ".json",
+              "experimental": true,
+              "children": []
+            },
+            {
+              "name": "chat_type",
+              "description": "Formatting of chat messages",
+              "contentType": ".json",
+              "experimental": true,
+              "children": []
+            },
+            {
+              "name": "chicken_variant",
+              "description": "Textures and spawn conditions of chicken variants",
+              "contentType": ".json",
+              "experimental": true,
+              "children": []
+            },
+            {
+              "name": "cow_variant",
+              "description": "Textures and spawn conditions of cow variants",
+              "contentType": ".json",
+              "experimental": true,
+              "children": []
+            },
+            {
+              "name": "damage_type",
+              "description": "Attributes of damage and death messages",
+              "contentType": ".json",
+              "experimental": true,
+              "children": []
+            },
+            {
+              "name": "dialog",
+              "description": "Definitions of dialogs",
+              "contentType": ".json",
+              "experimental": true,
+              "children": []
+            },
+            {
+              "name": "dimension",
+              "description": "Biome layout and terrain of dimensions",
+              "contentType": ".json",
+              "experimental": true,
+              "children": []
+            },
+            {
+              "name": "dimension_type",
+              "description": "Properties of dimensions",
+              "contentType": ".json",
+              "experimental": true,
+              "children": []
+            },
+            {
+              "name": "enchantment",
+              "description": "Enchantment effects, supported items, level cost, etc.",
+              "contentType": ".json",
+              "experimental": true,
+              "children": []
+            },
+            {
+              "name": "enchantment_provider",
+              "description": "Selection of enchantments for specific uses",
+              "contentType": ".json",
+              "experimental": true,
+              "children": []
+            },
+            {
+              "name": "frog_variant",
+              "description": "Textures and spawn conditions of frog variants",
+              "contentType": ".json",
+              "experimental": true,
+              "children": []
+            },
+            {
+              "name": "function",
+              "description": "MCFunction files with lists of commands",
+              "contentType": ".mcfunction",
+              "experimental": false,
+              "children": []
+            },
+            {
+              "name": "instrument",
+              "description": "Instruments for goat horns",
+              "contentType": ".json",
+              "experimental": true,
+              "children": []
+            },
+            {
+              "name": "item_modifier",
+              "description": "Loot functions used to modify items",
+              "contentType": ".json",
+              "experimental": false,
+              "children": []
+            },
+            {
+              "name": "jukebox_song",
+              "description": "Jukebox song definitions",
+              "contentType": ".json",
+              "experimental": true,
+              "children": []
+            },
+            {
+              "name": "loot_table",
+              "description": "Loot from mobs, blocks, chests, etc.",
+              "contentType": ".json",
+              "experimental": false,
+              "children": []
+            },
+            {
+              "name": "painting_variant",
+              "description": "Size and texture of paintings",
+              "contentType": ".json",
+              "experimental": true,
+              "children": []
+            },
+            {
+              "name": "pig_variant",
+              "description": "Textures and spawn conditions of pig variants",
+              "contentType": ".json",
+              "experimental": true,
+              "children": []
+            },
+            {
+              "name": "predicate",
+              "description": "Tests for specific conditions based on position, mobs, etc.",
+              "contentType": ".json",
+              "experimental": false,
+              "children": []
+            },
+            {
+              "name": "recipe",
+              "description": "Recipes for crafting, smelting, etc.",
+              "contentType": ".json",
+              "experimental": false,
+              "children": []
+            },
+            {
+              "name": "structure",
+              "description": "NBT files defining a saved structure of blocks",
+              "contentType": ".nbt",
+              "experimental": false,
+              "children": []
+            },
+            {
+              "name": "tags",
+              "description": "Collections of things organized by type. Each sub-folder defines tags of a specific type.",
+              "experimental": false,
+              "children": [
+                {
+                  "name": "function",
+                  "description": "Tags for functions",
+                  "contentType": ".json",
+                  "experimental": false,
+                  "children": []
+                },
+                {
+                  "name": "<registry_name>",
+                  "description": "Tags can be defined for any registry using .json files",
+                  "contentType": ".json",
+                  "experimental": false,
+                  "children": []
+                }
+              ]
+            },
+            {
+              "name": "test_environment",
+              "description": "A way to group up GameTests and give them the right preconditions to run",
+              "contentType": ".json",
+              "experimental": true,
+              "children": []
+            },
+            {
+              "name": "test_instance",
+              "description": "A test that can be run by the GameTest framework",
+              "contentType": ".json",
+              "experimental": true,
+              "children": []
+            },
+            {
+              "name": "timeline",
+              "description": "A timeline which specifies events and attributes according to the time of day",
+              "contentType": ".json",
+              "experimental": true,
+              "children": []
+            },
+            {
+              "name": "trade_set",
+              "description": "A set of trades selected by villagers and wandering traders",
+              "contentType": ".json",
+              "experimental": true,
+              "children": []
+            },
+            {
+              "name": "trial_spawner",
+              "description": "Configuration of trial spawners",
+              "contentType": ".json",
+              "experimental": true,
+              "children": []
+            },
+            {
+              "name": "trim_material",
+              "description": "Colors, ingredients, and name of materials for trimming",
+              "contentType": ".json",
+              "experimental": true,
+              "children": []
+            },
+            {
+              "name": "trim_pattern",
+              "description": "Textures and name of patterns for trimming",
+              "contentType": ".json",
+              "experimental": true,
+              "children": []
+            },
+            {
+              "name": "villager_trade",
+              "description": "Trades of villagers and wandering traders",
+              "contentType": ".json",
+              "experimental": true,
+              "children": []
+            },
+            {
+              "name": "wolf_sound_variant",
+              "description": "Sound variants of wolves",
+              "contentType": ".json",
+              "experimental": true,
+              "children": []
+            },
+            {
+              "name": "wolf_variant",
+              "description": "Textures and spawn conditions of wolf variants",
+              "contentType": ".json",
+              "experimental": true,
+              "children": []
+            },
+            {
+              "name": "world_clock",
+              "description": "Clocks used to keep track of internal time",
+              "contentType": ".json",
+              "experimental": true,
+              "children": []
+            },
+            {
+              "name": "worldgen",
+              "description": "World generation settings and configurations",
+              "experimental": true,
+              "children": [
+                {
+                  "name": "biome",
+                  "description": "Biome generation options, effects, etc.",
+                  "contentType": ".json",
+                  "experimental": true,
+                  "children": []
+                },
+                {
+                  "name": "configured_carver",
+                  "description": "Carver cave definitions",
+                  "contentType": ".json",
+                  "experimental": true,
+                  "children": []
+                },
+                {
+                  "name": "configured_feature",
+                  "description": "Configuration of features",
+                  "contentType": ".json",
+                  "experimental": true,
+                  "children": []
+                },
+                {
+                  "name": "density_function",
+                  "description": "Mathematical operations to calculate values for each position in the world",
+                  "contentType": ".json",
+                  "experimental": true,
+                  "children": []
+                },
+                {
+                  "name": "flat_level_generator_preset",
+                  "description": "Presets selectable for the Superflat world type",
+                  "contentType": ".json",
+                  "experimental": true,
+                  "children": []
+                },
+                {
+                  "name": "multi_noise_biome_source_parameter_list",
+                  "description": "Name of a preset to use for the multi noise biome layout",
+                  "contentType": ".json",
+                  "experimental": true,
+                  "children": []
+                },
+                {
+                  "name": "noise",
+                  "description": "Size and amplitudes of a noise",
+                  "contentType": ".json",
+                  "experimental": true,
+                  "children": []
+                },
+                {
+                  "name": "noise_settings",
+                  "description": "Terrain shape including noise caves, and main terrain block types",
+                  "contentType": ".json",
+                  "experimental": true,
+                  "children": []
+                },
+                {
+                  "name": "placed_feature",
+                  "description": "Placement of features within a chunk",
+                  "contentType": ".json",
+                  "experimental": true,
+                  "children": []
+                },
+                {
+                  "name": "processor_list",
+                  "description": "Post-processing of blocks in structures",
+                  "contentType": ".json",
+                  "experimental": true,
+                  "children": []
+                },
+                {
+                  "name": "structure",
+                  "description": "Definition of structure generation and allowed biomes",
+                  "contentType": ".json",
+                  "experimental": true,
+                  "children": []
+                },
+                {
+                  "name": "structure_set",
+                  "description": "Distribution of a set of structures within the world",
+                  "contentType": ".json",
+                  "experimental": true,
+                  "children": []
+                },
+                {
+                  "name": "template_pool",
+                  "description": "A set of templates (structure files) for use in jigsaw structures",
+                  "contentType": ".json",
+                  "experimental": true,
+                  "children": []
+                },
+                {
+                  "name": "world_preset",
+                  "description": "Sets of dimensions selectable in the Create World screen",
+                  "contentType": ".json",
+                  "experimental": true,
+                  "children": []
+                }
+              ]
+            },
+            {
+              "name": "zombie_nautilus_variant",
+              "description": "Textures and spawn conditions of zombie nautilus variants",
+              "contentType": ".json",
+              "experimental": true,
+              "children": []
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
