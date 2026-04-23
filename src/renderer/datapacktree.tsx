@@ -8,6 +8,7 @@ import { Tooltip } from './overlays/tooltip'
 import { detectEditorLanguage, type DiagnosticSummary } from './language-handler'
 import { createFileWithPrompt, deletePathWithConfirm, renamePathWithPrompt } from './path-actions'
 import { compareDottedVersions, isDottedNumericVersion } from '../shared/utils'
+import datapackSchemaHistory from '../../resources/datapack-schema/history.json'
 
 const TREE_DRAG_PAYLOAD_MIME = 'application/x-mcpp-tree-entry'
 const HOVER_EXPAND_CURSOR_SETTLE_MS = 280
@@ -71,24 +72,66 @@ type DatapackSchemaModule = {
   default: DatapackSchemaNode
 }
 
+type DatapackSchemaHistoryEntry = {
+  minVersion?: string | null
+  maxVersion?: string | null
+}
+
 const datapackSchemaLoaders = import.meta.glob<DatapackSchemaModule>('../../resources/datapack-schema/version/*.json')
 const datapackSchemaCache = new Map<string, Promise<DatapackSchemaNode>>()
+const datapackSchemaHistoryEntries = datapackSchemaHistory as Record<string, DatapackSchemaHistoryEntry>
 
 const getSchemaPackFormatVersionFromPath = (schemaPath: string): string => {
   const fileName = schemaPath.split('/').pop() || ''
   return fileName.replace(/\.json$/i, '').trim()
 }
 
+const comparePackFormatVersions = (left: string, right: string): number => {
+  if (isDottedNumericVersion(left) && isDottedNumericVersion(right)) {
+    return compareDottedVersions(left, right)
+  }
+
+  return left.localeCompare(right)
+}
+
 const sortedDatapackSchemaPaths = Object.keys(datapackSchemaLoaders).sort((left, right) => {
   const leftVersion = getSchemaPackFormatVersionFromPath(left)
   const rightVersion = getSchemaPackFormatVersionFromPath(right)
 
-  if (isDottedNumericVersion(leftVersion) && isDottedNumericVersion(rightVersion)) {
-    return compareDottedVersions(rightVersion, leftVersion)
+  return comparePackFormatVersions(rightVersion, leftVersion)
+})
+
+const sortedHistoryPackVersions = Object.keys(datapackSchemaHistoryEntries).sort((left, right) => {
+  return comparePackFormatVersions(right, left)
+})
+
+const resolvePackVersionFromMinecraftVersion = (minecraftVersion?: string): string | undefined => {
+  const normalizedMinecraftVersion = minecraftVersion?.trim()
+  if (!normalizedMinecraftVersion || !isDottedNumericVersion(normalizedMinecraftVersion)) {
+    return undefined
   }
 
-  return rightVersion.localeCompare(leftVersion)
-})
+  for (const packVersion of sortedHistoryPackVersions) {
+    const entry = datapackSchemaHistoryEntries[packVersion]
+    const minVersion = entry?.minVersion?.trim()
+    const maxVersion = entry?.maxVersion?.trim()
+    if (!minVersion || !maxVersion) {
+      continue
+    }
+
+    if (!isDottedNumericVersion(minVersion) || !isDottedNumericVersion(maxVersion)) {
+      continue
+    }
+
+    const isAtLeastMinVersion = compareDottedVersions(normalizedMinecraftVersion, minVersion) >= 0
+    const isAtMostMaxVersion = compareDottedVersions(normalizedMinecraftVersion, maxVersion) <= 0
+    if (isAtLeastMinVersion && isAtMostMaxVersion) {
+      return packVersion
+    }
+  }
+
+  return undefined
+}
 
 const loadDatapackSchemaFromPath = async (schemaPath: string): Promise<DatapackSchemaNode | undefined> => {
   const loader = datapackSchemaLoaders[schemaPath]
@@ -106,28 +149,17 @@ const loadDatapackSchemaFromPath = async (schemaPath: string): Promise<DatapackS
   return await loadPromise
 }
 
-const schemaSupportsMinecraftVersion = (schema: DatapackSchemaNode, minecraftVersion: string): boolean => {
-  const minMinecraftVersion = schema.minMinecraftVersion?.trim()
-  const maxMinecraftVersion = schema.maxMinecraftVersion?.trim()
-
-  if (!minMinecraftVersion || !maxMinecraftVersion) {
-    return false
-  }
-
-  if (!isDottedNumericVersion(minecraftVersion) || !isDottedNumericVersion(minMinecraftVersion) || !isDottedNumericVersion(maxMinecraftVersion)) {
-    return false
-  }
-
-  return compareDottedVersions(minecraftVersion, minMinecraftVersion) >= 0 && compareDottedVersions(minecraftVersion, maxMinecraftVersion) <= 0
-}
-
 const resolveDatapackSchema = async (minecraftVersion?: string): Promise<DatapackSchemaNode | undefined> => {
-  const normalizedMinecraftVersion = minecraftVersion?.trim()
-
-  if (normalizedMinecraftVersion) {
+  const targetPackVersion = resolvePackVersionFromMinecraftVersion(minecraftVersion)
+  if (targetPackVersion) {
     for (const schemaPath of sortedDatapackSchemaPaths) {
+      const schemaPackVersion = getSchemaPackFormatVersionFromPath(schemaPath)
+      if (comparePackFormatVersions(schemaPackVersion, targetPackVersion) !== 0) {
+        continue
+      }
+
       const schema = await loadDatapackSchemaFromPath(schemaPath)
-      if (schema && schemaSupportsMinecraftVersion(schema, normalizedMinecraftVersion)) {
+      if (schema) {
         return schema
       }
     }

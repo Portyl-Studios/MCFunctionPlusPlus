@@ -1,0 +1,1054 @@
+{
+  "4": {
+    "minVersion": "1.13",
+    "maxVersion": "1.14.4",
+    "minSnapshot": "17w48a",
+    "maxSnapshot": "19w46b",
+    "changes": [
+      "Added the initial pack format version of 4."
+    ]
+  },
+  "5": {
+    "minVersion": "1.15",
+    "maxVersion": "1.16.1",
+    "minSnapshot": "1.15-pre1",
+    "maxSnapshot": "1.16.2-pre3",
+    "changes": [
+      "Added predicates."
+    ]
+  },
+  "6": {
+    "minVersion": "1.16.2",
+    "maxVersion": "1.16.5",
+    "minSnapshot": "1.16.2-rc1",
+    "maxSnapshot": "20w45a",
+    "changes": [
+      "Added experimental support for custom world generation."
+    ]
+  },
+  "7": {
+    "minVersion": "1.17",
+    "maxVersion": "1.17.1",
+    "minSnapshot": "20w46a",
+    "maxSnapshot": "1.17.1",
+    "changes": [
+      "The /replaceitem command was replaced with /item.",
+      "Rolls, set_damage, and possibly other parameters in loot tables now require a valid type field when using min-max for numbers.",
+      "score conditions' entity parameter was replaced with target."
+    ]
+  },
+  "8": {
+    "minVersion": "1.18",
+    "maxVersion": "1.18.1",
+    "minSnapshot": "21w37a",
+    "maxSnapshot": "22w07a",
+    "changes": [
+      "Loot tables now require a type field.",
+      "Removed length limits for scoreboards, score holders and team names.",
+      "The lava_pool_stone_replaceables block tag was renamed to lava_pool_stone_cannot_replace."
+    ]
+  },
+  "9": {
+    "minVersion": "1.18.2",
+    "maxVersion": "1.18.2",
+    "minSnapshot": "1.18.2-pre1",
+    "maxSnapshot": "1.18.2",
+    "changes": [
+      "The /locate command now takes a configured structure as its first parameter rather than a structure type, so many grouped structures now require you to locate a structure type tag. E.g. /locate village is now /locate #village."
+    ]
+  },
+  "10": {
+    "minVersion": "1.19",
+    "maxVersion": "1.19.3",
+    "minSnapshot": "22w11a",
+    "maxSnapshot": "1.19.3",
+    "changes": [
+      "Data pack can have a filter section in pack.mcmeta now.",
+      "Renamed the feature field in location predicates to structure.",
+      "In 22w19a, /locatebiome was merged with /locate and the syntax for /locate was changed, but the pack format was not updated."
+    ]
+  },
+  "11": {
+    "minVersion": null,
+    "maxVersion": null,
+    "minSnapshot": "23w03a",
+    "maxSnapshot": "23w05a",
+    "changes": [
+      "only_allows_snow_and_gold_rabbits biome tag was renamed to spawns_gold_rabbits.",
+      "Out-of-bound arguments in translate formats are no longer silently ignored."
+    ]
+  },
+  "12": {
+    "minVersion": "1.19.4",
+    "maxVersion": "1.19.4",
+    "minSnapshot": "23w06a",
+    "maxSnapshot": "1.19.4",
+    "changes": [
+      "Removed specific boolean damage type predicate fields (is_projectile, is_explosion, etc.) in favor of a tags field."
+    ]
+  },
+  "13": {
+    "minVersion": null,
+    "maxVersion": null,
+    "minSnapshot": "23w12a",
+    "maxSnapshot": "23w14a",
+    "changes": [
+      "NBT paths for lines of text, GlowingText, and Color on the front of signs are now at front_text.messages[<index>], front_text.has_glowing_text, and front_text.color. Back of signs use back_text."
+    ]
+  },
+  "14": {
+    "minVersion": null,
+    "maxVersion": null,
+    "minSnapshot": "23w16a",
+    "maxSnapshot": "23w17a",
+    "changes": [
+      "item_display items rotated 180 degrees around Y axis."
+    ]
+  },
+  "15": {
+    "minVersion": "1.20",
+    "maxVersion": "1.20.1",
+    "minSnapshot": "23w18a",
+    "maxSnapshot": "1.20.1",
+    "changes": [
+      "All fields in placed_block, item_used_on_block, and allay_drop_item_on_block triggers collapsed to a single location field.",
+      "alternative predicate and loot table conditions renamed to any_of."
+    ]
+  },
+  "16": {
+    "minVersion": null,
+    "maxVersion": null,
+    "minSnapshot": "23w31a",
+    "maxSnapshot": "23w31a",
+    "changes": [
+      "Removed entity_roar and entity_shake events for entity_action.",
+      "Renamed belowName to below_name in scoreboard slots.",
+      "Added macro functions.",
+      "Added supported_formats and overlays to pack.mcmeta.",
+      "Added /random command."
+    ]
+  },
+  "17": {
+    "minVersion": null,
+    "maxVersion": null,
+    "minSnapshot": "23w32a",
+    "maxSnapshot": "23w35a",
+    "changes": [
+      "Changed mob effect storage; effects now use resource locations in NBT instead of numeric IDs.",
+      "Tag names relating to effects renamed to snake_case."
+    ]
+  },
+  "18": {
+    "minVersion": "1.20.2",
+    "maxVersion": "1.20.2",
+    "minSnapshot": "1.20.2-pre1",
+    "maxSnapshot": "1.20.2",
+    "changes": [
+      "Removed /execute if function and /return run functionality temporarily.",
+      "Numeric types in macros written without suffixes; precision changes for large/small float/double values."
+    ]
+  },
+  "19": {
+    "minVersion": null,
+    "maxVersion": null,
+    "minSnapshot": "23w40a",
+    "maxSnapshot": "23w40a",
+    "changes": [
+      "null and [] are no longer valid JSON chat component representations; stricter parsing of color and hoverEvent fields."
+    ]
+  },
+  "20": {
+    "minVersion": null,
+    "maxVersion": null,
+    "minSnapshot": "23w41a",
+    "maxSnapshot": "23w41a",
+    "changes": [
+      "/function result behavior changed; maxCommandChainLength now counts function invocations and execute stages."
+    ]
+  },
+  "21": {
+    "minVersion": null,
+    "maxVersion": null,
+    "minSnapshot": "23w42a",
+    "maxSnapshot": "23w42a",
+    "changes": [
+      "Added white_smoke particle.",
+      "Renamed Fuse to fuse on TNT entity."
+    ]
+  },
+  "22": {
+    "minVersion": null,
+    "maxVersion": null,
+    "minSnapshot": "23w43a",
+    "maxSnapshot": "23w43b",
+    "changes": [
+      "Renamed Trident to item on trident entity."
+    ]
+  },
+  "23": {
+    "minVersion": null,
+    "maxVersion": null,
+    "minSnapshot": "23w44a",
+    "maxSnapshot": "23w44a",
+    "changes": [
+      "/return run now propagates fails."
+    ]
+  },
+  "24": {
+    "minVersion": null,
+    "maxVersion": null,
+    "minSnapshot": "23w45a",
+    "maxSnapshot": "23w45a",
+    "changes": [
+      "Added breezes and trial spawners."
+    ]
+  },
+  "25": {
+    "minVersion": null,
+    "maxVersion": null,
+    "minSnapshot": "23w46a",
+    "maxSnapshot": "23w46a",
+    "changes": [
+      "Added display names and number formatting for scoreboards."
+    ]
+  },
+  "26": {
+    "minVersion": "1.20.3",
+    "maxVersion": "1.20.4",
+    "minSnapshot": "1.20.3-pre1",
+    "maxSnapshot": "1.20.4",
+    "changes": [
+      "Renamed grass block and item to short_grass."
+    ]
+  },
+  "27": {
+    "minVersion": null,
+    "maxVersion": null,
+    "minSnapshot": "23w51a",
+    "maxSnapshot": "23w51b",
+    "changes": [
+      "Added armadillos, wolf armor, and new attributes."
+    ]
+  },
+  "28": {
+    "minVersion": null,
+    "maxVersion": null,
+    "minSnapshot": "24w03a",
+    "maxSnapshot": "24w03b",
+    "changes": [
+      "Renamed sweeping enchantment to sweeping_edge.",
+      "Added advancement triggers default_block_use and any_block_use."
+    ]
+  },
+  "29": {
+    "minVersion": null,
+    "maxVersion": null,
+    "minSnapshot": "24w04a",
+    "maxSnapshot": "24w04a",
+    "changes": [
+      "Added /transfer."
+    ]
+  },
+  "30": {
+    "minVersion": null,
+    "maxVersion": null,
+    "minSnapshot": "24w05a",
+    "maxSnapshot": "24w05b",
+    "changes": [
+      "Restricted effect amplifiers (0-127).",
+      "Effects in NBT no longer store default values.",
+      "Added body_armor_item and body_armor_drop_chance fields to entities.",
+      "Replaced horse.armor slot with armor.body."
+    ]
+  },
+  "31": {
+    "minVersion": null,
+    "maxVersion": null,
+    "minSnapshot": "24w06a",
+    "maxSnapshot": "24w06a",
+    "changes": [
+      "Amplifiers allowed up to 255 again; certain high amplifiers replaced by attributes.",
+      "Block positions NBT changed from X,Y,Z compound to array of 3 integers."
+    ]
+  },
+  "32": {
+    "minVersion": null,
+    "maxVersion": null,
+    "minSnapshot": "24w07a",
+    "maxSnapshot": "24w07a",
+    "changes": [
+      "max_depth in /place jigsaw capped at 20."
+    ]
+  },
+  "33": {
+    "minVersion": null,
+    "maxVersion": null,
+    "minSnapshot": "24w09a",
+    "maxSnapshot": "24w09a",
+    "changes": [
+      "Unstructured NBT on item stacks replaced with structured components."
+    ]
+  },
+  "34": {
+    "minVersion": null,
+    "maxVersion": null,
+    "minSnapshot": "24w10a",
+    "maxSnapshot": "24w10a",
+    "changes": [
+      "Recipe output can now specify components.",
+      "Wolf variants and banner patterns are now data-driven."
+    ]
+  },
+  "35": {
+    "minVersion": null,
+    "maxVersion": null,
+    "minSnapshot": "24w11a",
+    "maxSnapshot": "24w11a",
+    "changes": [
+      "Removed durability, potions, custom_data, and enchantments fields in item predicates in favor of sub predicates."
+    ]
+  },
+  "36": {
+    "minVersion": null,
+    "maxVersion": null,
+    "minSnapshot": "24w12a",
+    "maxSnapshot": "24w12a",
+    "changes": [
+      "Added crafter_recipe_crafted and fall_after_explosion triggers.",
+      "Added storage loot number provider.",
+      "Added mode field to many loot functions.",
+      "Added many new item stack components."
+    ]
+  },
+  "37": {
+    "minVersion": null,
+    "maxVersion": null,
+    "minSnapshot": "24w13a",
+    "maxSnapshot": "24w13a",
+    "changes": [
+      "Int and float providers in worldgen are no longer wrapped in an extra value field."
+    ]
+  },
+  "38": {
+    "minVersion": null,
+    "maxVersion": null,
+    "minSnapshot": "24w14a",
+    "maxSnapshot": "24w14a",
+    "changes": [
+      "Updated fields and components."
+    ]
+  },
+  "39": {
+    "minVersion": "1.20.5-pre1",
+    "maxVersion": "1.20.5-pre1",
+    "minSnapshot": "1.20.5-pre1",
+    "maxSnapshot": "1.20.5-pre1",
+    "changes": [
+      "Added new item sub-predicates and loot functions."
+    ]
+  },
+  "40": {
+    "minVersion": "1.20.5-pre2",
+    "maxVersion": "1.20.5-pre2",
+    "minSnapshot": "1.20.5-pre2",
+    "maxSnapshot": "1.20.5-pre2",
+    "changes": [
+      "Changed the set_fireworks loot function."
+    ]
+  },
+  "41": {
+    "minVersion": "1.20.5",
+    "maxVersion": "1.20.6",
+    "minSnapshot": "1.20.5-pre3",
+    "maxSnapshot": "1.20.6",
+    "changes": []
+  },
+  "42": {
+    "minVersion": null,
+    "maxVersion": null,
+    "minSnapshot": "24w18a",
+    "maxSnapshot": "24w18a",
+    "changes": [
+      "Added data driven enchantments and paintings.",
+      "Renamed enchantment field to enchantments in item sub predicate."
+    ]
+  },
+  "43": {
+    "minVersion": null,
+    "maxVersion": null,
+    "minSnapshot": "24w19a",
+    "maxSnapshot": "24w19b",
+    "changes": [
+      "Renamed legacy tag folders (e.g., tags/items to tags/item).",
+      "Replaced power fireball tag with acceleration_power."
+    ]
+  },
+  "44": {
+    "minVersion": null,
+    "maxVersion": null,
+    "minSnapshot": "24w20a",
+    "maxSnapshot": "24w20a",
+    "changes": [
+      "Enchantment fields weight and max_level now have upper bounds."
+    ]
+  },
+  "45": {
+    "minVersion": null,
+    "maxVersion": null,
+    "minSnapshot": "24w21a",
+    "maxSnapshot": "24w21b",
+    "changes": [
+      "Added data driven jukebox songs.",
+      "Renamed folders (e.g., loot_tables to loot_table, tags/functions to tags/function).",
+      "Attributes use a single resource location ID field instead of name and UUID."
+    ]
+  },
+  "46": {
+    "minVersion": "1.21-pre1",
+    "maxVersion": "1.21-pre1",
+    "minSnapshot": "1.21-pre1",
+    "maxSnapshot": "1.21-pre1",
+    "changes": [
+      "Added lookup level-based value.",
+      "Added liquid_settings to structures."
+    ]
+  },
+  "47": {
+    "minVersion": "1.21-pre2",
+    "maxVersion": "1.21-pre2",
+    "minSnapshot": "1.21-pre2",
+    "maxSnapshot": "1.21-pre2",
+    "changes": [
+      "Added placement modifier fixed_placement."
+    ]
+  },
+  "48": {
+    "minVersion": "1.21",
+    "maxVersion": "1.21.1",
+    "minSnapshot": "1.21-pre3",
+    "maxSnapshot": "1.21.1",
+    "changes": [
+      "Renamed replace_disc entity effect type to replace_disk."
+    ]
+  },
+  "49": {
+    "minVersion": null,
+    "maxVersion": null,
+    "minSnapshot": "24w33a",
+    "maxSnapshot": "24w33a",
+    "changes": [
+      "Removed attribute ID prefixes like generic..",
+      "Goat horn instruments are now data-driven."
+    ]
+  },
+  "50": {
+    "minVersion": null,
+    "maxVersion": null,
+    "minSnapshot": "24w34a",
+    "maxSnapshot": "24w34a",
+    "changes": [
+      "Changed food component format.",
+      "Added new data components."
+    ]
+  },
+  "51": {
+    "minVersion": null,
+    "maxVersion": null,
+    "minSnapshot": "24w35a",
+    "maxSnapshot": "24w35a",
+    "changes": [
+      "Changed trial chamber loot table formats.",
+      "Added new sheep loot tables and predicates."
+    ]
+  },
+  "52": {
+    "minVersion": null,
+    "maxVersion": null,
+    "minSnapshot": "24w36a",
+    "maxSnapshot": "24w36a",
+    "changes": [
+      "Added equippable, item_model, glider, tooltip_style components and input predicate."
+    ]
+  },
+  "53": {
+    "minVersion": null,
+    "maxVersion": null,
+    "minSnapshot": "24w37a",
+    "maxSnapshot": "24w37a",
+    "changes": [
+      "Added loot tables for eggs and scutes.",
+      "Added item tags for allays, pandas, and brewing stands.",
+      "Added death_protection component.",
+      "Renamed killed_by_crossbow to killed_by_arrow."
+    ]
+  },
+  "54": {
+    "minVersion": null,
+    "maxVersion": null,
+    "minSnapshot": "24w38a",
+    "maxSnapshot": "24w38a",
+    "changes": [
+      "Added crafting_transmute recipe type."
+    ]
+  },
+  "55": {
+    "minVersion": null,
+    "maxVersion": null,
+    "minSnapshot": "24w39a",
+    "maxSnapshot": "24w39a",
+    "changes": [
+      "Split boat types into wood variants.",
+      "Lock field and lock component are now item predicates."
+    ]
+  },
+  "56": {
+    "minVersion": null,
+    "maxVersion": null,
+    "minSnapshot": "24w40a",
+    "maxSnapshot": "24w40a",
+    "changes": [
+      "Added block_crumble and trail particles.",
+      "Added /rotate command.",
+      "Renamed enchantment effect damage_item to change_item_damage."
+    ]
+  },
+  "57": {
+    "minVersion": "1.21.2",
+    "maxVersion": "1.21.3",
+    "minSnapshot": "1.21.2-pre1",
+    "maxSnapshot": "1.21.3",
+    "changes": [
+      "Added disablePlayerMovementCheck gamerule.",
+      "Added camera_overlay field to equippable component.",
+      "Standardized particle color formats."
+    ]
+  },
+  "58": {
+    "minVersion": null,
+    "maxVersion": null,
+    "minSnapshot": "24w44a",
+    "maxSnapshot": "24w44a",
+    "changes": [
+      "Renamed TNTFuse to fuse (Int).",
+      "Added duration to trail particle."
+    ]
+  },
+  "59": {
+    "minVersion": null,
+    "maxVersion": null,
+    "minSnapshot": "24w45a",
+    "maxSnapshot": "24w45a",
+    "changes": [
+      "Changed format of custom_model_data component."
+    ]
+  },
+  "60": {
+    "minVersion": null,
+    "maxVersion": null,
+    "minSnapshot": "24w46a",
+    "maxSnapshot": "1.21.4-pre1",
+    "changes": [
+      "Removed creaking_transient entity type.",
+      "Removed trim_templates item tag."
+    ]
+  },
+  "61": {
+    "minVersion": "1.21.4",
+    "maxVersion": "1.21.4",
+    "minSnapshot": "1.21.4-pre2",
+    "maxSnapshot": "1.21.4",
+    "changes": [
+      "Renamed furnace timing NBT fields; added lit_total_time."
+    ]
+  },
+  "62": {
+    "minVersion": null,
+    "maxVersion": null,
+    "minSnapshot": "25w02a",
+    "maxSnapshot": "25w02a",
+    "changes": [
+      "Text components saved as objects in NBT; commands like /tellraw use SNBT.",
+      "Added strict argument to /setblock.",
+      "Pig variants are data-driven.",
+      "Added weapon and potion_duration_scale components."
+    ]
+  },
+  "63": {
+    "minVersion": null,
+    "maxVersion": null,
+    "minSnapshot": "25w03a",
+    "maxSnapshot": "25w03a",
+    "changes": [
+      "Game Tests system accessible via data packs.",
+      "Added /test command.",
+      "Equipment NBT tags merged into equipment field.",
+      "Renamed FallDistance to fall_distance (Double)."
+    ]
+  },
+  "64": {
+    "minVersion": null,
+    "maxVersion": null,
+    "minSnapshot": "25w04a",
+    "maxSnapshot": "25w04a",
+    "changes": [
+      "Added several components (blocks_attacks, etc.).",
+      "Replaced hide_tooltip fields with tooltip_display component.",
+      "Cat and frog variants are data-driven."
+    ]
+  },
+  "65": {
+    "minVersion": null,
+    "maxVersion": null,
+    "minSnapshot": "25w05a",
+    "maxSnapshot": "25w05a",
+    "changes": [
+      "Added fields to blocks_attacks component.",
+      "Cow variants are data-driven."
+    ]
+  },
+  "66": {
+    "minVersion": null,
+    "maxVersion": null,
+    "minSnapshot": "25w06a",
+    "maxSnapshot": "25w06a",
+    "changes": [
+      "Chicken variants are data-driven."
+    ]
+  },
+  "67": {
+    "minVersion": null,
+    "maxVersion": null,
+    "minSnapshot": "25w07a",
+    "maxSnapshot": "25w07a",
+    "changes": [
+      "Many NBT data changes for entities and block entities."
+    ]
+  },
+  "68": {
+    "minVersion": null,
+    "maxVersion": null,
+    "minSnapshot": "25w08a",
+    "maxSnapshot": "25w08a",
+    "changes": [
+      "Data driven sound variants for Wolves.",
+      "Added dry_foliage_color field to biomes."
+    ]
+  },
+  "69": {
+    "minVersion": null,
+    "maxVersion": null,
+    "minSnapshot": "25w09a",
+    "maxSnapshot": "25w09b",
+    "changes": [
+      "Entity/Block entity NBT and SNBT changes."
+    ]
+  },
+  "70": {
+    "minVersion": null,
+    "maxVersion": null,
+    "minSnapshot": "25w10a",
+    "maxSnapshot": "1.21.5-pre1",
+    "changes": [
+      "New optional predicate fields; SNBT format changes."
+    ]
+  },
+  "71": {
+    "minVersion": "1.21.5",
+    "maxVersion": "1.21.5",
+    "minSnapshot": "1.21.5-pre2",
+    "maxSnapshot": "1.21.5",
+    "changes": [
+      "Pack format bump missed in pre1. No changes."
+    ]
+  },
+  "72": {
+    "minVersion": null,
+    "maxVersion": null,
+    "minSnapshot": "25w15a",
+    "maxSnapshot": "25w15a",
+    "changes": [
+      "Added cloud_height to dimension types.",
+      "Particle field renamed to custom_particle.",
+      "Added create argument to /datapack.",
+      "Added /version.",
+      "Added camera_distance and waypoint attributes."
+    ]
+  },
+  "73": {
+    "minVersion": null,
+    "maxVersion": null,
+    "minSnapshot": "25w16a",
+    "maxSnapshot": "25w16a",
+    "changes": [
+      "painting/variant component no longer accepts inline variants."
+    ]
+  },
+  "74": {
+    "minVersion": null,
+    "maxVersion": null,
+    "minSnapshot": "25w17a",
+    "maxSnapshot": "25w17a",
+    "changes": [
+      "Locator Bar features de-experimentified."
+    ]
+  },
+  "75": {
+    "minVersion": null,
+    "maxVersion": null,
+    "minSnapshot": "25w18a",
+    "maxSnapshot": "25w18a",
+    "changes": [
+      "Added home_pos and home_radius tags to mobs.",
+      "Unifont updated to 16.0.03."
+    ]
+  },
+  "76": {
+    "minVersion": null,
+    "maxVersion": null,
+    "minSnapshot": "25w19a",
+    "maxSnapshot": "25w19a",
+    "changes": [
+      "Added owner NBT tag to vexes and primed TNT."
+    ]
+  },
+  "77": {
+    "minVersion": null,
+    "maxVersion": null,
+    "minSnapshot": "25w20a",
+    "maxSnapshot": "25w20a",
+    "changes": [
+      "Added dialog."
+    ]
+  },
+  "78": {
+    "minVersion": null,
+    "maxVersion": null,
+    "minSnapshot": "25w21a",
+    "maxSnapshot": "25w21a",
+    "changes": [
+      "Restricted sizes of dialog elements."
+    ]
+  },
+  "79": {
+    "minVersion": "1.21.6-pre1",
+    "maxVersion": "1.21.6-pre2",
+    "minSnapshot": "1.21.6-pre1",
+    "maxSnapshot": "1.21.6-pre2",
+    "changes": [
+      "Removed certain dialog types."
+    ]
+  },
+  "80": {
+    "minVersion": "1.21.6",
+    "maxVersion": "1.21.6",
+    "minSnapshot": "1.21.6-pre3",
+    "maxSnapshot": "1.21.7-rc1",
+    "changes": [
+      "Added ui sound category."
+    ]
+  },
+  "81": {
+    "minVersion": "1.21.7",
+    "maxVersion": "1.21.8",
+    "minSnapshot": "1.21.7-rc2",
+    "maxSnapshot": "1.21.8",
+    "changes": [
+      "Added music_disc_lava_chicken item and sound event."
+    ]
+  },
+  "82.0": {
+    "minVersion": null,
+    "maxVersion": null,
+    "minSnapshot": "25w31a",
+    "maxSnapshot": "25w31a",
+    "changes": [
+      "Pack format now includes minor versions for non-breaking changes."
+    ]
+  },
+  "83.0": {
+    "minVersion": null,
+    "maxVersion": null,
+    "minSnapshot": "25w32a",
+    "maxSnapshot": "25w32a",
+    "changes": [
+      "Copper golem weather_state now expects string ID."
+    ]
+  },
+  "83.1": {
+    "minVersion": null,
+    "maxVersion": null,
+    "minSnapshot": "25w33a",
+    "maxSnapshot": "25w33a",
+    "changes": [
+      "Added block_particles field to explode enchantment effect."
+    ]
+  },
+  "84.0": {
+    "minVersion": null,
+    "maxVersion": null,
+    "minSnapshot": "25w34a",
+    "maxSnapshot": "25w34b",
+    "changes": [
+      "Shelf block state replaced by boolean in block entity.",
+      "minecraft:profile components resolve differently."
+    ]
+  },
+  "85.0": {
+    "minVersion": null,
+    "maxVersion": null,
+    "minSnapshot": "25w35a",
+    "maxSnapshot": "25w35a",
+    "changes": [
+      "Renamed chain to iron_chain."
+    ]
+  },
+  "86.0": {
+    "minVersion": null,
+    "maxVersion": null,
+    "minSnapshot": "25w36a",
+    "maxSnapshot": "25w36b",
+    "changes": [
+      "World borders are now dimension-specific."
+    ]
+  },
+  "87.0": {
+    "minVersion": null,
+    "maxVersion": null,
+    "minSnapshot": "25w37a",
+    "maxSnapshot": "1.21.9-pre1",
+    "changes": [
+      "Renamed game rule enableCommandBlocks to commandBlocksEnabled."
+    ]
+  },
+  "87.1": {
+    "minVersion": "1.21.9-pre1",
+    "maxVersion": "1.21.9-pre1",
+    "minSnapshot": "1.21.9-pre1",
+    "maxSnapshot": "1.21.9-pre1",
+    "changes": [
+      "Added more sources to copy_name and copy_components loot functions."
+    ]
+  },
+  "88.0": {
+    "minVersion": "1.21.9",
+    "maxVersion": "1.21.10",
+    "minSnapshot": "1.21.9-pre2",
+    "maxSnapshot": "1.21.10",
+    "changes": [
+      "Changed syntax of /spawnpoint and /setworldspawn."
+    ]
+  },
+  "89.0": {
+    "minVersion": null,
+    "maxVersion": null,
+    "minSnapshot": "25w41a",
+    "maxSnapshot": "25w41a",
+    "changes": [
+      "Added /stopwatch and execute stopwatch.",
+      "Added several new predicate types."
+    ]
+  },
+  "90.0": {
+    "minVersion": null,
+    "maxVersion": null,
+    "minSnapshot": "25w42a",
+    "maxSnapshot": "25w42a",
+    "changes": [
+      "Added environment attributes.",
+      "Changed syntax of /stopwatch."
+    ]
+  },
+  "91.0": {
+    "minVersion": null,
+    "maxVersion": null,
+    "minSnapshot": "25w43a",
+    "maxSnapshot": "25w43a",
+    "changes": [
+      "Changed fields of minecraft:filtered loot function."
+    ]
+  },
+  "92.0": {
+    "minVersion": null,
+    "maxVersion": null,
+    "minSnapshot": "25w44a",
+    "maxSnapshot": "25w44a",
+    "changes": [
+      "Added slot sources; renamed all game rules.",
+      "minecraft:dynamic loot pool entry change."
+    ]
+  },
+  "93.0": {
+    "minVersion": null,
+    "maxVersion": null,
+    "minSnapshot": "25w45a",
+    "maxSnapshot": "25w45a",
+    "changes": [
+      "Added timelines and more environment attributes."
+    ]
+  },
+  "93.1": {
+    "minVersion": null,
+    "maxVersion": null,
+    "minSnapshot": "25w46a",
+    "maxSnapshot": "25w46a",
+    "changes": [
+      "minecraft:dynamic loot pool entry support reinstated."
+    ]
+  },
+  "94.0": {
+    "minVersion": null,
+    "maxVersion": null,
+    "minSnapshot": "1.21.11-pre1",
+    "maxSnapshot": "1.21.11-pre3",
+    "changes": [
+      "Added minecraft:attack_range component."
+    ]
+  },
+  "94.1": {
+    "minVersion": "1.21.11",
+    "maxVersion": "1.21.11",
+    "minSnapshot": "1.21.11-pre4",
+    "maxSnapshot": "1.21.11",
+    "changes": [
+      "Added new fields to attack_range component."
+    ]
+  },
+  "95.0": {
+    "minVersion": null,
+    "maxVersion": null,
+    "minSnapshot": "26.1-snap1",
+    "maxSnapshot": "26.1-snap1",
+    "changes": [
+      "Villager trades are now data-driven."
+    ]
+  },
+  "96.0": {
+    "minVersion": null,
+    "maxVersion": null,
+    "minSnapshot": "26.1-snap2",
+    "maxSnapshot": "26.1-snap2",
+    "changes": [
+      "Wolf sound variants moved to adult_sounds; added baby_sounds."
+    ]
+  },
+  "97.0": {
+    "minVersion": null,
+    "maxVersion": null,
+    "minSnapshot": "26.1-snap3",
+    "maxSnapshot": "26.1-snap3",
+    "changes": [
+      "Added world clocks and time markers; changed /time behavior."
+    ]
+  },
+  "97.1": {
+    "minVersion": null,
+    "maxVersion": null,
+    "minSnapshot": "26.1-snap4",
+    "maxSnapshot": "26.1-snap4",
+    "changes": [
+      "Added minecraft:the_end world clock."
+    ]
+  },
+  "98.0": {
+    "minVersion": null,
+    "maxVersion": null,
+    "minSnapshot": "26.1-snap5",
+    "maxSnapshot": "26.1-snap5",
+    "changes": [
+      "Added dye component; recipe types data-driven."
+    ]
+  },
+  "99.0": {
+    "minVersion": null,
+    "maxVersion": null,
+    "minSnapshot": "26.1-snap6",
+    "maxSnapshot": "26.1-snap6",
+    "changes": [
+      "Added has_ender_dragon_fight to dimension types."
+    ]
+  },
+  "99.1": {
+    "minVersion": null,
+    "maxVersion": null,
+    "minSnapshot": "26.1-snap7",
+    "maxSnapshot": "26.1-snap7",
+    "changes": [
+      "Added sound variants to Cats, Pigs, Cows and Chickens."
+    ]
+  },
+  "99.2": {
+    "minVersion": null,
+    "maxVersion": null,
+    "minSnapshot": "26.1-snap8",
+    "maxSnapshot": "26.1-snap9",
+    "changes": [
+      "Changed minecraft:nbt text component behavior.",
+      "Added entity subcommand to /fetchprofile."
+    ]
+  },
+  "99.3": {
+    "minVersion": null,
+    "maxVersion": null,
+    "minSnapshot": "26.1-snap10",
+    "maxSnapshot": "26.1-snap10",
+    "changes": [
+      "Added pause_mob_growth and reset_mob_growth particles."
+    ]
+  },
+  "100.0": {
+    "minVersion": null,
+    "maxVersion": null,
+    "minSnapshot": "26.1-snap11",
+    "maxSnapshot": "26.1-snap11",
+    "changes": [
+      "Changed rotation property in banners and signs from 0 to 8."
+    ]
+  },
+  "101.0": {
+    "minVersion": null,
+    "maxVersion": null,
+    "minSnapshot": "26.1-pre1",
+    "maxSnapshot": "26.1-pre2",
+    "changes": [
+      "Added options to number providers and predicates.",
+      "Bone meal features data-driven.",
+      "Added /time [of <clock>] rate subcommand."
+    ]
+  },
+  "101.1": {
+    "minVersion": "26.1",
+    "maxVersion": "26.1.2",
+    "minSnapshot": "26.1-pre3",
+    "maxSnapshot": "26.1.2",
+    "changes": [
+      "Increased limit of count placement modifier."
+    ]
+  },
+  "101.2": {
+    "minVersion": null,
+    "maxVersion": null,
+    "minSnapshot": "26.2-snap1",
+    "maxSnapshot": "26.2-snap2",
+    "changes": [
+      "Information needed"
+    ]
+  },
+  "102.0": {
+    "minVersion": null,
+    "maxVersion": null,
+    "minSnapshot": "26.2-snap3",
+    "maxSnapshot": "26.2-snap3",
+    "changes": [
+      "Information needed"
+    ]
+  },
+  "103.0": {
+    "minVersion": null,
+    "maxVersion": null,
+    "minSnapshot": "26.2-snap4",
+    "maxSnapshot": "26.2-snap4",
+    "changes": [
+      "Information needed"
+    ]
+  }
+}
