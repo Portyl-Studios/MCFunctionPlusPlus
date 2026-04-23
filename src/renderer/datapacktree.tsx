@@ -1,6 +1,5 @@
 import React from 'react'
 import ReactDOM from 'react-dom'
-import datapackSchema from '../../resources/datapackschema/94.1.json'
 import type { MenuItem } from './menuitem'
 import { CircleTimer } from './circletimer'
 import { showAlertEvent, showConfirmEvent, showPromptEvent } from './overlays/dialog-events'
@@ -8,6 +7,7 @@ import { showToastEvent } from './overlays/toast-events'
 import { Tooltip } from './overlays/tooltip'
 import { detectEditorLanguage, type DiagnosticSummary } from './language-handler'
 import { createFileWithPrompt, deletePathWithConfirm, renamePathWithPrompt } from './path-actions'
+import { compareDottedVersions, isDottedNumericVersion } from '../shared/utils'
 
 const TREE_DRAG_PAYLOAD_MIME = 'application/x-mcpp-tree-entry'
 const HOVER_EXPAND_CURSOR_SETTLE_MS = 280
@@ -65,6 +65,80 @@ type DatapackSchemaNode = {
   packFormatVersion?: string
   minMinecraftVersion?: string
   maxMinecraftVersion?: string
+}
+
+type DatapackSchemaModule = {
+  default: DatapackSchemaNode
+}
+
+const datapackSchemaLoaders = import.meta.glob<DatapackSchemaModule>('../../resources/datapack-schema/version/*.json')
+const datapackSchemaCache = new Map<string, Promise<DatapackSchemaNode>>()
+
+const getSchemaPackFormatVersionFromPath = (schemaPath: string): string => {
+  const fileName = schemaPath.split('/').pop() || ''
+  return fileName.replace(/\.json$/i, '').trim()
+}
+
+const sortedDatapackSchemaPaths = Object.keys(datapackSchemaLoaders).sort((left, right) => {
+  const leftVersion = getSchemaPackFormatVersionFromPath(left)
+  const rightVersion = getSchemaPackFormatVersionFromPath(right)
+
+  if (isDottedNumericVersion(leftVersion) && isDottedNumericVersion(rightVersion)) {
+    return compareDottedVersions(rightVersion, leftVersion)
+  }
+
+  return rightVersion.localeCompare(leftVersion)
+})
+
+const loadDatapackSchemaFromPath = async (schemaPath: string): Promise<DatapackSchemaNode | undefined> => {
+  const loader = datapackSchemaLoaders[schemaPath]
+  if (!loader) {
+    return undefined
+  }
+
+  const cached = datapackSchemaCache.get(schemaPath)
+  if (cached) {
+    return await cached
+  }
+
+  const loadPromise = loader().then((module) => module.default)
+  datapackSchemaCache.set(schemaPath, loadPromise)
+  return await loadPromise
+}
+
+const schemaSupportsMinecraftVersion = (schema: DatapackSchemaNode, minecraftVersion: string): boolean => {
+  const minMinecraftVersion = schema.minMinecraftVersion?.trim()
+  const maxMinecraftVersion = schema.maxMinecraftVersion?.trim()
+
+  if (!minMinecraftVersion || !maxMinecraftVersion) {
+    return false
+  }
+
+  if (!isDottedNumericVersion(minecraftVersion) || !isDottedNumericVersion(minMinecraftVersion) || !isDottedNumericVersion(maxMinecraftVersion)) {
+    return false
+  }
+
+  return compareDottedVersions(minecraftVersion, minMinecraftVersion) >= 0 && compareDottedVersions(minecraftVersion, maxMinecraftVersion) <= 0
+}
+
+const resolveDatapackSchema = async (minecraftVersion?: string): Promise<DatapackSchemaNode | undefined> => {
+  const normalizedMinecraftVersion = minecraftVersion?.trim()
+
+  if (normalizedMinecraftVersion) {
+    for (const schemaPath of sortedDatapackSchemaPaths) {
+      const schema = await loadDatapackSchemaFromPath(schemaPath)
+      if (schema && schemaSupportsMinecraftVersion(schema, normalizedMinecraftVersion)) {
+        return schema
+      }
+    }
+  }
+
+  const latestSchemaPath = sortedDatapackSchemaPaths[0]
+  if (!latestSchemaPath) {
+    return undefined
+  }
+
+  return await loadDatapackSchemaFromPath(latestSchemaPath)
 }
 
 type MinecraftDatapackValidation = {
@@ -259,8 +333,31 @@ const isTreePathValidByDatapackJson = (relativePath: string, validLeafPaths: Set
 
 export function DatapackTree({ paths, className, folderName, rootId, rootName, rootPackVersion, minecraftVersion, rootTags, basePath, onSelect, onFolderCreated, onRefreshRequested, onRemoveFromWorkspaceRequested, onFileRenamed, onFileDeleted, onContextMenuRequest, modifiedFileKeys, fileDiagnosticSummaries, externalSelectedPath, externalSelectedFileKey, externalSelectionRevealNonce, externalExpandedPaths, onExpandedPathsChange, treeContainerRef }: DataPackTreeProps) {
   const [versionValidLeafPaths, setVersionValidLeafPaths] = React.useState<Set<string> | null>(null)
+  const [datapackSchema, setDatapackSchema] = React.useState<DatapackSchemaNode | undefined>(undefined)
   const lastHandledRevealNonceRef = React.useRef<number | null>(null)
   const suppressRevealForCurrentNonceRef = React.useRef(false)
+
+  React.useEffect(() => {
+    let isCancelled = false
+
+    const loadDatapackSchema = async () => {
+      try {
+        const schema = await resolveDatapackSchema(minecraftVersion)
+        if (isCancelled) return
+        setDatapackSchema(schema)
+      } catch (error) {
+        if (isCancelled) return
+        console.error('Failed to resolve datapack schema:', error)
+        setDatapackSchema(undefined)
+      }
+    }
+
+    void loadDatapackSchema()
+
+    return () => {
+      isCancelled = true
+    }
+  }, [minecraftVersion])
 
   React.useEffect(() => {
     let isCancelled = false
@@ -294,9 +391,9 @@ export function DatapackTree({ paths, className, folderName, rootId, rootName, r
   const tree = React.useMemo(() => {
     const builtTree = buildTree(paths, folderName)
     // Enrich with schema starting from the root schema node
-    enrichTreeWithSchema(builtTree, datapackSchema as DatapackSchemaNode, true)
+    enrichTreeWithSchema(builtTree, datapackSchema, true)
     return builtTree
-  }, [paths, folderName])
+  }, [paths, folderName, datapackSchema])
   const [selectedPath, setSelectedPath] = React.useState<string | null>(externalSelectedPath ?? null)
   const [expandedPaths, setExpandedPaths] = React.useState<Set<string>>(() => {
     const dirs: string[] = []
