@@ -18,12 +18,21 @@ MCFunction++ is built for developers who want a faster, more reliable Minecraft 
 - Desktop and web experiences built on a shared core workflow.
 - Release-ready Windows installer distribution with auto-update support.
 
+### App Requirement: Java
+
+MCFunction++ now requires Java at runtime for automatic Minecraft data preparation.
+
+- Java must be installed and available in your system `PATH`.
+- If Java is missing or too old, Minecraft version preparation will fail in-app.
+- Installing a modern Java runtime (recommended: Java 25+) is strongly suggested.
+
 ### How to Use It
 
-1. Install the Windows desktop app from the latest GitHub release, or run it from source.
-2. Open or create a datapack workspace.
-3. Author datapack files, use validation feedback, and package for release.
-4. Receive update checks once per app launch when using packaged desktop builds.
+1. Install Java and ensure `java` is available in `PATH`.
+2. Install the Windows desktop app from the latest GitHub release, or run it from source.
+3. Open or create a datapack workspace.
+4. Author datapack files, use validation feedback, and package for release.
+5. Receive update checks once per app launch when using packaged desktop builds.
 
 ### Installing from GitHub Releases
 
