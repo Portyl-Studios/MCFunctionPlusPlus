@@ -2,7 +2,7 @@
   "packFormatVersion": "94.1",
   "minMinecraftVersion": "1.21.11",
   "maxMinecraftVersion": "1.21.11",
-  "name": "<data pack>",
+  "name": "<datapack>",
   "description": "Root data pack directory",
   "experimental": false,
   "children": [
@@ -195,29 +195,8 @@
               "experimental": false,
               "children": [
                 {
-                  "name": "blocks",
-                  "description": "Tags for blocks",
-                  "contentType": ".json",
-                  "experimental": false,
-                  "children": []
-                },
-                {
-                  "name": "fluids",
-                  "description": "Tags for fluids",
-                  "contentType": ".json",
-                  "experimental": false,
-                  "children": []
-                },
-                {
-                  "name": "functions",
+                  "name": "function",
                   "description": "Tags for functions",
-                  "contentType": ".json",
-                  "experimental": false,
-                  "children": []
-                },
-                {
-                  "name": "items",
-                  "description": "Tags for items",
                   "contentType": ".json",
                   "experimental": false,
                   "children": []
