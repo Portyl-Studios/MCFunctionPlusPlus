@@ -9,6 +9,8 @@ import { readFile, registerFileOperationHandlers, registerPickDatapackMetadataFi
 import { registerWorkspaceHandlers } from './workspace'
 import workspaceManager from './workspace'
 import { registerDatapackHandlers, datapackManager } from './datapack'
+import { registerMinecraftDataHandlers } from './minecraft-data'
+import { ensureInitialMinecraftVersionPreference, syncDefaultMinecraftVersionPreference } from './minecraft-default-version'
 import {
   createDefaultDatapackMetadata,
   getDatapackMetadataPath,
@@ -52,6 +54,9 @@ const getWindowIconPath = () => {
 let mainWindow: BrowserWindow | null = null
 let isAppQuitting = false
 let isQuitRequestPending = false
+let startupMinecraftVersionSyncErrorMessage: string | null = null
+let startupMinecraftVersionSyncPromise: Promise<void> | null = null
+const STARTUP_MINECRAFT_VERSION_SYNC_TIMEOUT_MS = 12_000
 const fileWatchSubscriptions = new Map<string, AsyncSubscription>()
 const directoryWatchSubscriptions = new Map<string, AsyncSubscription>()
 let pendingWorkspaceFilePath: string | null = null
@@ -341,6 +346,9 @@ registerWindowControlHandlers(() => mainWindow, {
 })
 registerWorkspaceHandlers(() => mainWindow)
 registerDatapackHandlers()
+registerMinecraftDataHandlers(ipcMain, {
+  userDataPath: __userDataPath,
+})
 registerFileOperationHandlers({
   getAllowedRoots: getAllowedFileOperationRoots,
 })
@@ -470,7 +478,11 @@ ipcMain.handle('datapack-launch-path-consume', async () => {
 const buildDefaultDatapackMetadata = async (datapackDir: string, selectedMcmetaPath?: string) => {
   const datapackName = path.basename(datapackDir)
   const sanitizedId = datapackName.replace(/[^a-zA-Z0-9]/g, '').substring(0, 2).toUpperCase() || 'DP'
-  const metadata = createDefaultDatapackMetadata(datapackName, sanitizedId)
+  const minecraftPrefs = await preferencesManager.get('minecraft')
+  const preferredDefaultVersion = typeof minecraftPrefs?.defaultVersion === 'string'
+    ? minecraftPrefs.defaultVersion.trim()
+    : undefined
+  const metadata = createDefaultDatapackMetadata(datapackName, sanitizedId, preferredDefaultVersion)
 
   if (selectedMcmetaPath) {
     try {
@@ -614,41 +626,11 @@ ipcMain.handle('preferences-update', async (_event, { updates }) => {
   return await preferencesManager.update(updates)
 })
 
-ipcMain.handle('command-schema-get', async (_event, { version }) => {
-  if (!version || typeof version !== 'string') {
-    throw new Error('Invalid command schema version')
+ipcMain.handle('minecraft-default-version-sync-error-get', async () => {
+  if (startupMinecraftVersionSyncPromise) {
+    await startupMinecraftVersionSyncPromise
   }
-
-  const normalizedVersion = version.trim()
-  if (!/^[0-9]+(?:\.[0-9]+)*$/.test(normalizedVersion)) {
-    throw new Error('Invalid command schema version format')
-  }
-
-  const schemaPath = path.join(__resourcepath, 'minecraft', normalizedVersion, 'commands.json')
-  return await readFile(schemaPath)
-})
-
-ipcMain.handle('minecraft-data-get', async (_event, { version, dataType }) => {
-  if (!version || typeof version !== 'string') {
-    throw new Error('Invalid Minecraft data version')
-  }
-
-  if (!dataType || typeof dataType !== 'string') {
-    throw new Error('Invalid data type')
-  }
-
-  const normalizedVersion = version.trim()
-  if (!/^[0-9]+(?:\.[0-9]+)*$/.test(normalizedVersion)) {
-    throw new Error('Invalid Minecraft data version format')
-  }
-
-  const normalizedDataType = dataType.trim()
-  if (!/^[a-z_]+$/.test(normalizedDataType)) {
-    throw new Error('Invalid data type format')
-  }
-
-  const dataPath = path.join(__resourcepath, 'minecraft', normalizedVersion, `${normalizedDataType}.json`)
-  return await readFile(dataPath)
+  return startupMinecraftVersionSyncErrorMessage
 })
 
 app.on('ready', async () => {
@@ -658,6 +640,7 @@ app.on('ready', async () => {
 
   // Load preferences on startup
   await preferencesManager.load()
+  await ensureInitialMinecraftVersionPreference()
 
   const iconPath = getWindowIconPath()
   mainWindow = new BrowserWindow({
@@ -695,6 +678,34 @@ app.on('ready', async () => {
   } else {
     mainWindow.loadFile(path.join(__dirname, '../renderer/index.html'))
   }
+
+  // Sync latest Minecraft default version in the background so window creation is never blocked.
+  startupMinecraftVersionSyncPromise = (async () => {
+    let timeoutId: NodeJS.Timeout | null = null
+
+    try {
+      const timeoutPromise = new Promise<never>((_resolve, reject) => {
+        timeoutId = setTimeout(() => {
+          reject(new Error(`Timed out while syncing Minecraft manifest after ${STARTUP_MINECRAFT_VERSION_SYNC_TIMEOUT_MS}ms. Using cached default version.`))
+        }, STARTUP_MINECRAFT_VERSION_SYNC_TIMEOUT_MS)
+      })
+
+      const minecraftVersionSyncResult = await Promise.race([
+        syncDefaultMinecraftVersionPreference(),
+        timeoutPromise,
+      ])
+
+      startupMinecraftVersionSyncErrorMessage = minecraftVersionSyncResult.errorMessage
+    } catch (error) {
+      startupMinecraftVersionSyncErrorMessage = error instanceof Error
+        ? error.message
+        : String(error)
+    } finally {
+      if (timeoutId) {
+        clearTimeout(timeoutId)
+      }
+    }
+  })()
 
   const emitWindowStateChanged = () => {
     if (!mainWindow || mainWindow.isDestroyed()) return

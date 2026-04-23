@@ -78,6 +78,11 @@
       flex justify-center
       py-1
     ;
+    pointer-events: none;
+  }
+
+  .explorer-filter-floating-row > * {
+    pointer-events: auto;
   }
 
   .explorer-filter-pillbox-button {

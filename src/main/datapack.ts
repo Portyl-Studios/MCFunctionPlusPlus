@@ -7,6 +7,7 @@ import {
   updateDatapackLastOpened,
   type DatapackMetadata
 } from './datapack-parser'
+import { preferencesManager } from './preferences'
 
 class DatapackManager {
   private currentDatapackDir: string | null = null
@@ -25,7 +26,11 @@ class DatapackManager {
     // ID would be the first two letters of the name, uppercase
     if (!metadata) {
       const sanitizedId = datapackName.replace(/[^a-zA-Z0-9]/g, '').substring(0, 2).toUpperCase() || 'DP'
-      metadata = createDefaultDatapackMetadata(datapackName, sanitizedId)
+      const minecraftPrefs = await preferencesManager.get('minecraft')
+      const preferredDefaultVersion = typeof minecraftPrefs?.defaultVersion === 'string'
+        ? minecraftPrefs.defaultVersion.trim()
+        : undefined
+      metadata = createDefaultDatapackMetadata(datapackName, sanitizedId, preferredDefaultVersion)
       await writeDatapackMetadata(datapackDir, metadata)
     } else {
       // Update lastOpened timestamp

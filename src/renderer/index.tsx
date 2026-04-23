@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from "react"
 import ReactDOM from "react-dom/client"
 
-import { EditorState } from "@codemirror/state"
+import { EditorState, Transaction } from "@codemirror/state"
 import {
   EditorView,
   keymap,
@@ -52,7 +52,9 @@ import { Tooltip } from "./overlays/tooltip"
 import { useExternalFileWatcher } from "./use-external-file-watcher"
 import { useAppUpdate } from "./use-app-update"
 import { deletePathWithConfirm, renamePathWithPrompt } from "./path-actions"
-import type { ShortcutAction } from "../main/electron-api"
+import type { MinecraftDataEnsureProgress, MinecraftVersionEntry, ShortcutAction } from "../main/electron-api"
+
+const FALLBACK_MINECRAFT_VERSION = "26.1.2"
 
 type DatapackEntry = {
   dir: string
@@ -61,7 +63,16 @@ type DatapackEntry = {
   id?: string
   displayName?: string
   packVersion?: string
+  minecraftVersion?: string
   tags?: string[]
+}
+
+type MinecraftBatchProgressStatus = 'queued' | 'running' | 'completed' | 'cached' | 'failed'
+
+type MinecraftBatchProgressEntry = {
+  percent: number
+  message: string
+  status: MinecraftBatchProgressStatus
 }
 
 const isDatapackEntryDisabled = (entry: DatapackEntry): boolean => {
@@ -100,6 +111,8 @@ type ParsedContextCacheEntry = {
 const OPEN_TABS_PREFERENCE_KEY = "openTabs"
 const EXPLORER_EXPANDED_PREFERENCE_KEY = "explorerExpandedPaths"
 const EXPLORER_TAG_FILTER_PREFERENCE_KEY = "explorerTagFilter"
+const MINECRAFT_FILTER_PREF_KEY = "minecraft"
+const DATAPACK_INTRODUCED_RELEASE_TIME_MS = Date.parse("2018-07-18T00:00:00.000Z")
 
 type CursorMarkerInfo = {
   line: number
@@ -121,6 +134,43 @@ const defaultDiagnosticSummary: DiagnosticSummary = {
 const EMPTY_EXPANDED_PATHS = new Set<string>()
 const DATAPACK_DRAG_PAYLOAD_MIME = "application/x-mcpp-datapack-entry"
 const TREE_DRAG_PAYLOAD_MIME = "application/x-mcpp-tree-entry"
+const DEFAULT_MINECRAFT_BOOTSTRAP_MESSAGE = 'Checking local cache and preparing source data if needed.'
+
+const createInitialBatchProgressEntry = (): MinecraftBatchProgressEntry => ({
+  percent: 0,
+  message: 'Queued',
+  status: 'queued',
+})
+
+const parseReleaseVersionId = (versionId: string): { major: number; minor: number } | null => {
+  const normalized = versionId.trim()
+  if (!/^\d+\.\d+(?:\.\d+)?$/.test(normalized)) {
+    return null
+  }
+
+  const [majorRaw, minorRaw] = normalized.split('.')
+  const major = Number.parseInt(majorRaw, 10)
+  const minor = Number.parseInt(minorRaw, 10)
+  if (!Number.isFinite(major) || !Number.isFinite(minor)) {
+    return null
+  }
+
+  return { major, minor }
+}
+
+const isDatapackEraVersion = (entry: MinecraftVersionEntry): boolean => {
+  if (typeof entry.releaseTime === 'string') {
+    const releaseTimeMs = Date.parse(entry.releaseTime)
+    if (Number.isFinite(releaseTimeMs)) {
+      return releaseTimeMs >= DATAPACK_INTRODUCED_RELEASE_TIME_MS
+    }
+  }
+
+  const parsedVersion = parseReleaseVersionId(entry.id)
+  if (!parsedVersion) return false
+
+  return parsedVersion.major > 1 || (parsedVersion.major === 1 && parsedVersion.minor >= 13)
+}
 
 const getCursorMarkerInfo = (state: EditorState): CursorMarkerInfo => {
   const selection = state.selection.main
@@ -192,6 +242,10 @@ function CodeEditor() {
   const [activeBottomTabId, setActiveBottomTabId] = useState("debug")
   const [isDevMode, setIsDevMode] = useState(false)
   const appVersionLabel = `v${packageJson.version}${isDevMode ? " (dev)" : ""}`
+  const [minecraftVersionOptions, setMinecraftVersionOptions] = useState<MinecraftVersionEntry[]>([])
+  const [isMinecraftVersionMenuOpen, setIsMinecraftVersionMenuOpen] = useState(false)
+  const [hideSnapshotVersions, setHideSnapshotVersions] = useState(true)
+  const isRestoringMinecraftFilterRef = useRef(false)
 
   useEffect(() => {
     let isDisposed = false
@@ -204,6 +258,185 @@ function CodeEditor() {
         setIsDevMode(false)
       }
     })
+
+    return () => {
+      isDisposed = true
+    }
+  }, [])
+
+  useEffect(() => {
+    const restoreMinecraftFilterPreference = async () => {
+      isRestoringMinecraftFilterRef.current = true
+      try {
+        const saved = await window.electron.preferencesGet(MINECRAFT_FILTER_PREF_KEY)
+        const maybeMinecraft = saved as { hideSnapshotsInVersionMenu?: unknown } | undefined
+        if (typeof maybeMinecraft?.hideSnapshotsInVersionMenu === 'boolean') {
+          setHideSnapshotVersions(maybeMinecraft.hideSnapshotsInVersionMenu)
+        } else {
+          setHideSnapshotVersions(true)
+        }
+      } catch (error) {
+        console.error('Failed to restore Minecraft version filter preference:', error)
+        setHideSnapshotVersions(true)
+      } finally {
+        isRestoringMinecraftFilterRef.current = false
+      }
+    }
+
+    void restoreMinecraftFilterPreference()
+  }, [])
+
+  useEffect(() => {
+    if (isRestoringMinecraftFilterRef.current) return
+
+    const persistMinecraftFilterPreference = async () => {
+      try {
+        await window.electron.preferencesSet(MINECRAFT_FILTER_PREF_KEY, {
+          hideSnapshotsInVersionMenu: hideSnapshotVersions,
+        })
+      } catch (error) {
+        console.error('Failed to save Minecraft version filter preference:', error)
+      }
+    }
+
+    void persistMinecraftFilterPreference()
+  }, [hideSnapshotVersions])
+
+  const minecraftVersionMenuItems = React.useMemo<MenuItem[]>(() => {
+    const datapackEraVersions = minecraftVersionOptions.filter(isDatapackEraVersion)
+    const filteredVersions = hideSnapshotVersions
+      ? datapackEraVersions.filter((entry) => entry.type !== 'snapshot')
+      : datapackEraVersions
+
+    const items: MenuItem[] = [
+      {
+        label: 'Hide Snapshots',
+        toggleable: true,
+        toggled: hideSnapshotVersions,
+        onToggle: (nextState) => {
+          setHideSnapshotVersions(nextState)
+        },
+      },
+      {},
+    ]
+
+    if (minecraftVersionOptions.length === 0) {
+      items.push({
+        label: 'Loading available versions...',
+        disabled: true,
+      })
+      return items
+    }
+
+    if (datapackEraVersions.length === 0) {
+      items.push({
+        label: 'No datapack-era versions available',
+        disabled: true,
+      })
+      return items
+    }
+
+    if (filteredVersions.length === 0) {
+      items.push({
+        label: 'No versions visible (snapshots hidden)',
+        disabled: true,
+      })
+      return items
+    }
+
+    for (const entry of filteredVersions) {
+      items.push({
+        label: entry.id,
+        shortcut: entry.type,
+        onClick: () => {
+          void applyMinecraftVersionSelection(entry.id)
+        },
+      })
+    }
+
+    return items
+  }, [hideSnapshotVersions, minecraftVersionOptions])
+
+  const resolveDatapackForMinecraftVersionSelection = (): DatapackEntry | null => {
+    const activeDatapackDir = activeFileRef.current ? parseFileKey(activeFileRef.current).datapackDir : null
+    if (activeDatapackDir) {
+      const activeDatapack = datapacksRef.current.find((entry) => entry.dir === activeDatapackDir)
+      if (activeDatapack) {
+        return activeDatapack
+      }
+    }
+
+    return datapacksRef.current[0] ?? null
+  }
+
+  const applyMinecraftVersionSelection = async (version: string) => {
+    const targetDatapack = resolveDatapackForMinecraftVersionSelection()
+    if (!targetDatapack) {
+      await dialog.showAlert('No Datapack Selected', 'Open a datapack first to set and persist its Minecraft version.')
+      return
+    }
+
+    const normalizedVersion = version.trim()
+    if (!normalizedVersion) {
+      return
+    }
+
+    const currentVersion = targetDatapack.minecraftVersion?.trim() || FALLBACK_MINECRAFT_VERSION
+    if (currentVersion === normalizedVersion) {
+      return
+    }
+
+    // Open loading overlay immediately while preflighting selected version.
+    setMinecraftDataBootstrapTargetVersion(normalizedVersion)
+    setMinecraftDataBootstrapProgressPercent(5)
+    setMinecraftDataBootstrapProgressMessage(`Checking local cache for Minecraft ${normalizedVersion}...`)
+    setIsMinecraftDataBootstrapOpen(true)
+
+    try {
+      // Ensure selected version can be prepared before persisting metadata.
+      await window.electron.minecraftDataEnsure(normalizedVersion)
+
+      const metadataRaw = await window.electron.readFile(targetDatapack.dir, '.mpp-datapack')
+      const parsed = JSON.parse(metadataRaw)
+      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+        throw new Error('Invalid datapack metadata format')
+      }
+
+      const nextMetadata = {
+        ...parsed,
+        minecraftVersion: normalizedVersion,
+      }
+
+      await window.electron.writeFile(targetDatapack.dir, '.mpp-datapack', JSON.stringify(nextMetadata, null, 2))
+
+      setDatapacks((prev) => prev.map((entry) => (
+        entry.dir === targetDatapack.dir
+          ? { ...entry, minecraftVersion: normalizedVersion }
+          : entry
+      )))
+    } catch (error) {
+      setIsMinecraftDataBootstrapOpen(false)
+      console.error('Failed to apply datapack Minecraft version:', error)
+      await dialog.showAlert('Minecraft Version Not Applied', `${error instanceof Error ? error.message : 'Unknown error'}`)
+    }
+  }
+
+  useEffect(() => {
+    let isDisposed = false
+
+    void (async () => {
+      try {
+        const versions = await window.electron.minecraftVersionsGet()
+        if (!isDisposed) {
+          setMinecraftVersionOptions(Array.isArray(versions) ? versions : [])
+        }
+      } catch (error) {
+        console.error('Failed to load Minecraft versions:', error)
+        if (!isDisposed) {
+          setMinecraftVersionOptions([])
+        }
+      }
+    })()
 
     return () => {
       isDisposed = true
@@ -393,11 +626,24 @@ function CodeEditor() {
   const [isFullScreen, setIsFullScreen] = useState(false)
   const [openedFiles, setOpenedFiles] = useState<OpenedFile[]>([])
   const [activeFile, setActiveFile] = useState<string | null>(null)
+  const [minecraftDataVersion, setMinecraftDataVersion] = useState<string>(FALLBACK_MINECRAFT_VERSION)
+  const [minecraftDataBootstrapTargetVersion, setMinecraftDataBootstrapTargetVersion] = useState<string>(FALLBACK_MINECRAFT_VERSION)
+  const [isMinecraftDataBootstrapOpen, setIsMinecraftDataBootstrapOpen] = useState(false)
+  const [minecraftDataBootstrapMode, setMinecraftDataBootstrapMode] = useState<'single' | 'multi'>('single')
+  const [minecraftDataBootstrapProgressPercent, setMinecraftDataBootstrapProgressPercent] = useState(0)
+  const [minecraftDataBootstrapProgressMessage, setMinecraftDataBootstrapProgressMessage] = useState(DEFAULT_MINECRAFT_BOOTSTRAP_MESSAGE)
+  const [minecraftDataBootstrapBatchVersions, setMinecraftDataBootstrapBatchVersions] = useState<string[]>([])
+  const [minecraftDataBootstrapBatchProgress, setMinecraftDataBootstrapBatchProgress] = useState<Record<string, MinecraftBatchProgressEntry>>({})
   const [previewFileKey, setPreviewFileKey] = useState<string | null>(null)
   const [modifiedFiles, setModifiedFiles] = useState<Set<string>>(new Set())
   const [fileDiagnosticSummaries, setFileDiagnosticSummaries] = useState<Record<string, DiagnosticSummary>>({})
   const [cursorMarkerInfo, setCursorMarkerInfo] = useState<CursorMarkerInfo>(defaultCursorMarkerInfo)
   const [diagnosticSummary, setDiagnosticSummary] = useState<DiagnosticSummary>(defaultDiagnosticSummary)
+  const [diagnosticRefreshStatus, setDiagnosticRefreshStatus] = useState({
+    visible: false,
+    percent: 0,
+    label: 'Refreshing diagnostics...',
+  })
   const tabsRef = useRef<HTMLDivElement>(null)
   const tabElementRefs = useRef<Map<string, HTMLDivElement>>(new Map())
   const [isAutoSaveEnabled, setIsAutoSaveEnabled] = useState(false)
@@ -423,6 +669,7 @@ function CodeEditor() {
 
   const [explorerSelectedPathsByDatapack, setExplorerSelectedPathsByDatapack] = useState<Record<string, string | null>>({})
   const [explorerSelectedFileKeysByDatapack, setExplorerSelectedFileKeysByDatapack] = useState<Record<string, string | null>>({})
+  const [explorerSelectionRevealNonceByDatapack, setExplorerSelectionRevealNonceByDatapack] = useState<Record<string, number>>({})
   const [explorerExpandedPathsByDatapack, setExplorerExpandedPathsByDatapack] = useState<Record<string, Set<string>>>({})
   const explorerContainerRefs = useRef<Map<string, React.RefObject<HTMLDivElement | null>>>(new Map())
   
@@ -434,21 +681,31 @@ function CodeEditor() {
   const diagnosticsScanRunIdRef = useRef(0)
   const contextScanRunIdRef = useRef(0)
   const contextDiagnosticsPipelineRunIdRef = useRef(0)
+  const contextRefreshRequestedVersionRef = useRef(0)
+  const contextRefreshCompletedVersionRef = useRef(0)
   const contextReloadTimerRef = useRef<number | null>(null)
   const directoryRefreshTimerRef = useRef<number | null>(null)
   const directoryWatchIdsRef = useRef<Map<string, string>>(new Map())
   const didConsumeDatapackLaunchPathRef = useRef(false)
   const pendingExternalDatapackPathRef = useRef<string | null>(null)
   const fileContextParseCacheRef = useRef<Map<string, ParsedContextCacheEntry>>(new Map())
+  const lastShownJavaVersionErrorRef = useRef<string | null>(null)
   const openFileRequestIdRef = useRef(0)
   const previewFileKeyRef = useRef<string | null>(null)
+  const minecraftDataBootstrapRunIdRef = useRef(0)
   const dialog = useDialogRequest()
+  const pendingBootstrapQuitDecisionRef = useRef<((confirmed: boolean) => void) | null>(null)
   const openDialogRef = useRef(dialog.openDialog)
   const isDialogOpenRef = useRef(dialog.isOpen)
   const isEditorFocusedRef = useRef(false)
   const openedFilesRef = useRef(openedFiles)
   const modifiedFilesRef = useRef(modifiedFiles)
+  const fileDiagnosticSummariesRef = useRef(fileDiagnosticSummaries)
+  const fileContextRefreshRequiredVersionRef = useRef<Map<string, number>>(new Map())
   const datapacksRef = useRef(datapacks)
+  const workspaceDirRef = useRef<string | null>(null)
+  const contextDiagnosticsIsRunningRef = useRef(false)
+  const queuedContextDiagnosticsTargetRef = useRef<string | null | undefined>(undefined)
   const {
     workspaceInfo,
     handleOpenWorkspace,
@@ -475,6 +732,16 @@ function CodeEditor() {
   }, [dialog.openDialog])
 
   useEffect(() => {
+    if (isMinecraftDataBootstrapOpen) return
+    if (!pendingBootstrapQuitDecisionRef.current) return
+
+    const resolve = pendingBootstrapQuitDecisionRef.current
+    pendingBootstrapQuitDecisionRef.current = null
+    dialog.closeDialog()
+    resolve(false)
+  }, [isMinecraftDataBootstrapOpen, dialog])
+
+  useEffect(() => {
     const unsubscribe = subscribeDialogRequests((config) => {
       openDialogRef.current(config)
     })
@@ -483,6 +750,76 @@ function CodeEditor() {
       unsubscribe()
     }
   }, [])
+
+  const showMinecraftManifestSyncError = React.useCallback((errorMessage: string) => {
+    openDialogRef.current({
+      title: 'Minecraft Manifest Error',
+      message: errorMessage,
+      buttons: [
+        {
+          label: 'OK',
+          onClick: () => undefined,
+        },
+      ],
+    })
+  }, [])
+
+  useEffect(() => {
+    let cancelled = false
+
+    void window.electron.minecraftDefaultVersionSyncErrorGet().then((errorMessage) => {
+      if (cancelled || !errorMessage) {
+        return
+      }
+
+      showMinecraftManifestSyncError(errorMessage)
+    })
+
+    return () => {
+      cancelled = true
+    }
+  }, [showMinecraftManifestSyncError])
+
+  useEffect(() => {
+    const unsubscribe = window.electron.onMinecraftDataEnsureProgress((progress: MinecraftDataEnsureProgress) => {
+      if (minecraftDataBootstrapMode === 'multi') {
+        setMinecraftDataBootstrapBatchProgress((prev) => {
+          if (!(progress.version in prev)) {
+            return prev
+          }
+
+          const nextStatus: MinecraftBatchProgressStatus = progress.stage === 'cache-hit'
+            ? 'cached'
+            : progress.stage === 'cache-ready'
+              ? 'completed'
+              : progress.percent >= 100
+                ? 'completed'
+                : 'running'
+
+          return {
+            ...prev,
+            [progress.version]: {
+              percent: progress.percent,
+              message: progress.message || DEFAULT_MINECRAFT_BOOTSTRAP_MESSAGE,
+              status: nextStatus,
+            },
+          }
+        })
+        return
+      }
+
+      if (progress.version !== minecraftDataBootstrapTargetVersion) {
+        return
+      }
+
+      setMinecraftDataBootstrapProgressPercent(progress.percent)
+      setMinecraftDataBootstrapProgressMessage(progress.message || DEFAULT_MINECRAFT_BOOTSTRAP_MESSAGE)
+    })
+
+    return () => {
+      unsubscribe()
+    }
+  }, [minecraftDataBootstrapMode, minecraftDataBootstrapTargetVersion])
 
   // Load auto-save preference from workspace
   useEffect(() => {
@@ -599,6 +936,7 @@ function CodeEditor() {
       let id: string | undefined
       let displayName: string | undefined
       let packVersion: string | undefined
+      let minecraftVersion: string | undefined
       let tags: string[] | undefined
       try {
         const metadataRaw = await window.electron.readFile(datapackDir, ".mpp-datapack")
@@ -611,6 +949,9 @@ function CodeEditor() {
         }
         if (parsed && typeof parsed.packVersion === "string") {
           packVersion = parsed.packVersion
+        }
+        if (parsed && typeof parsed.minecraftVersion === "string") {
+          minecraftVersion = parsed.minecraftVersion
         }
         if (parsed && Array.isArray(parsed.tags)) {
           tags = (parsed.tags as unknown[])
@@ -631,6 +972,7 @@ function CodeEditor() {
         id,
         displayName,
         packVersion,
+        minecraftVersion,
         tags,
       }
     } catch {
@@ -758,6 +1100,56 @@ function CodeEditor() {
       void window.electron.quitCancelled()
     }
 
+    const confirmBootstrapQuitCancel = async (): Promise<boolean> => {
+      return await new Promise<boolean>((resolve) => {
+        pendingBootstrapQuitDecisionRef.current = resolve
+        dialog.openDialog({
+          title: 'Quit During Download',
+          message: 'Minecraft data is still being prepared. Quit now, cancel download, and clean up temporary files?',
+          buttons: [
+            {
+              label: 'Quit',
+              onClick: () => {
+                const nextResolve = pendingBootstrapQuitDecisionRef.current
+                pendingBootstrapQuitDecisionRef.current = null
+                nextResolve?.(true)
+              },
+            },
+            {
+              label: 'Stay',
+              onClick: () => {
+                const nextResolve = pendingBootstrapQuitDecisionRef.current
+                pendingBootstrapQuitDecisionRef.current = null
+                nextResolve?.(false)
+              },
+            },
+          ],
+        })
+      })
+    }
+
+    const cancelBootstrapAndQuit = async (): Promise<boolean> => {
+      const confirmed = await confirmBootstrapQuitCancel()
+      if (!confirmed) {
+        notifyQuitCancelled()
+        return false
+      }
+
+      try {
+        await window.electron.minecraftDataCancel()
+      } catch (error) {
+        console.error('Failed to cancel Minecraft data preparation before quit:', error)
+      }
+
+      await window.electron.quit()
+      return true
+    }
+
+    if (isMinecraftDataBootstrapOpen) {
+      await cancelBootstrapAndQuit()
+      return
+    }
+
     // If no unsaved files, double confirm quit to prevent accidental exits
     if (modifiedFiles.size === 0) {
       const confirmed = await dialog.showConfirm("Quit", "Are you sure you want to quit?")
@@ -781,7 +1173,15 @@ function CodeEditor() {
             onClick: async () => {
               const didSave = await saveAllFiles()
               if (didSave) {
-                await window.electron.quit()
+                if (isMinecraftDataBootstrapOpen) {
+                  const quitHandled = await cancelBootstrapAndQuit()
+                  if (!quitHandled) {
+                    resolve()
+                    return
+                  }
+                } else {
+                  await window.electron.quit()
+                }
               } else {
                 notifyQuitCancelled()
               }
@@ -791,7 +1191,15 @@ function CodeEditor() {
           {
             label: "Discard",
             onClick: async () => {
-              await window.electron.quit()
+              if (isMinecraftDataBootstrapOpen) {
+                const quitHandled = await cancelBootstrapAndQuit()
+                if (!quitHandled) {
+                  resolve()
+                  return
+                }
+              } else {
+                await window.electron.quit()
+              }
               resolve()
             },
           },
@@ -893,11 +1301,23 @@ function CodeEditor() {
   }
 
   const removeFileFromModifiedFiles = (fileKey: string) => {
+    modifiedFilesRef.current = new Set(modifiedFilesRef.current)
+    modifiedFilesRef.current.delete(fileKey)
+    fileContextRefreshRequiredVersionRef.current.delete(fileKey)
     setModifiedFiles((prev) => {
       const next = new Set(prev)
       next.delete(fileKey)
       return next
     })
+  }
+
+  const setDiagnosticSummaryFromCache = (fileKey: string | null) => {
+    if (!fileKey) {
+      setDiagnosticSummary(defaultDiagnosticSummary)
+      return
+    }
+
+    setDiagnosticSummary(fileDiagnosticSummariesRef.current[fileKey] ?? defaultDiagnosticSummary)
   }
 
   const removeFileFromDiagnosticSummaries = (fileKey: string) => {
@@ -1086,7 +1506,7 @@ function CodeEditor() {
       setActiveDatapackContext(nextDatapackDir)
       setActiveFile(fileKey)
       activeFileRef.current = fileKey
-      setDiagnosticSummary(fileKey ? (fileDiagnosticSummaries[fileKey] ?? defaultDiagnosticSummary) : defaultDiagnosticSummary)
+      setDiagnosticSummaryFromCache(fileKey)
       focusFileInExplorer(fileKey)
       return
     }
@@ -1096,7 +1516,7 @@ function CodeEditor() {
     activeFileRef.current = fileKey
     const nextDatapackDir = fileKey ? parseFileKey(fileKey).datapackDir : null
     setActiveDatapackContext(nextDatapackDir)
-    setDiagnosticSummary(fileKey ? (fileDiagnosticSummaries[fileKey] ?? defaultDiagnosticSummary) : defaultDiagnosticSummary)
+    setDiagnosticSummaryFromCache(fileKey)
     focusFileInExplorer(fileKey)
     
     if (!fileKey) {
@@ -1394,6 +1814,10 @@ function CodeEditor() {
       // Clear modified state for this file
       removeFileFromModifiedFiles(fileKey)
 
+      if (activeFileRef.current === fileKey) {
+        setDiagnosticSummaryFromCache(fileKey)
+      }
+
       // Clear any pending autosave
       clearAutoSaveTimer(fileKey)
       return true
@@ -1647,15 +2071,63 @@ function CodeEditor() {
   }, [datapacks])
 
   useEffect(() => {
+    workspaceDirRef.current = workspaceInfo.dir
+  }, [workspaceInfo.dir])
+
+  useEffect(() => {
+    const activeDatapackDir = activeFileRef.current ? parseFileKey(activeFileRef.current).datapackDir : null
+    let selectedDatapack = datapacksRef.current[0]
+    if (activeDatapackDir) {
+      selectedDatapack = datapacksRef.current.find((entry) => entry.dir === activeDatapackDir) ?? selectedDatapack
+    }
+    const nextVersion = selectedDatapack?.minecraftVersion?.trim() || FALLBACK_MINECRAFT_VERSION
+
+    setMinecraftDataVersion((currentVersion) => currentVersion === nextVersion ? currentVersion : nextVersion)
+  }, [activeFile, datapacks])
+
+  useEffect(() => {
+    const runId = minecraftDataBootstrapRunIdRef.current + 1
+    minecraftDataBootstrapRunIdRef.current = runId
+    setMinecraftDataBootstrapTargetVersion(minecraftDataVersion)
+    setMinecraftDataBootstrapProgressPercent(5)
+    setMinecraftDataBootstrapProgressMessage(`Checking local cache for Minecraft ${minecraftDataVersion}...`)
+    setIsMinecraftDataBootstrapOpen(true)
+
     void (async () => {
       try {
-        await loadMcfunctionCommandSchema("1.21.11")
-        await loadMinecraftData("1.21.11")
+        await window.electron.minecraftDataEnsure(minecraftDataVersion)
+        const schemaLoaded = await loadMcfunctionCommandSchema(minecraftDataVersion)
+        if (!schemaLoaded) {
+          throw new Error(`Failed to load command schema for Minecraft ${minecraftDataVersion}.`)
+        }
+        await loadMinecraftData(minecraftDataVersion)
+        if (lastShownJavaVersionErrorRef.current) {
+          lastShownJavaVersionErrorRef.current = null
+        }
       } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : String(error)
+        const errorSignature = `${minecraftDataVersion}|${errorMessage}`
+        if (lastShownJavaVersionErrorRef.current !== errorSignature) {
+          lastShownJavaVersionErrorRef.current = errorSignature
+          dialog.openDialog({
+            title: 'Minecraft Version Preparation Failed',
+            message: errorMessage,
+            buttons: [
+              {
+                label: 'OK',
+                onClick: () => undefined,
+              },
+            ],
+          })
+        }
         console.error("Failed to load mcfunction command schema:", error)
+      } finally {
+        if (minecraftDataBootstrapRunIdRef.current === runId) {
+          setIsMinecraftDataBootstrapOpen(false)
+        }
       }
     })()
-  }, [])
+  }, [minecraftDataVersion])
 
   useEffect(() => {
     const relativePaths = datapacks.flatMap((datapack) => datapack.paths)
@@ -1756,14 +2228,15 @@ function CodeEditor() {
   }
 
   const reloadAllContextsAsync = async () => {
-    if (datapacks.length === 0) {
+    const currentDatapacks = datapacksRef.current
+    if (currentDatapacks.length === 0) {
       clearDatapackContextIndexes()
       fileContextParseCacheRef.current.clear()
       setActiveDatapackContext(null)
       return
     }
 
-    const datapackDirs = datapacks.map((datapack) => datapack.dir)
+    const datapackDirs = currentDatapacks.map((datapack) => datapack.dir)
     pruneDatapackContextIndexes(datapackDirs)
 
     const scanRunId = contextScanRunIdRef.current + 1
@@ -1771,7 +2244,7 @@ function CodeEditor() {
     const openedModifiedContentByFileKey = buildOpenedModifiedContentMap()
     const seenMcfunctionFileKeys = new Set<string>()
 
-    for (const datapack of datapacks) {
+    for (const datapack of currentDatapacks) {
       if (contextScanRunIdRef.current !== scanRunId) return
 
       const mergedIndex = await buildDatapackContextIndexAsync(
@@ -1840,13 +2313,81 @@ function CodeEditor() {
     }
   }
 
-  const scheduleContextReload = (datapackDir?: string) => {
+  const scheduleContextReload = (datapackDir?: string, sourceFileKey?: string) => {
+    const requestVersion = contextRefreshRequestedVersionRef.current + 1
+    contextRefreshRequestedVersionRef.current = requestVersion
+
+    if (sourceFileKey && modifiedFilesRef.current.has(sourceFileKey)) {
+      fileContextRefreshRequiredVersionRef.current.set(sourceFileKey, requestVersion)
+    }
+
     clearContextReloadTimer()
 
     contextReloadTimerRef.current = window.setTimeout(() => {
-      void reloadContextsThenDiagnosticsAsync(datapackDir)
+      void queueContextsThenDiagnosticsReload(datapackDir)
       contextReloadTimerRef.current = null
     }, 1000)
+  }
+
+  const mergeContextDiagnosticsTargets = (
+    existingTarget: string | null | undefined,
+    incomingTarget: string | undefined,
+  ): string | null | undefined => {
+    const normalizedIncoming = incomingTarget ?? undefined
+    if (existingTarget === undefined || normalizedIncoming === undefined) {
+      return undefined
+    }
+
+    if (existingTarget === null) {
+      return normalizedIncoming ?? null
+    }
+
+    if (normalizedIncoming === null) {
+      return existingTarget
+    }
+
+    if (existingTarget === normalizedIncoming) {
+      return existingTarget
+    }
+
+    return undefined
+  }
+
+  const queueContextsThenDiagnosticsReload = async (datapackDir?: string) => {
+    queuedContextDiagnosticsTargetRef.current = mergeContextDiagnosticsTargets(
+      queuedContextDiagnosticsTargetRef.current,
+      datapackDir,
+    )
+
+    if (contextDiagnosticsIsRunningRef.current) {
+      return
+    }
+
+    let drainedSuccessfully = false
+    contextDiagnosticsIsRunningRef.current = true
+    setDiagnosticRefreshStatus((prev) => ({
+      ...prev,
+      visible: true,
+      percent: 0,
+      label: 'Refreshing diagnostics...',
+    }))
+    try {
+      while (queuedContextDiagnosticsTargetRef.current !== null) {
+        const nextTarget = queuedContextDiagnosticsTargetRef.current
+        queuedContextDiagnosticsTargetRef.current = null
+        await reloadContextsThenDiagnosticsAsync(nextTarget === null ? undefined : nextTarget)
+      }
+      drainedSuccessfully = true
+    } finally {
+      if (drainedSuccessfully) {
+        contextRefreshCompletedVersionRef.current = contextRefreshRequestedVersionRef.current
+      }
+      contextDiagnosticsIsRunningRef.current = false
+      setDiagnosticRefreshStatus((prev) => ({
+        ...prev,
+        visible: false,
+      }))
+    }
   }
 
   const reloadContextsThenDiagnosticsAsync = async (datapackDir?: string) => {
@@ -1860,11 +2401,84 @@ function CodeEditor() {
     }
     if (contextDiagnosticsPipelineRunIdRef.current !== pipelineRunId) return
 
-    await reloadAllDiagnosticsAsync()
+    await reloadAllDiagnosticsAsync(datapackDir)
+  }
+
+  const resolveDatapackMinecraftVersion = (datapackDir: string): string => {
+    const datapack = datapacksRef.current.find((entry) => entry.dir === datapackDir)
+    const normalized = datapack?.minecraftVersion?.trim()
+    return normalized || FALLBACK_MINECRAFT_VERSION
+  }
+
+  const ensureDiagnosticsResourcesForVersion = async (version: string): Promise<boolean> => {
+    try {
+      await window.electron.minecraftDataEnsure(version)
+      const schemaLoaded = await loadMcfunctionCommandSchema(version)
+      if (!schemaLoaded) {
+        throw new Error(`Failed to load command schema for Minecraft ${version}.`)
+      }
+      await loadMinecraftData(version)
+      return true
+    } catch (error) {
+      console.error(`Failed to prepare diagnostics resources for Minecraft ${version}:`, error)
+      return false
+    }
+  }
+
+  const refreshActiveEditorForLoadedVersion = () => {
+    const activeFileKey = activeFileRef.current
+    const view = viewRef.current
+    if (!activeFileKey || !view) {
+      return
+    }
+
+    const { relativePath, datapackDir } = parseFileKey(activeFileKey)
+    const language = detectEditorLanguage(relativePath)
+    if (language.id !== "mcfunction") {
+      refreshActiveEditorLint()
+      return
+    }
+
+    const activeOpenedFile = openedFilesRef.current.find((file) =>
+      createFileKey(file.datapackDir, file.relativePath) === activeFileKey,
+    )
+    if (!activeOpenedFile) {
+      refreshActiveEditorLint()
+      return
+    }
+
+    // Rebuilding EditorState clears undo history. Keep current state and re-lint instead.
+    setActiveDatapackContext(datapackDir)
+    setCursorMarkerInfo(getCursorMarkerInfo(view.state))
+    refreshActiveEditorLint()
+  }
+
+  const restoreActiveEditorVersionResourcesAsync = async (shouldCancel: () => boolean): Promise<void> => {
+    const activeDatapackDir = activeFileRef.current
+      ? parseFileKey(activeFileRef.current).datapackDir
+      : null
+    if (!activeDatapackDir) {
+      return
+    }
+
+    const activeVersion = resolveDatapackMinecraftVersion(activeDatapackDir)
+    const restored = await ensureDiagnosticsResourcesForVersion(activeVersion)
+    if (!restored || shouldCancel()) {
+      return
+    }
+
+    refreshActiveEditorForLoadedVersion()
   }
 
   const reloadAllDiagnosticsAsync = async (scanDatapackDir?: string) => {
-    if (!workspaceInfo.dir || datapacks.length === 0) {
+    const currentWorkspaceDir = workspaceDirRef.current
+    const currentDatapacks = datapacksRef.current
+
+    if (!currentWorkspaceDir || currentDatapacks.length === 0) {
+      setDiagnosticRefreshStatus((prev) => ({
+        ...prev,
+        visible: false,
+      }))
       setFileDiagnosticSummaries((prev) => {
         const preserved: Record<string, DiagnosticSummary> = {}
         for (const [fileKey, summary] of Object.entries(prev)) {
@@ -1880,63 +2494,172 @@ function CodeEditor() {
     const scanRunId = diagnosticsScanRunIdRef.current + 1
     diagnosticsScanRunIdRef.current = scanRunId
 
-    const nextSummaries = await runGlobalDiagnosticsScan({
-      datapacks,
-      openedFiles: openedFilesRef.current,
-      modifiedFileKeys: modifiedFilesRef.current,
-      readFile: (datapackDir, relativePath) => window.electron.readFile(datapackDir, relativePath),
-      targetDatapackDir: scanDatapackDir,
-      shouldCancel: () => diagnosticsScanRunIdRef.current !== scanRunId,
-    })
+    const shouldCancel = () => diagnosticsScanRunIdRef.current !== scanRunId
 
-    if (!nextSummaries) return
-    if (diagnosticsScanRunIdRef.current !== scanRunId) return
+    if (scanDatapackDir) {
+      const targetVersion = resolveDatapackMinecraftVersion(scanDatapackDir)
+      setDiagnosticRefreshStatus({
+        visible: true,
+        percent: 15,
+        label: `Refreshing diagnostics...`,
+      })
+      const resourcesReady = await ensureDiagnosticsResourcesForVersion(targetVersion)
+      if (shouldCancel()) return
+      if (!resourcesReady) return
 
-    setFileDiagnosticSummaries((prev) => {
-      if (!scanDatapackDir) {
-        const preservedModified: Record<string, DiagnosticSummary> = {}
+      setDiagnosticRefreshStatus((prev) => ({
+        ...prev,
+        percent: 50,
+        label: `Scanning diagnostics...`,
+      }))
+
+      const nextSummaries = await runGlobalDiagnosticsScan({
+        datapacks: currentDatapacks,
+        openedFiles: openedFilesRef.current,
+        modifiedFileKeys: modifiedFilesRef.current,
+        readFile: (datapackDir, relativePath) => window.electron.readFile(datapackDir, relativePath),
+        targetDatapackDirs: [scanDatapackDir],
+        shouldCancel,
+      })
+
+      if (!nextSummaries) return
+      if (shouldCancel()) return
+
+      setDiagnosticRefreshStatus((prev) => ({
+        ...prev,
+        percent: 90,
+        label: `Finalizing diagnostics...`,
+      }))
+
+      setFileDiagnosticSummaries((prev) => {
+        const next = { ...prev }
+
+        for (const fileKey of Object.keys(next)) {
+          const fileDatapackDir = parseFileKey(fileKey).datapackDir
+          if (fileDatapackDir !== scanDatapackDir) continue
+          if (modifiedFilesRef.current.has(fileKey)) continue
+          delete next[fileKey]
+        }
+
+        for (const [fileKey, summary] of Object.entries(nextSummaries)) {
+          next[fileKey] = summary
+        }
+
         for (const [fileKey, summary] of Object.entries(prev)) {
-          if (modifiedFilesRef.current.has(fileKey)) {
-            preservedModified[fileKey] = summary
-          }
+          if (!modifiedFilesRef.current.has(fileKey)) continue
+          const fileDatapackDir = parseFileKey(fileKey).datapackDir
+          if (fileDatapackDir === scanDatapackDir) continue
+          next[fileKey] = summary
         }
 
-        return {
-          ...nextSummaries,
-          ...preservedModified,
-        }
+        return next
+      })
+
+      await restoreActiveEditorVersionResourcesAsync(shouldCancel)
+      return
+    }
+
+    const datapackDirsByVersion = new Map<string, string[]>()
+    for (const datapack of currentDatapacks) {
+      const normalizedVersion = datapack.minecraftVersion?.trim() || FALLBACK_MINECRAFT_VERSION
+      const existing = datapackDirsByVersion.get(normalizedVersion)
+      if (existing) {
+        existing.push(datapack.dir)
+      } else {
+        datapackDirsByVersion.set(normalizedVersion, [datapack.dir])
+      }
+    }
+
+    const orderedVersions = Array.from(datapackDirsByVersion.keys())
+    const loadedVersionIndex = orderedVersions.indexOf(minecraftDataVersion)
+    if (loadedVersionIndex > 0) {
+      const [loadedVersion] = orderedVersions.splice(loadedVersionIndex, 1)
+      orderedVersions.unshift(loadedVersion)
+    }
+
+    const mergedSummaries: Record<string, DiagnosticSummary> = {}
+    const scannedDatapackDirs = new Set<string>()
+    const totalVersions = Math.max(orderedVersions.length, 1)
+
+    for (const [index, version] of orderedVersions.entries()) {
+      const resourcesReady = await ensureDiagnosticsResourcesForVersion(version)
+      if (shouldCancel()) return
+      if (!resourcesReady) {
+        continue
       }
 
+      setDiagnosticRefreshStatus({
+        visible: true,
+        percent: Math.round((index / totalVersions) * 100),
+        label: `Refreshing diagnostics...`,
+      })
+
+      const targetDirs = datapackDirsByVersion.get(version) ?? []
+      if (targetDirs.length === 0) continue
+
+      const versionSummaries = await runGlobalDiagnosticsScan({
+        datapacks: currentDatapacks,
+        openedFiles: openedFilesRef.current,
+        modifiedFileKeys: modifiedFilesRef.current,
+        readFile: (datapackDir, relativePath) => window.electron.readFile(datapackDir, relativePath),
+        targetDatapackDirs: targetDirs,
+        shouldCancel,
+      })
+
+      if (!versionSummaries) return
+      if (shouldCancel()) return
+
+      setDiagnosticRefreshStatus({
+        visible: true,
+        percent: Math.round(((index + 0.75) / totalVersions) * 100),
+        label: `Scanning diagnostics...`,
+      })
+
+      for (const [fileKey, summary] of Object.entries(versionSummaries)) {
+        mergedSummaries[fileKey] = summary
+      }
+
+      for (const datapackDir of targetDirs) {
+        scannedDatapackDirs.add(datapackDir)
+      }
+    }
+
+    if (shouldCancel()) return
+
+    setDiagnosticRefreshStatus((prev) => ({
+      ...prev,
+      percent: 100,
+      label: 'Finalizing diagnostics...',
+    }))
+
+    setFileDiagnosticSummaries((prev) => {
       const next = { ...prev }
 
       for (const fileKey of Object.keys(next)) {
         const fileDatapackDir = parseFileKey(fileKey).datapackDir
-        if (fileDatapackDir !== scanDatapackDir) continue
+        if (!scannedDatapackDirs.has(fileDatapackDir)) continue
         if (modifiedFilesRef.current.has(fileKey)) continue
         delete next[fileKey]
       }
 
-      for (const [fileKey, summary] of Object.entries(nextSummaries)) {
-        next[fileKey] = summary
-      }
-
-      for (const [fileKey, summary] of Object.entries(prev)) {
-        if (!modifiedFilesRef.current.has(fileKey)) continue
-        const fileDatapackDir = parseFileKey(fileKey).datapackDir
-        if (fileDatapackDir === scanDatapackDir) continue
+      for (const [fileKey, summary] of Object.entries(mergedSummaries)) {
         next[fileKey] = summary
       }
 
       return next
     })
+
+    await restoreActiveEditorVersionResourcesAsync(shouldCancel)
+    return
   }
 
   useEffect(() => {
     clearContextReloadTimer()
-    void reloadContextsThenDiagnosticsAsync()
+    void queueContextsThenDiagnosticsReload()
 
     return () => {
       clearContextReloadTimer()
+      queuedContextDiagnosticsTargetRef.current = null
     }
   }, [workspaceInfo.dir, datapacks])
 
@@ -1952,7 +2675,9 @@ function CodeEditor() {
     }
 
     const handleDiagnosticSummaryChange = (summary: DiagnosticSummary) => {
-      if (fileKey) {
+      const isUnsavedFile = Boolean(fileKey && modifiedFilesRef.current.has(fileKey))
+
+      if (fileKey && !isUnsavedFile) {
         setFileDiagnosticSummaries((prev) => ({
           ...prev,
           [fileKey]: summary,
@@ -1960,7 +2685,15 @@ function CodeEditor() {
       }
 
       if (activeFileRef.current === fileKey) {
-        setDiagnosticSummary(summary)
+        if (!fileKey || !isUnsavedFile) {
+          setDiagnosticSummaryFromCache(fileKey)
+          return
+        }
+
+        const requiredRefreshVersion = fileContextRefreshRequiredVersionRef.current.get(fileKey) ?? 0
+        if (contextRefreshCompletedVersionRef.current >= requiredRefreshVersion) {
+          setDiagnosticSummary(summary)
+        }
       }
     }
 
@@ -1975,9 +2708,16 @@ function CodeEditor() {
             setCursorMarkerInfo(getCursorMarkerInfo(update.state))
           }
 
-          if (update.docChanged && activeFileRef.current) {
+          const hasUserDocEdit = update.docChanged && update.transactions.some((transaction) => {
+            const userEvent = transaction.annotation(Transaction.userEvent)
+            return typeof userEvent === "string" && userEvent.length > 0
+          })
+
+          if (hasUserDocEdit && activeFileRef.current) {
             const fileKey = activeFileRef.current
             const newContent = update.state.doc.toString()
+            modifiedFilesRef.current = new Set(modifiedFilesRef.current)
+            modifiedFilesRef.current.add(fileKey)
             setModifiedFiles((prev) => new Set(prev).add(fileKey))
 
             setOpenedFiles((prev) =>
@@ -1989,7 +2729,7 @@ function CodeEditor() {
             )
 
             scheduleAutoSave(fileKey, newContent)
-            scheduleContextReload(parseFileKey(fileKey).datapackDir)
+            scheduleContextReload(parseFileKey(fileKey).datapackDir, fileKey)
           }
         }),
         EditorView.domEventHandlers({
@@ -2044,6 +2784,10 @@ function CodeEditor() {
   useEffect(() => {
     modifiedFilesRef.current = modifiedFiles
   }, [modifiedFiles])
+
+  useEffect(() => {
+    fileDiagnosticSummariesRef.current = fileDiagnosticSummaries
+  }, [fileDiagnosticSummaries])
 
   useEffect(() => {
     if (previewFileKey && modifiedFiles.has(previewFileKey)) {
@@ -2567,6 +3311,11 @@ function CodeEditor() {
         [datapackDir]: next,
       }
     })
+
+    setExplorerSelectionRevealNonceByDatapack((prev) => ({
+      ...prev,
+      [datapackDir]: (prev[datapackDir] ?? 0) + 1,
+    }))
   }
 
   const registerTabElement = (fileKey: string, element: HTMLDivElement | null) => {
@@ -3257,11 +4006,13 @@ function CodeEditor() {
                   rootId={datapack.id}
                   rootName={datapack.displayName}
                   rootPackVersion={datapack.packVersion}
+                  minecraftVersion={datapack.minecraftVersion}
                   rootTags={datapack.tags}
                   basePath={datapack.dir}
                   className="mt-2"
                   externalSelectedPath={explorerSelectedPathsByDatapack[datapack.dir]}
                   externalSelectedFileKey={explorerSelectedFileKeysByDatapack[datapack.dir]}
+                  externalSelectionRevealNonce={explorerSelectionRevealNonceByDatapack[datapack.dir]}
                   externalExpandedPaths={explorerExpandedPathsByDatapack[datapack.dir] ?? EMPTY_EXPANDED_PATHS}
                   onExpandedPathsChange={(paths) =>
                     setExplorerExpandedPathsByDatapack((prev) => ({
@@ -3847,9 +4598,34 @@ function CodeEditor() {
           </div>
         </Tooltip>
 
+        <DropdownMenu
+          label={<>MC v{minecraftDataVersion}</>}
+          items={minecraftVersionMenuItems}
+          isOpen={isMinecraftVersionMenuOpen}
+          setIsOpen={setIsMinecraftVersionMenuOpen}
+          buttonClassName="footer-element cursor-pointer hover:bg-codemirror-highlight"
+          horizontalAlign="center"
+        />
+
         <div className="flex-1"/>
 
         {activeFile && (<>
+
+          {/* Diagnostic Refresh Status */}
+          {diagnosticRefreshStatus.visible && (
+            <Tooltip content={diagnosticRefreshStatus.label}>
+              <div className="footer-element footer-button ml-auto min-w-72 max-w-120 gap-3 cursor-default hover:bg-transparent">
+                <div className="text-[11px] text-codemirror-200 whitespace-nowrap">{diagnosticRefreshStatus.label}</div>
+                <div className="h-2 flex-1 overflow-hidden rounded bg-codemirror-600">
+                  <div
+                    className="h-full bg-cyan-300 transition-[width] duration-200 ease-out"
+                    style={{ width: `${Math.max(0, Math.min(100, diagnosticRefreshStatus.percent))}%` }}
+                  />
+                </div>
+                <div className="text-[10px] text-codemirror-300 whitespace-nowrap">{Math.round(Math.max(0, Math.min(100, diagnosticRefreshStatus.percent)))}%</div>
+              </div>
+            </Tooltip>
+          )}
 
           {/* Diagnostics */}
           {showDiagnosticSummary && (
@@ -3883,10 +4659,37 @@ function CodeEditor() {
         onClose={contextMenuRequest.close}
       />
 
-      {/* Dialog */}
-      {dialog.dialogProps && (
-        <Dialog {...dialog.dialogProps} />
-      )}
+      <Dialog
+        isOpen={isMinecraftDataBootstrapOpen}
+        title={minecraftDataBootstrapMode === 'multi'
+          ? `Preparing ${minecraftDataBootstrapBatchVersions.length} Minecraft Version${minecraftDataBootstrapBatchVersions.length === 1 ? '' : 's'}`
+          : `Preparing Minecraft ${minecraftDataBootstrapTargetVersion}`}
+        message={minecraftDataBootstrapMode === 'multi'
+          ? 'Preparing cache and diagnostics resources across datapack versions.'
+          : `Preparing cache and source data for Minecraft ${minecraftDataBootstrapTargetVersion}.`}
+        progressPercent={minecraftDataBootstrapProgressPercent}
+        progressLabel={minecraftDataBootstrapProgressMessage}
+        progressItems={minecraftDataBootstrapMode === 'multi'
+          ? minecraftDataBootstrapBatchVersions.map((version) => {
+              const entry = minecraftDataBootstrapBatchProgress[version] ?? createInitialBatchProgressEntry()
+              return {
+                key: version,
+                label: `Minecraft ${version}`,
+                percent: entry.percent,
+                message: entry.message,
+                status: entry.status,
+              }
+            })
+          : undefined}
+        buttons={[]}
+        onClose={() => undefined}
+        dismissible={false}
+      />
+
+      {/* Dialogs (stacked) */}
+      {dialog.dialogPropsStack?.map((dialogProps, index) => (
+        <Dialog key={`dialog-${index}`} {...dialogProps} />
+      ))}
 
       <ToastStack />
     </div>

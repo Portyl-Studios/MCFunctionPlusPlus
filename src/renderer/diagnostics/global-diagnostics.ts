@@ -19,6 +19,7 @@ type RunGlobalDiagnosticsScanOptions = {
   modifiedFileKeys: ReadonlySet<string>
   readFile: (datapackDir: string, relativePath: string) => Promise<string>
   targetDatapackDir?: string
+  targetDatapackDirs?: readonly string[]
   shouldCancel?: () => boolean
 }
 
@@ -34,13 +35,19 @@ export const runGlobalDiagnosticsScan = async (
     modifiedFileKeys,
     readFile,
     targetDatapackDir,
+    targetDatapackDirs,
     shouldCancel,
   } = options
 
   const nextSummaries: Record<string, DiagnosticSummary> = {}
-  const datapacksToScan = targetDatapackDir
-    ? datapacks.filter(datapack => datapack.dir === targetDatapackDir)
-    : datapacks
+  const targetDatapackDirSet = targetDatapackDirs && targetDatapackDirs.length > 0
+    ? new Set(targetDatapackDirs)
+    : null
+  const datapacksToScan = targetDatapackDirSet
+    ? datapacks.filter(datapack => targetDatapackDirSet.has(datapack.dir))
+    : targetDatapackDir
+      ? datapacks.filter(datapack => datapack.dir === targetDatapackDir)
+      : datapacks
   const openedModifiedContentByFileKey = new Map<string, string>()
 
   for (const openedFile of openedFiles) {

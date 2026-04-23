@@ -20,6 +20,7 @@ interface DataPackTreeProps {
   rootId?: string
   rootName?: string
   rootPackVersion?: string
+  minecraftVersion?: string
   rootTags?: string[]
   basePath?: string
   onSelect?: (path: string, isFile: boolean, mode?: 'preview' | 'pinned') => void
@@ -33,6 +34,7 @@ interface DataPackTreeProps {
   fileDiagnosticSummaries?: Record<string, DiagnosticSummary>
   externalSelectedPath?: string | null
   externalSelectedFileKey?: string | null
+  externalSelectionRevealNonce?: number
   externalExpandedPaths?: Set<string>
   onExpandedPathsChange?: (paths: Set<string>) => void
   treeContainerRef?: React.RefObject<HTMLDivElement | null>
@@ -63,6 +65,11 @@ type DatapackSchemaNode = {
   packFormatVersion?: string
   minMinecraftVersion?: string
   maxMinecraftVersion?: string
+}
+
+type MinecraftDatapackValidation = {
+  others?: Record<string, { elements?: boolean; format?: string; stable?: boolean; tags?: boolean }>
+  registries?: Record<string, { elements?: boolean; stable?: boolean; tags?: boolean }>
 }
 
 type TreeClipboardEntry = {
@@ -186,7 +193,104 @@ const collectDirectoryPaths = (node: TreeNode, pathKey: string, output: string[]
   }
 }
 
-export function DatapackTree({ paths, className, folderName, rootId, rootName, rootPackVersion, rootTags, basePath, onSelect, onFolderCreated, onRefreshRequested, onRemoveFromWorkspaceRequested, onFileRenamed, onFileDeleted, onContextMenuRequest, modifiedFileKeys, fileDiagnosticSummaries, externalSelectedPath, externalSelectedFileKey, externalExpandedPaths, onExpandedPathsChange, treeContainerRef }: DataPackTreeProps) {
+const normalizeSchemaPath = (value: string) => value.replace(/\\/g, '/').replace(/^\/+/, '').replace(/\/+$/, '')
+
+const buildLeafPathSetFromDatapackJson = (raw: MinecraftDatapackValidation): Set<string> => {
+  const leafPaths = new Set<string>()
+
+  const addLeafPath = (pathValue: string) => {
+    const normalized = normalizeSchemaPath(pathValue)
+    if (!normalized) return
+    leafPaths.add(normalized)
+  }
+
+  const others = raw.others ?? {}
+  for (const key of Object.keys(others)) {
+    addLeafPath(key)
+  }
+
+  const registries = raw.registries ?? {}
+  for (const [registryName, registry] of Object.entries(registries)) {
+    const normalizedRegistryName = registryName.replace(/^minecraft:/, '')
+    addLeafPath(normalizedRegistryName)
+
+    if (registry.tags) {
+      addLeafPath(`tags/${normalizedRegistryName}`)
+    }
+  }
+
+  addLeafPath('tags/blocks')
+  addLeafPath('tags/fluids')
+  addLeafPath('tags/functions')
+  addLeafPath('tags/items')
+
+  return leafPaths
+}
+
+const isTreePathValidByDatapackJson = (relativePath: string, validLeafPaths: Set<string> | null): boolean => {
+  if (!validLeafPaths) return true
+
+  const normalized = normalizeSchemaPath(relativePath)
+  if (!normalized) return true
+
+  if (normalized === 'pack.mcmeta' || normalized === 'pack.png' || normalized === 'data') {
+    return true
+  }
+
+  if (!normalized.startsWith('data/')) {
+    return true
+  }
+
+  const relativeDataPath = normalized.slice('data/'.length)
+  const segments = relativeDataPath.split('/').filter(Boolean)
+  if (segments.length === 0) return true
+  if (segments.length === 1) return true
+
+  const namespaceRelativePath = segments.slice(1).join('/')
+  if (!namespaceRelativePath) return true
+
+  for (const leafPath of validLeafPaths) {
+    if (leafPath === namespaceRelativePath) return true
+    if (leafPath.startsWith(`${namespaceRelativePath}/`)) return true
+  }
+
+  return false
+}
+
+export function DatapackTree({ paths, className, folderName, rootId, rootName, rootPackVersion, minecraftVersion, rootTags, basePath, onSelect, onFolderCreated, onRefreshRequested, onRemoveFromWorkspaceRequested, onFileRenamed, onFileDeleted, onContextMenuRequest, modifiedFileKeys, fileDiagnosticSummaries, externalSelectedPath, externalSelectedFileKey, externalSelectionRevealNonce, externalExpandedPaths, onExpandedPathsChange, treeContainerRef }: DataPackTreeProps) {
+  const [versionValidLeafPaths, setVersionValidLeafPaths] = React.useState<Set<string> | null>(null)
+  const lastHandledRevealNonceRef = React.useRef<number | null>(null)
+  const suppressRevealForCurrentNonceRef = React.useRef(false)
+
+  React.useEffect(() => {
+    let isCancelled = false
+
+    const loadVersionValidation = async () => {
+      if (!minecraftVersion) {
+        setVersionValidLeafPaths(null)
+        return
+      }
+
+      try {
+        const raw = await window.electron.minecraftDataGet(minecraftVersion, 'datapack')
+        if (isCancelled) return
+
+        const parsed = JSON.parse(raw) as MinecraftDatapackValidation
+        setVersionValidLeafPaths(buildLeafPathSetFromDatapackJson(parsed))
+      } catch (error) {
+        if (isCancelled) return
+        console.error('Failed to load Minecraft datapack validation:', error)
+        setVersionValidLeafPaths(null)
+      }
+    }
+
+    void loadVersionValidation()
+
+    return () => {
+      isCancelled = true
+    }
+  }, [minecraftVersion])
+
   const tree = React.useMemo(() => {
     const builtTree = buildTree(paths, folderName)
     // Enrich with schema starting from the root schema node
@@ -307,6 +411,51 @@ export function DatapackTree({ paths, className, folderName, rootId, rootName, r
     setExpandedPaths(new Set(dirs))
     setSelectedPath(null)
   }, [tree, isExternalExpanded, externalSelectedPath])
+
+  React.useEffect(() => {
+    if (externalSelectionRevealNonce === undefined) return
+    if (lastHandledRevealNonceRef.current === externalSelectionRevealNonce) return
+
+    lastHandledRevealNonceRef.current = externalSelectionRevealNonce
+    suppressRevealForCurrentNonceRef.current = false
+
+    const getScrollableAncestor = (element: HTMLElement): HTMLElement | null => {
+      let current: HTMLElement | null = element.parentElement
+      while (current) {
+        const style = window.getComputedStyle(current)
+        const isScrollableY = (style.overflowY === 'auto' || style.overflowY === 'scroll')
+          && current.scrollHeight > current.clientHeight
+        if (isScrollableY) return current
+        current = current.parentElement
+      }
+      return null
+    }
+
+    const tryReveal = (remainingFrames: number) => {
+      if (suppressRevealForCurrentNonceRef.current) return
+      const container = treeContainerRef?.current
+      if (!container) return
+
+      const selectedElement = container.querySelector<HTMLElement>('[data-tree-selected="true"]')
+      if (!selectedElement) {
+        if (remainingFrames <= 0) return
+        window.requestAnimationFrame(() => {
+          tryReveal(remainingFrames - 1)
+        })
+        return
+      }
+
+      const scrollContainer = getScrollableAncestor(selectedElement) ?? container
+      const viewportRect = scrollContainer.getBoundingClientRect()
+      const selectedRect = selectedElement.getBoundingClientRect()
+      const isFullyVisible = selectedRect.top >= viewportRect.top && selectedRect.bottom <= viewportRect.bottom
+      if (isFullyVisible) return
+
+      selectedElement.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'nearest' })
+    }
+
+    tryReveal(3)
+  }, [externalSelectionRevealNonce, treeContainerRef])
 
   React.useEffect(() => {
     if (!isDragHoverCountdownActive && hoverExpandSettleTimerRef.current === null) return
@@ -546,6 +695,11 @@ export function DatapackTree({ paths, className, folderName, rootId, rootName, r
       return normalizedKey.slice(rootPrefix.length)
     }
     return normalizedKey
+  }
+
+  const getRelativeChildPathFromPathKey = (pathKey: string, childName: string) => {
+    const parentRelativePath = getRelativePathFromPathKey(pathKey)
+    return normalizeSchemaPath(parentRelativePath ? `${parentRelativePath}/${childName}` : childName)
   }
 
   const resolveTargetPath = (rootPath: string, key: string, childName: string) => {
@@ -1137,6 +1291,8 @@ export function DatapackTree({ paths, className, folderName, rootId, rootName, r
       const isFile = child.includes('.')
       const folderExists = (node.children?.has(child) ?? false)
         || (child === 'pack.mcmeta' && (node.children?.has('pack.mcmeta.disabled') ?? false))
+      const childRelativePath = getRelativeChildPathFromPathKey(pathKey, child)
+      const isValidForVersion = isTreePathValidByDatapackJson(childRelativePath, versionValidLeafPaths)
       return {
         label: child,
         onClick: async () => {
@@ -1155,7 +1311,7 @@ export function DatapackTree({ paths, className, folderName, rootId, rootName, r
             }
           }
         },
-        disabled: isTemplate || isFile || folderExists,
+        disabled: isTemplate || isFile || folderExists || !isValidForVersion,
         existingFolder: folderExists,
       }
     })
@@ -1284,11 +1440,7 @@ export function DatapackTree({ paths, className, folderName, rootId, rootName, r
       <li key={pathKey}>
         <Tooltip content={node.description} disabled={!node.description}>
           <div
-            ref={isSelected ? (el) => {
-              if (el && treeContainerRef?.current) {
-                el.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'nearest' })
-              }
-            } : null}
+            data-tree-selected={isSelected ? 'true' : undefined}
             data-datapack-tree-root={isRoot ? 'true' : undefined}
             data-tree-entry-draggable={!isRoot ? 'true' : undefined}
             className={`flex min-w-0 items-center cursor-pointer rounded px-1 ${isSelected ? 'bg-codemirror-select' : isRoot && isDatapackDisabled ? 'bg-rose-800/20 hover:bg-rose-800/30' : 'hover:bg-codemirror-highlight'} ${isDragOverTarget ? 'bg-cyan-800/20 ring-2 ring-cyan-300/80 ring-inset' : ''} ${isRoot ? 'py-2' : ''}`}
@@ -1464,7 +1616,11 @@ export function DatapackTree({ paths, className, folderName, rootId, rootName, r
         tabIndex={0}
         className={`${className} overflow-x-hidden overflow-y-auto focus:outline-none ${isDatapackDisabled ? 'bg-red-800/10 hover:bg-red-800/20' : ''}`}
         onMouseDown={(event) => {
-          event.currentTarget.focus()
+          event.currentTarget.focus({ preventScroll: true })
+        }}
+        onWheelCapture={() => {
+          // Allow users to interrupt the current smooth reveal by scrolling.
+          suppressRevealForCurrentNonceRef.current = true
         }}
         onKeyDown={(event) => {
           void handleTreeKeyDown(event)

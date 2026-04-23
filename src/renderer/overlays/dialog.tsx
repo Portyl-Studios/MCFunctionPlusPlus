@@ -8,6 +8,14 @@ export interface DialogButton {
   disabled?: boolean
 }
 
+export type DialogProgressItem = {
+  key: string
+  label: string
+  percent: number
+  message?: string
+  status?: 'queued' | 'running' | 'completed' | 'cached' | 'failed'
+}
+
 interface DialogProps {
   isOpen: boolean
   title: string
@@ -17,12 +25,35 @@ interface DialogProps {
   onClose: () => void
   inputValue?: string
   onInputChange?: (value: string) => void
+  dismissible?: boolean
+  progressPercent?: number
+  progressLabel?: string
+  progressItems?: DialogProgressItem[]
+  zIndexBase?: number
 }
 
-export function Dialog({ isOpen, title, message, buttons, autoCloseMs, onClose, inputValue, onInputChange }: DialogProps) {
+export function Dialog({
+  isOpen,
+  title,
+  message,
+  buttons,
+  autoCloseMs,
+  onClose,
+  inputValue,
+  onInputChange,
+  dismissible = true,
+  progressPercent,
+  progressLabel,
+  progressItems,
+  zIndexBase = 50,
+}: DialogProps) {
   const [elapsedMs, setElapsedMs] = useState(0)
   const [localInputValue, setLocalInputValue] = useState(inputValue || '')
   const dialogContainerRef = useRef<HTMLDivElement>(null)
+  const clampedProgressPercent = typeof progressPercent === 'number'
+    ? Math.max(0, Math.min(100, progressPercent))
+    : null
+  const hasProgressItems = Array.isArray(progressItems) && progressItems.length > 0
 
   useEffect(() => {
     if (isOpen) {
@@ -90,7 +121,7 @@ export function Dialog({ isOpen, title, message, buttons, autoCloseMs, onClose, 
     }, 0)
 
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
+      if (event.key === 'Escape' && dismissible) {
         onClose()
       }
     }
@@ -100,17 +131,24 @@ export function Dialog({ isOpen, title, message, buttons, autoCloseMs, onClose, 
       window.clearTimeout(focusFirstEditableId)
       window.removeEventListener('keydown', handleKeyDown)
     }
-  }, [isOpen, onClose])
+  }, [dismissible, isOpen, onClose])
 
   if (!isOpen) return null
 
   return (<>
-    <div className="fixed inset-0 top-9 bottom-7.5 bg-codemirror-700 opacity-50 z-50"></div>
+    <div
+      className="fixed inset-0 top-9 bottom-0 bg-codemirror-700 opacity-50"
+      style={{ zIndex: zIndexBase }}
+    ></div>
     <div
       data-overlay-dialog="true"
-      className="fixed inset-0 top-9 bottom-7.5 flex items-center justify-center z-50"
-      style={{ backdropFilter: 'blur(2px)' }}
-      onClick={onClose}
+      className="fixed inset-0 top-9 bottom-0 flex items-center justify-center"
+      style={{ backdropFilter: 'blur(2px)', zIndex: zIndexBase + 1 }}
+      onClick={() => {
+        if (dismissible) {
+          onClose()
+        }
+      }}
     >
       <div
         ref={dialogContainerRef}
@@ -119,16 +157,70 @@ export function Dialog({ isOpen, title, message, buttons, autoCloseMs, onClose, 
       >
         <div className="flex flex-row items-center justify-between p-2">
           <span className="text-md font-semibold text-codemirror-100">{title}</span>
-          <div
-            onClick={onClose}
-            className="codicon codicon-close p-1 -m-1 text-codemirror-200 hover:text-codemirror-50 cursor-pointer"
-          />
+          {dismissible && (
+            <div
+              onClick={onClose}
+              className="codicon codicon-close p-1 -m-1 text-codemirror-200 hover:text-codemirror-50 cursor-pointer"
+            />
+          )}
         </div>
 
         <div className="h-px m-2 bg-codemirror-600" />
 
         <div className="flex-1 p-2 text-sm text-codemirror-100 text-wrap overflow-y-auto">
           {message}
+          {clampedProgressPercent !== null && (
+            <div className="mt-3">
+              <div className="mb-2 text-xs text-codemirror-200">{progressLabel ?? 'Preparing Minecraft cache...'}</div>
+              <div className="h-2 w-full overflow-hidden rounded bg-codemirror-600">
+                <div
+                  className="h-full bg-cyan-300 transition-[width] duration-200 ease-out"
+                  style={{ width: `${clampedProgressPercent}%` }}
+                />
+              </div>
+              <div className="mt-1 text-[11px] text-codemirror-300">{Math.round(clampedProgressPercent)}%</div>
+            </div>
+          )}
+          {hasProgressItems && (
+            <div className="mt-3 space-y-2">
+              {progressItems.map((item) => {
+                const itemPercent = Math.max(0, Math.min(100, item.percent))
+                const statusLabel = item.status ? item.status.toUpperCase() : null
+                const statusClassName = item.status === 'failed'
+                  ? 'text-red-300'
+                  : item.status === 'completed' || item.status === 'cached'
+                    ? 'text-emerald-300'
+                    : item.status === 'running'
+                      ? 'text-cyan-300'
+                      : 'text-codemirror-300'
+                const progressClassName = item.status === 'failed'
+                  ? 'bg-red-400'
+                  : item.status === 'completed' || item.status === 'cached'
+                    ? 'bg-emerald-400'
+                    : 'bg-cyan-300'
+
+                return (
+                  <div key={item.key} className="rounded border border-codemirror-600 bg-codemirror-800/50 p-2">
+                    <div className="mb-1 flex items-center justify-between gap-2">
+                      <span className="text-xs text-codemirror-100">{item.label}</span>
+                      <span className={`text-[10px] font-semibold tracking-wide ${statusClassName}`}>
+                        {statusLabel ?? `${Math.round(itemPercent)}%`}
+                      </span>
+                    </div>
+                    <div className="h-1.5 w-full overflow-hidden rounded bg-codemirror-600">
+                      <div
+                        className={`h-full transition-[width] duration-200 ease-out ${progressClassName}`}
+                        style={{ width: `${itemPercent}%` }}
+                      />
+                    </div>
+                    {item.message && (
+                      <div className="mt-1 text-[11px] text-codemirror-300">{item.message}</div>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+          )}
           {onInputChange !== undefined && (
             <input
               type="text"
@@ -192,7 +284,9 @@ interface UseDialogResult {
   isOpen: boolean
   openDialog: (config: Omit<DialogProps, 'isOpen' | 'onClose'>) => void
   closeDialog: () => void
+  closeAllDialogs: () => void
   dialogConfig: Omit<DialogProps, 'isOpen' | 'onClose'> | null
+  dialogConfigs: Array<Omit<DialogProps, 'isOpen' | 'onClose'>>
   showAlert: (title: string, message: string) => Promise<void>
   showConfirm: (title: string, message: string) => Promise<boolean>
   showPrompt: (title: string, message: string, defaultValue?: string) => Promise<string | null>
@@ -200,16 +294,20 @@ interface UseDialogResult {
 }
 
 export function useDialog(): UseDialogResult {
-  const [isOpen, setIsOpen] = useState(false)
-  const [dialogConfig, setDialogConfig] = useState<Omit<DialogProps, 'isOpen' | 'onClose'> | null>(null)
+  const [dialogConfigs, setDialogConfigs] = useState<Array<Omit<DialogProps, 'isOpen' | 'onClose'>>>([])
+  const isOpen = dialogConfigs.length > 0
+  const dialogConfig = dialogConfigs.length > 0 ? dialogConfigs[dialogConfigs.length - 1] : null
 
   const openDialog = (config: Omit<DialogProps, 'isOpen' | 'onClose'>) => {
-    setDialogConfig(config)
-    setIsOpen(true)
+    setDialogConfigs((prev) => [...prev, config])
   }
 
   const closeDialog = () => {
-    setIsOpen(false)
+    setDialogConfigs((prev) => prev.slice(0, -1))
+  }
+
+  const closeAllDialogs = () => {
+    setDialogConfigs([])
   }
 
   const showAlert = (title: string, message: string): Promise<void> => {
@@ -298,7 +396,9 @@ export function useDialog(): UseDialogResult {
     isOpen,
     openDialog,
     closeDialog,
+    closeAllDialogs,
     dialogConfig,
+    dialogConfigs,
     showAlert,
     showConfirm,
     showPrompt,

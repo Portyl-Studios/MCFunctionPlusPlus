@@ -26,6 +26,20 @@ export type AddDatapackExistingResult = {
   metadata: DatapackMetadata
 }
 
+export type MinecraftVersionEntry = {
+  id: string
+  type?: string
+  releaseTime?: string
+  url?: string
+}
+
+export type MinecraftDataEnsureProgress = {
+  version: string
+  stage: string
+  percent: number
+  message: string
+}
+
 export type EnsureDatapackMetadataResult = {
   metadataPath: string
   metadata: DatapackMetadata
@@ -78,6 +92,7 @@ export interface ElectronAPI {
   onWorkspaceOpenRequested: (callback: (filePath: string) => void) => () => void
   datapackConsumeLaunchPath: () => Promise<string | null>
   onDatapackOpenRequested: (callback: (filePath: string) => void) => () => void
+  minecraftDefaultVersionSyncErrorGet: () => Promise<string | null>
   workspaceGet: () => Promise<WorkspaceData | null>
   workspaceInfo: () => Promise<{ dir: string | null; name: string | null }>
   workspaceOpenDialog: () => Promise<WorkspaceFileSelection | null>
@@ -106,6 +121,10 @@ export interface ElectronAPI {
   preferencesGet: <K extends keyof AppPreferences>(key: K) => Promise<AppPreferences[K] | undefined>
   preferencesSet: <K extends keyof AppPreferences>(key: K, value: AppPreferences[K]) => Promise<void>
   preferencesUpdate: (updates: Partial<AppPreferences>) => Promise<void>
+  minecraftVersionsGet: () => Promise<MinecraftVersionEntry[]>
+  minecraftDataEnsure: (version: string) => Promise<boolean>
+  minecraftDataCancel: (version?: string) => Promise<boolean>
+  onMinecraftDataEnsureProgress: (callback: (progress: MinecraftDataEnsureProgress) => void) => () => void
   commandSchemaGet: (version: string) => Promise<string>
   minecraftDataGet: (version: string, dataType: string) => Promise<string>
   watchFileStart: (watchId: string, directory: string, relativePath: string) => Promise<void>

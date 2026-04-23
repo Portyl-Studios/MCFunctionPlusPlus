@@ -1,6 +1,7 @@
 import { app } from 'electron'
 import path from 'path'
 import fs from 'fs/promises'
+import { isDottedNumericVersion } from '../shared/utils'
 
 interface PanelPreferences {
   leftPanelTabOrder: string[]
@@ -32,11 +33,17 @@ interface WorkspacePreferences {
   }
 }
 
+interface MinecraftPreferences {
+  hideSnapshotsInVersionMenu?: boolean
+  defaultVersion?: string
+}
+
 interface AppPreferences {
   panels?: PanelPreferences
   window?: WindowPreferences
   updates?: UpdatesPreferences
   workspace?: WorkspacePreferences
+  minecraft?: MinecraftPreferences
 }
 
 const isRecord = (value: unknown): value is Record<string, unknown> => {
@@ -104,6 +111,18 @@ const sanitizeUpdatesPreferences = (value: unknown): UpdatesPreferences | undefi
   return Object.keys(next).length > 0 ? next : undefined
 }
 
+const sanitizeMinecraftPreferences = (value: unknown): MinecraftPreferences | undefined => {
+  if (!isRecord(value)) return undefined
+  const next: MinecraftPreferences = {}
+  if (typeof value.hideSnapshotsInVersionMenu === 'boolean') {
+    next.hideSnapshotsInVersionMenu = value.hideSnapshotsInVersionMenu
+  }
+  if (typeof value.defaultVersion === 'string' && isDottedNumericVersion(value.defaultVersion)) {
+    next.defaultVersion = value.defaultVersion
+  }
+  return Object.keys(next).length > 0 ? next : undefined
+}
+
 const sanitizeAppPreferences = (value: unknown): AppPreferences => {
   if (!isRecord(value)) return {}
 
@@ -121,6 +140,11 @@ const sanitizeAppPreferences = (value: unknown): AppPreferences => {
   const sanitizedWorkspace = sanitizeWorkspacePreferences(value.workspace)
   if (sanitizedWorkspace) {
     next.workspace = sanitizedWorkspace
+  }
+
+  const sanitizedMinecraft = sanitizeMinecraftPreferences(value.minecraft)
+  if (sanitizedMinecraft) {
+    next.minecraft = sanitizedMinecraft
   }
 
   return next
@@ -203,4 +227,11 @@ class PreferencesManager {
 }
 
 export const preferencesManager = new PreferencesManager()
-export type { AppPreferences, PanelPreferences, WindowPreferences, UpdatesPreferences, WorkspacePreferences }
+export type {
+  AppPreferences,
+  PanelPreferences,
+  WindowPreferences,
+  UpdatesPreferences,
+  WorkspacePreferences,
+  MinecraftPreferences,
+}

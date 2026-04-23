@@ -1,5 +1,8 @@
 import { promises as fs } from 'fs'
 import path from 'path'
+import { preferencesManager } from './preferences'
+
+const FALLBACK_MINECRAFT_VERSION = '26.1.2'
 
 const DATAPACK_VERSION = 1
 const DATAPACK_EXTENSION = '.mpp-datapack'
@@ -9,6 +12,7 @@ export interface DatapackMetadata {
   lastOpened: string
   name: string
   packVersion: string
+  minecraftVersion?: string
   id: string
   author?: string
   description?: string
@@ -21,14 +25,24 @@ export const getDatapackMetadataPath = (datapackDir: string): string => {
   return path.join(datapackDir, DATAPACK_EXTENSION)
 }
 
-const getDefaultMetadataForDirectory = (datapackDir: string, preferredId?: string): DatapackMetadata => {
+const getPreferredMinecraftDefaultVersion = async (): Promise<string> => {
+  const minecraftPrefs = await preferencesManager.get('minecraft')
+  const preferredVersion = typeof minecraftPrefs?.defaultVersion === 'string'
+    ? minecraftPrefs.defaultVersion.trim()
+    : ''
+
+  return preferredVersion || FALLBACK_MINECRAFT_VERSION
+}
+
+const getDefaultMetadataForDirectory = async (datapackDir: string, preferredId?: string): Promise<DatapackMetadata> => {
   const datapackName = path.basename(datapackDir)
   const sanitizedFallbackId = datapackName.replace(/[^a-zA-Z0-9]/g, '').substring(0, 2).toUpperCase() || 'DP'
   const datapackId = typeof preferredId === 'string' && preferredId.trim().length > 0
     ? preferredId.trim()
     : sanitizedFallbackId
+  const preferredMinecraftVersion = await getPreferredMinecraftDefaultVersion()
 
-  return createDefaultDatapackMetadata(datapackName, datapackId)
+  return createDefaultDatapackMetadata(datapackName, datapackId, preferredMinecraftVersion)
 }
 
 const stripUnknownMetadataFields = (rawMetadata: unknown, defaults: DatapackMetadata): DatapackMetadata => {
@@ -55,7 +69,7 @@ export const parseDatapackMetadata = async (datapackDir: string): Promise<Datapa
       ? (parsed as { id?: unknown }).id
       : undefined
 
-    const defaults = getDefaultMetadataForDirectory(
+    const defaults = await getDefaultMetadataForDirectory(
       datapackDir,
       typeof preferredId === 'string' ? preferredId : undefined,
     )
@@ -78,7 +92,7 @@ export const writeDatapackMetadata = async (
 ): Promise<void> => {
   try {
     const filePath = getDatapackMetadataPath(datapackDir)
-    const defaults = getDefaultMetadataForDirectory(datapackDir, data.id)
+    const defaults = await getDefaultMetadataForDirectory(datapackDir, data.id)
     const sanitizedData = stripUnknownMetadataFields(data, defaults)
     const content = JSON.stringify(sanitizedData, null, 2)
     await fs.writeFile(filePath, content, 'utf-8')
@@ -89,13 +103,17 @@ export const writeDatapackMetadata = async (
 
 export const createDefaultDatapackMetadata = (
   datapackName: string,
-  datapackId: string
+  datapackId: string,
+  preferredMinecraftVersion?: string,
 ): DatapackMetadata => {
+  const normalizedMinecraftVersion = preferredMinecraftVersion?.trim()
+
   return {
     version: DATAPACK_VERSION,
     lastOpened: new Date().toISOString(),
     name: datapackName,
     packVersion: '1.00.00',
+    minecraftVersion: normalizedMinecraftVersion || FALLBACK_MINECRAFT_VERSION,
     id: datapackId,
     author: 'unknown',
     description: 'made by unknown',

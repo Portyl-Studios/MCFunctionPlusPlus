@@ -1,5 +1,7 @@
 import { json as jsonStreamParser } from "@codemirror/legacy-modes/mode/javascript"
 
+const FALLBACK_MINECRAFT_VERSION = "26.1.2"
+
 export type McFunctionStreamState = {
   atLineStart: boolean
   atCommandStart: boolean
@@ -40,7 +42,7 @@ export type CommandSchemaRoot = {
   children?: Record<string, CommandNode>
 }
 
-export const DEFAULT_COMMAND_SCHEMA_VERSION = "1.21.11"
+export const DEFAULT_COMMAND_SCHEMA_VERSION = FALLBACK_MINECRAFT_VERSION
 
 export const mcfunctionStore = {
   commandSchema: { type: "root", children: {} } as CommandSchemaRoot,

@@ -3,26 +3,32 @@ import { useDialog } from './dialog'
 export function useDialogRequest() {
   const dialog = useDialog()
 
-  const hasReadyData = dialog.dialogConfig !== null
+  const hasReadyData = dialog.dialogConfigs.length > 0
   const isVisible = dialog.isOpen && hasReadyData
 
-  const dialogProps = dialog.dialogConfig === null
-    ? null
-    : {
-        title: dialog.dialogConfig.title,
-        message: dialog.dialogConfig.message,
-        buttons: dialog.dialogConfig.buttons,
-        autoCloseMs: dialog.dialogConfig.autoCloseMs,
-        inputValue: dialog.dialogConfig.inputValue,
-        onInputChange: dialog.dialogConfig.onInputChange,
-        isOpen: isVisible,
-        onClose: dialog.closeDialog,
-      }
+  const dialogPropsStack = dialog.dialogConfigs.map((config, index) => ({
+    title: config.title,
+    message: config.message,
+    buttons: config.buttons,
+    autoCloseMs: config.autoCloseMs,
+    inputValue: config.inputValue,
+    onInputChange: config.onInputChange,
+    dismissible: config.dismissible,
+    progressPercent: config.progressPercent,
+    progressLabel: config.progressLabel,
+    progressItems: config.progressItems,
+    isOpen: isVisible,
+    onClose: dialog.closeDialog,
+    zIndexBase: 70 + (index * 10),
+  }))
+
+  const dialogProps = dialogPropsStack.length > 0 ? dialogPropsStack[dialogPropsStack.length - 1] : null
 
   return {
     ...dialog,
     hasReadyData,
     isVisible,
+    dialogPropsStack,
     dialogProps,
   }
 }

@@ -57,7 +57,7 @@ export function Panel({
     >
 
       {/* Header with Title and Tabs */}
-      <div className="flex items-center justify-between flex-shrink-0 border-b border-codemirror-600">
+      <div className="flex items-center justify-between shrink-0 border-b border-codemirror-600">
 
         {/* Tab Bar */}
         <div className="flex items-center flex-1 min-w-0">
@@ -71,7 +71,7 @@ export function Panel({
               return (
                 <div key={tab.id} className="relative flex">
                   {showLeftIndicator && (
-                    <div className="absolute left-0 top-0 bottom-0 w-[2px] bg-codemirror-100 pointer-events-none" />
+                    <div className="absolute left-0 top-0 bottom-0 w-0.5 bg-codemirror-100 pointer-events-none" />
                   )}
 
                   <button
@@ -142,7 +142,7 @@ export function Panel({
                       setDraggingTabId(null)
                     }}
                     className={`
-                      px-3 py-2 text-xs cursor-pointer border-b-2 flex items-center gap-1 whitespace-nowrap flex-shrink-0 hover:bg-codemirror-highlight
+                      px-3 py-2 text-xs cursor-pointer border-b-2 flex items-center gap-1 whitespace-nowrap shrink-0 hover:bg-codemirror-highlight
                       ${isDragging ? "opacity-10" : ""}
                       ${isActive
                         ? "border-b-codemirror-select text-codemirror-100"
@@ -150,12 +150,12 @@ export function Panel({
                       }
                     `}
                   >
-                    {tab.icon && <span className={`codicon ${tab.icon} mt-[1px] mr-1`} />}
+                    {tab.icon && <span className={`codicon ${tab.icon} mt-px mr-1`} />}
                     <span className="uppercase font-medium">{tab.title}</span>
                   </button>
 
                   {showRightIndicator && (
-                    <div className="absolute right-0 top-0 bottom-0 w-[2px] bg-codemirror-100 pointer-events-none" />
+                    <div className="absolute right-0 top-0 bottom-0 w-0.5 bg-codemirror-100 pointer-events-none" />
                   )}
                 </div>
               )
@@ -165,7 +165,7 @@ export function Panel({
         </div>
 
         {/* Menu Button */}
-        <div className="relative flex-shrink-0 m-1">
+        <div className="relative shrink-0 m-1">
           <DropdownMenu
             label={<div className="codicon codicon-ellipsis
               text-codemirror-300 p-1" />}
@@ -181,9 +181,7 @@ export function Panel({
 
       {/* Active Panel Content */}
       <div className="flex-1 overflow-auto my-4 scrollbar-padding">
-        <div className="">
-          {activeTab?.content}
-        </div>
+        {activeTab?.content}
       </div>
 
     </div>

@@ -2,7 +2,7 @@
 const { contextBridge, ipcRenderer } = require('electron')
 
 import type { IpcRendererEvent } from 'electron'
-import type { AppUpdateStatus, ElectronAPI, ExternalDirectoryChangeEvent, ExternalFileChangeEvent, ShortcutHandler, TitlebarContextMenuPosition } from './electron-api'
+import type { AppUpdateStatus, ElectronAPI, ExternalDirectoryChangeEvent, ExternalFileChangeEvent, MinecraftDataEnsureProgress, ShortcutHandler, TitlebarContextMenuPosition } from './electron-api'
 import type { AppPreferences } from './preferences'
 
 const electronApi: ElectronAPI = {
@@ -85,6 +85,9 @@ const electronApi: ElectronAPI = {
   },
   datapackConsumeLaunchPath: () => {
     return ipcRenderer.invoke('datapack-launch-path-consume')
+  },
+  minecraftDefaultVersionSyncErrorGet: () => {
+    return ipcRenderer.invoke('minecraft-default-version-sync-error-get')
   },
   onDatapackOpenRequested: (callback: (filePath: string) => void) => {
     const listener = (_event: IpcRendererEvent, payload: { filePath?: string }) => {
@@ -183,6 +186,22 @@ const electronApi: ElectronAPI = {
   },
   preferencesUpdate: (updates: Partial<AppPreferences>) => {
     return ipcRenderer.invoke('preferences-update', { updates })
+  },
+  minecraftVersionsGet: () => {
+    return ipcRenderer.invoke('minecraft-versions-list')
+  },
+  minecraftDataEnsure: (version: string) => {
+    return ipcRenderer.invoke('minecraft-data-ensure', { version })
+  },
+  minecraftDataCancel: (version?: string) => {
+    return ipcRenderer.invoke('minecraft-data-cancel', { version })
+  },
+  onMinecraftDataEnsureProgress: (callback: (progress: MinecraftDataEnsureProgress) => void) => {
+    const listener = (_event: IpcRendererEvent, progress: MinecraftDataEnsureProgress) => callback(progress)
+    ipcRenderer.on('minecraft-data-ensure-progress', listener)
+    return () => {
+      ipcRenderer.removeListener('minecraft-data-ensure-progress', listener)
+    }
   },
   commandSchemaGet: (version: string) => {
     return ipcRenderer.invoke('command-schema-get', { version })
