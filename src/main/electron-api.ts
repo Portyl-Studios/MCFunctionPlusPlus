@@ -70,6 +70,8 @@ export type ExternalDirectoryChangeEvent = {
   path: string
 }
 
+export type ExternalDestination = 'bug-report'
+
 export interface ElectronAPI {
   isDevMode: () => Promise<boolean>
   minimize: () => Promise<void>
@@ -140,5 +142,5 @@ export interface ElectronAPI {
   prepareAppUpdateInstallNow: () => Promise<void>
   onAppUpdateDownloadProgress: (callback: (progressPercent: number) => void) => () => void
   onAppUpdateStatusChange: (callback: (status: AppUpdateStatus) => void) => () => void
-  openExternal: (url: string) => Promise<void>
+  openExternal: (destination: ExternalDestination) => Promise<void>
 }

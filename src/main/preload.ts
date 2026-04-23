@@ -2,7 +2,7 @@
 const { contextBridge, ipcRenderer } = require('electron')
 
 import type { IpcRendererEvent } from 'electron'
-import type { AppUpdateStatus, ElectronAPI, ExternalDirectoryChangeEvent, ExternalFileChangeEvent, MinecraftDataEnsureProgress, ShortcutHandler, TitlebarContextMenuPosition } from './electron-api'
+import type { AppUpdateStatus, ElectronAPI, ExternalDestination, ExternalDirectoryChangeEvent, ExternalFileChangeEvent, MinecraftDataEnsureProgress, ShortcutHandler, TitlebarContextMenuPosition } from './electron-api'
 import type { AppPreferences } from './preferences'
 
 const electronApi: ElectronAPI = {
@@ -264,8 +264,8 @@ const electronApi: ElectronAPI = {
       ipcRenderer.removeListener('app-update-status-changed', listener)
     }
   },
-  openExternal: (url: string) => {
-    return ipcRenderer.invoke('open-external', { url })
+  openExternal: (destination: ExternalDestination) => {
+    return ipcRenderer.invoke('open-external', { destination })
   },
 }
 

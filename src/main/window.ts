@@ -1,10 +1,29 @@
 import { app, BrowserWindow, ipcMain, shell } from 'electron'
 import { wait } from './utils'
 import { quitAppRespectingInstallFlag } from './quit-manager'
+import type { ExternalDestination } from './electron-api'
 
 type WindowControlHandlerOptions = {
   onQuitCancelled?: () => void
   onQuitConfirmed?: () => Promise<boolean> | boolean
+}
+
+const EXTERNAL_DESTINATION_URLS: Record<ExternalDestination, string> = {
+  'bug-report': 'https://github.com/Portyl-Studios/MCFunctionPlusPlus/issues',
+}
+
+const resolveExternalDestinationUrl = (rawDestination: unknown): string => {
+  if (typeof rawDestination !== 'string') {
+    throw new Error('Invalid external destination')
+  }
+
+  const destination = rawDestination as ExternalDestination
+  const resolvedUrl = EXTERNAL_DESTINATION_URLS[destination]
+  if (!resolvedUrl) {
+    throw new Error('Blocked external destination')
+  }
+
+  return resolvedUrl
 }
 
 const getIsWindowExpanded = (mainWindow: BrowserWindow) => {
@@ -67,7 +86,8 @@ export const registerWindowControlHandlers = (
     options.onQuitCancelled?.()
   })
 
-  ipcMain.handle('open-external', async (_event, { url }) => {
-    await shell.openExternal(url)
+  ipcMain.handle('open-external', async (_event, { destination }) => {
+    const safeUrl = resolveExternalDestinationUrl(destination)
+    await shell.openExternal(safeUrl)
   })
 }

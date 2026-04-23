@@ -1288,7 +1288,7 @@ function CodeEditor() {
 
   const handleOpenBugReport = async () => {
     try {
-      await window.electron.openExternal('https://github.com/Portyl-Studios/MCFunctionPlusPlus/issues')
+      await window.electron.openExternal('bug-report')
     } catch (error) {
       console.error("Failed to open bug report page:", error)
       await dialog.showAlert("Error", "Failed to open bug report page")
