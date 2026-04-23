@@ -165,11 +165,22 @@ Web deployment is on the roadmap. It will only be implemented once the main appl
 
 ### Minecraft Source Files
 
-This project uses files extracted from the Minecraft `server.jar` file.
+Minecraft command/schema data is now prepared automatically by the desktop app.
 
-1. Download the latest version of the `server.jar` file from [here](https://www.minecraft.net/en-us/download/server)
-2. Run `java -DbundlerMainClass=net.minecraft.data.Main -jar server.jar --reports`
-3. The folder used is `/generated/reports/` stored in `/resources/minecraft/<mc_version>`
+- On startup (and when the selected datapack Minecraft version changes), MCFunction++ checks a local cache first.
+- If the requested version is missing, the app downloads the official `server.jar` metadata source, runs report generation, and builds the required cache files automatically.
+- Cached data is stored under the app user data directory in `Minecraft Data Cache/<mc_version>`.
+- Progress and errors are surfaced in-app during bootstrap/refresh.
+
+### Minecraft Source Files (Legacy Manual Process)
+
+Use this only for manual verification, debugging, or if you want to inspect raw Mojang report output yourself.
+
+1. Download the target `server.jar` from [Minecraft Server Downloads](https://www.minecraft.net/en-us/download/server).
+2. Run `java -DbundlerMainClass=net.minecraft.data.Main -jar server.jar --reports`.
+3. Inspect output in `generated/reports/`.
+
+Note: MCFunction++ no longer requires you to manually place generated reports into `resources/minecraft/<mc_version>` for normal usage.
 
 ### License
 
