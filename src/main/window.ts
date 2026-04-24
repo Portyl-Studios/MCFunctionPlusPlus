@@ -1,5 +1,4 @@
 import { app, BrowserWindow, ipcMain, shell } from 'electron'
-import { wait } from './utils'
 import { quitAppRespectingInstallFlag } from './quit-manager'
 import type { ExternalDestination } from './electron-api'
 
@@ -72,11 +71,7 @@ export const registerWindowControlHandlers = (
     }
 
     if (mainWindow && !mainWindow.isDestroyed()) {
-      await wait(350)
-
-      if (!mainWindow.isDestroyed()) {
-        mainWindow.destroy()
-      }
+      mainWindow.destroy()
     }
 
     quitAppRespectingInstallFlag()
