@@ -21,6 +21,47 @@ let updateDownloadPromise: Promise<void> | null = null
 
 export const getAppUpdateStatus = (): AppUpdateStatus => appUpdateStatus
 
+const getUpdaterErrorMessage = (error: unknown): string => {
+  if (error instanceof Error && typeof error.message === 'string' && error.message.trim()) {
+    return error.message.trim()
+  }
+
+  return typeof error === 'string' && error.trim()
+    ? error.trim()
+    : 'Unknown updater error'
+}
+
+const isBenignUpdateCheckError = (error: unknown): boolean => {
+  const message = getUpdaterErrorMessage(error).toLowerCase()
+
+  if (message.includes('latest.yml') || message.includes('latest.yaml')) {
+    return true
+  }
+
+  if (message.includes('no published versions')) {
+    return true
+  }
+
+  if (message.includes('not found') && (message.includes('release') || message.includes('artifact') || message.includes('metadata'))) {
+    return true
+  }
+
+  if (message.includes('channel') && message.includes('not found')) {
+    return true
+  }
+
+  return false
+}
+
+const finalizeBenignUpdateCheck = (message: string): void => {
+  setAppUpdateStatus({
+    status: 'up-to-date',
+    updateAvailable: false,
+    downloadCompleted: false,
+    message,
+  })
+}
+
 const broadcastDownloadProgress = (progressPercent: number): void => {
   const normalized = Number.isFinite(progressPercent)
     ? Math.max(0, Math.min(100, progressPercent))
@@ -79,12 +120,18 @@ const runUpdateCheck = async (): Promise<void> => {
 
 const startUpdateCheckInBackground = (logContext: string): void => {
   void runUpdateCheck().catch((error) => {
+    if (isBenignUpdateCheckError(error)) {
+      finalizeBenignUpdateCheck('Update metadata was not published for this release. Treating as up-to-date.')
+      console.warn(`${logContext} benign updater condition:`, getUpdaterErrorMessage(error))
+      return
+    }
+
     if (!isUpdateCheckFinalized) {
       setAppUpdateStatus({
         status: 'failed',
         updateAvailable: false,
         downloadCompleted: false,
-        message: error instanceof Error ? error.message : 'Failed to check for updates.',
+        message: getUpdaterErrorMessage(error),
       })
     }
     console.error(logContext, error)
@@ -200,10 +247,17 @@ autoUpdater.on('download-progress', (progressInfo) => {
 
 autoUpdater.on('error', (error) => {
   if (isUpdateCheckFinalized) return
+
+  if (isBenignUpdateCheckError(error)) {
+    finalizeBenignUpdateCheck('Update metadata was not published for this release. Treating as up-to-date.')
+    console.warn('Updater reported a benign release artifact condition:', getUpdaterErrorMessage(error))
+    return
+  }
+
   setAppUpdateStatus({
     status: 'failed',
     updateAvailable: false,
     downloadCompleted: false,
-    message: error instanceof Error ? error.message : 'Unknown updater error',
+    message: getUpdaterErrorMessage(error),
   })
 })
