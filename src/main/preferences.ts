@@ -46,24 +46,67 @@ interface AppPreferences {
   minecraft?: MinecraftPreferences
 }
 
+const createDefaultPanelPreferences = (): PanelPreferences => ({
+  leftPanelTabOrder: ['explorer'],
+  rightPanelTabOrder: ['preferences', 'settings'],
+  bottomPanelTabOrder: ['debug'],
+  visibleLeftPanelTabs: ['explorer'],
+  visibleRightPanelTabs: ['preferences', 'settings'],
+  visibleBottomPanelTabs: ['debug'],
+  activeLeftTabId: 'explorer',
+  activeRightTabId: 'preferences',
+  activeBottomTabId: 'debug',
+  leftPanelWidth: 350,
+  rightPanelWidth: 350,
+  bottomPanelHeight: 250,
+})
+
+const createDefaultWindowPreferences = (): WindowPreferences => ({
+  isFullScreen: false,
+})
+
+const createDefaultUpdatesPreferences = (): UpdatesPreferences => ({
+  deferredVersion: '',
+})
+
+const createDefaultWorkspacePreferences = (): WorkspacePreferences => ({
+  lastActive: {
+    dir: '',
+    name: '',
+  },
+})
+
+const createDefaultMinecraftPreferences = (): MinecraftPreferences => ({
+  hideSnapshotsInVersionMenu: false,
+  defaultVersion: '',
+})
+
+const createDefaultAppPreferences = (): AppPreferences => ({
+  panels: createDefaultPanelPreferences(),
+  window: createDefaultWindowPreferences(),
+  updates: createDefaultUpdatesPreferences(),
+  workspace: createDefaultWorkspacePreferences(),
+  minecraft: createDefaultMinecraftPreferences(),
+})
+
 const isRecord = (value: unknown): value is Record<string, unknown> => {
   return !!value && typeof value === 'object' && !Array.isArray(value)
 }
 
-const sanitizeWorkspacePreferences = (value: unknown): WorkspacePreferences | undefined => {
-  if (!isRecord(value)) return undefined
+const sanitizeWorkspacePreferences = (value: unknown): WorkspacePreferences => {
+  const defaults = createDefaultWorkspacePreferences()
+  const defaultLastActive = defaults.lastActive ?? { dir: '', name: '' }
+  if (!isRecord(value)) return defaults
 
-  const next: WorkspacePreferences = {}
-  const rawLastActive = value.lastActive
-  if (isRecord(rawLastActive)) {
-    const dir = typeof rawLastActive.dir === 'string' ? rawLastActive.dir : null
-    const name = typeof rawLastActive.name === 'string' ? rawLastActive.name : null
-    if (dir && name) {
-      next.lastActive = { dir, name }
-    }
+  const rawLastActive = isRecord(value.lastActive)
+    ? value.lastActive
+    : null
+  const dir = typeof rawLastActive?.dir === 'string' ? rawLastActive.dir : defaultLastActive.dir
+  const name = typeof rawLastActive?.name === 'string' ? rawLastActive.name : defaultLastActive.name
+
+  return {
+    lastActive: { dir, name },
   }
-
-  return Object.keys(next).length > 0 ? next : undefined
 }
 
 const sanitizeStringArray = (value: unknown): string[] => {
@@ -71,88 +114,98 @@ const sanitizeStringArray = (value: unknown): string[] => {
   return value.filter((item): item is string => typeof item === 'string')
 }
 
-const sanitizePanelsPreferences = (value: unknown): PanelPreferences | undefined => {
-  if (!isRecord(value)) return undefined
+const sanitizePanelsPreferences = (value: unknown): PanelPreferences => {
+  const defaults = createDefaultPanelPreferences()
+  if (!isRecord(value)) return defaults
 
-  const next: PanelPreferences = {
-    leftPanelTabOrder: sanitizeStringArray(value.leftPanelTabOrder),
-    rightPanelTabOrder: sanitizeStringArray(value.rightPanelTabOrder),
-    bottomPanelTabOrder: sanitizeStringArray(value.bottomPanelTabOrder),
-    visibleLeftPanelTabs: sanitizeStringArray(value.visibleLeftPanelTabs),
-    visibleRightPanelTabs: sanitizeStringArray(value.visibleRightPanelTabs),
-    visibleBottomPanelTabs: sanitizeStringArray(value.visibleBottomPanelTabs),
+  return {
+    leftPanelTabOrder: Array.isArray(value.leftPanelTabOrder)
+      ? sanitizeStringArray(value.leftPanelTabOrder)
+      : defaults.leftPanelTabOrder,
+    rightPanelTabOrder: Array.isArray(value.rightPanelTabOrder)
+      ? sanitizeStringArray(value.rightPanelTabOrder)
+      : defaults.rightPanelTabOrder,
+    bottomPanelTabOrder: Array.isArray(value.bottomPanelTabOrder)
+      ? sanitizeStringArray(value.bottomPanelTabOrder)
+      : defaults.bottomPanelTabOrder,
+    visibleLeftPanelTabs: Array.isArray(value.visibleLeftPanelTabs)
+      ? sanitizeStringArray(value.visibleLeftPanelTabs)
+      : defaults.visibleLeftPanelTabs,
+    visibleRightPanelTabs: Array.isArray(value.visibleRightPanelTabs)
+      ? sanitizeStringArray(value.visibleRightPanelTabs)
+      : defaults.visibleRightPanelTabs,
+    visibleBottomPanelTabs: Array.isArray(value.visibleBottomPanelTabs)
+      ? sanitizeStringArray(value.visibleBottomPanelTabs)
+      : defaults.visibleBottomPanelTabs,
+    activeLeftTabId: typeof value.activeLeftTabId === 'string'
+      ? value.activeLeftTabId
+      : defaults.activeLeftTabId,
+    activeRightTabId: typeof value.activeRightTabId === 'string'
+      ? value.activeRightTabId
+      : defaults.activeRightTabId,
+    activeBottomTabId: typeof value.activeBottomTabId === 'string'
+      ? value.activeBottomTabId
+      : defaults.activeBottomTabId,
+    leftPanelWidth: typeof value.leftPanelWidth === 'number' && Number.isFinite(value.leftPanelWidth)
+      ? value.leftPanelWidth
+      : defaults.leftPanelWidth,
+    rightPanelWidth: typeof value.rightPanelWidth === 'number' && Number.isFinite(value.rightPanelWidth)
+      ? value.rightPanelWidth
+      : defaults.rightPanelWidth,
+    bottomPanelHeight: typeof value.bottomPanelHeight === 'number' && Number.isFinite(value.bottomPanelHeight)
+      ? value.bottomPanelHeight
+      : defaults.bottomPanelHeight,
   }
-
-  if (typeof value.activeLeftTabId === 'string') next.activeLeftTabId = value.activeLeftTabId
-  if (typeof value.activeRightTabId === 'string') next.activeRightTabId = value.activeRightTabId
-  if (typeof value.activeBottomTabId === 'string') next.activeBottomTabId = value.activeBottomTabId
-  if (typeof value.leftPanelWidth === 'number') next.leftPanelWidth = value.leftPanelWidth
-  if (typeof value.rightPanelWidth === 'number') next.rightPanelWidth = value.rightPanelWidth
-  if (typeof value.bottomPanelHeight === 'number') next.bottomPanelHeight = value.bottomPanelHeight
-
-  return next
 }
 
-const sanitizeWindowPreferences = (value: unknown): WindowPreferences | undefined => {
-  if (!isRecord(value)) return undefined
-  const next: WindowPreferences = {}
-  if (typeof value.isFullScreen === 'boolean') {
-    next.isFullScreen = value.isFullScreen
+const sanitizeWindowPreferences = (value: unknown): WindowPreferences => {
+  const defaults = createDefaultWindowPreferences()
+  if (!isRecord(value)) return defaults
+  return {
+    isFullScreen: typeof value.isFullScreen === 'boolean'
+      ? value.isFullScreen
+      : defaults.isFullScreen,
   }
-  return Object.keys(next).length > 0 ? next : undefined
 }
 
-const sanitizeUpdatesPreferences = (value: unknown): UpdatesPreferences | undefined => {
-  if (!isRecord(value)) return undefined
-  const next: UpdatesPreferences = {}
-  if (typeof value.deferredVersion === 'string') {
-    next.deferredVersion = value.deferredVersion
+const sanitizeUpdatesPreferences = (value: unknown): UpdatesPreferences => {
+  const defaults = createDefaultUpdatesPreferences()
+  if (!isRecord(value)) return defaults
+  return {
+    deferredVersion: typeof value.deferredVersion === 'string'
+      ? value.deferredVersion
+      : defaults.deferredVersion,
   }
-  return Object.keys(next).length > 0 ? next : undefined
 }
 
-const sanitizeMinecraftPreferences = (value: unknown): MinecraftPreferences | undefined => {
-  if (!isRecord(value)) return undefined
-  const next: MinecraftPreferences = {}
-  if (typeof value.hideSnapshotsInVersionMenu === 'boolean') {
-    next.hideSnapshotsInVersionMenu = value.hideSnapshotsInVersionMenu
+const sanitizeMinecraftPreferences = (value: unknown): MinecraftPreferences => {
+  const defaults = createDefaultMinecraftPreferences()
+  if (!isRecord(value)) return defaults
+  return {
+    hideSnapshotsInVersionMenu: typeof value.hideSnapshotsInVersionMenu === 'boolean'
+      ? value.hideSnapshotsInVersionMenu
+      : defaults.hideSnapshotsInVersionMenu,
+    defaultVersion: typeof value.defaultVersion === 'string' && isDottedNumericVersion(value.defaultVersion)
+      ? value.defaultVersion
+      : defaults.defaultVersion,
   }
-  if (typeof value.defaultVersion === 'string' && isDottedNumericVersion(value.defaultVersion)) {
-    next.defaultVersion = value.defaultVersion
-  }
-  return Object.keys(next).length > 0 ? next : undefined
 }
 
 const sanitizeAppPreferences = (value: unknown): AppPreferences => {
-  if (!isRecord(value)) return {}
+  const source = isRecord(value) ? value : {}
 
-  const next: AppPreferences = {}
-
-  const sanitizedPanels = sanitizePanelsPreferences(value.panels)
-  if (sanitizedPanels) next.panels = sanitizedPanels
-
-  const sanitizedWindow = sanitizeWindowPreferences(value.window)
-  if (sanitizedWindow) next.window = sanitizedWindow
-
-  const sanitizedUpdates = sanitizeUpdatesPreferences(value.updates)
-  if (sanitizedUpdates) next.updates = sanitizedUpdates
-
-  const sanitizedWorkspace = sanitizeWorkspacePreferences(value.workspace)
-  if (sanitizedWorkspace) {
-    next.workspace = sanitizedWorkspace
+  return {
+    panels: sanitizePanelsPreferences(source.panels),
+    window: sanitizeWindowPreferences(source.window),
+    updates: sanitizeUpdatesPreferences(source.updates),
+    workspace: sanitizeWorkspacePreferences(source.workspace),
+    minecraft: sanitizeMinecraftPreferences(source.minecraft),
   }
-
-  const sanitizedMinecraft = sanitizeMinecraftPreferences(value.minecraft)
-  if (sanitizedMinecraft) {
-    next.minecraft = sanitizedMinecraft
-  }
-
-  return next
 }
 
 class PreferencesManager {
   private preferencesPath: string
-  private preferences: AppPreferences = {}
+  private preferences: AppPreferences = createDefaultAppPreferences()
   private loaded = false
 
   constructor() {
@@ -178,8 +231,14 @@ class PreferencesManager {
       }
     } catch (error) {
       // File doesn't exist or is invalid, use defaults
-      this.preferences = {}
+      this.preferences = createDefaultAppPreferences()
       this.loaded = true
+
+      try {
+        await fs.writeFile(this.preferencesPath, JSON.stringify(this.preferences, null, 2), 'utf-8')
+      } catch {
+        // Ignore persistence errors and keep defaults in memory.
+      }
     }
 
     return this.preferences

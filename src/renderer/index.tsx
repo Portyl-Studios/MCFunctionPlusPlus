@@ -1006,6 +1006,8 @@ function CodeEditor() {
         const parsedRecord = parsed && typeof parsed === "object" && !Array.isArray(parsed)
           ? parsed as Record<string, unknown>
           : null
+        const nextMetadataRecord = parsedRecord ? { ...parsedRecord } : null
+        let shouldPersistMetadata = false
         if (parsed && typeof parsed.id === "string") {
           id = parsed.id
         }
@@ -1015,8 +1017,13 @@ function CodeEditor() {
         if (parsed && typeof parsed.packVersion === "string") {
           packVersion = parsed.packVersion
         }
-        if (parsed && typeof parsed.minecraftVersion === "string") {
-          minecraftVersion = parsed.minecraftVersion
+        const parsedMinecraftVersion = parsed && typeof parsed.minecraftVersion === "string"
+          ? parsed.minecraftVersion.trim()
+          : ""
+        minecraftVersion = parsedMinecraftVersion || FALLBACK_MINECRAFT_VERSION
+        if (nextMetadataRecord && (!parsedMinecraftVersion || parsed.minecraftVersion !== parsedMinecraftVersion)) {
+          nextMetadataRecord.minecraftVersion = minecraftVersion
+          shouldPersistMetadata = true
         }
         if (parsed && typeof parsed.packFormatVersionMax === "number" && Number.isFinite(parsed.packFormatVersionMax)) {
           packFormatVersionMax = parsed.packFormatVersionMax
@@ -1028,22 +1035,25 @@ function CodeEditor() {
             packFormatVersionMax = resolvedPackFormatVersionMax
 
             // Backfill metadata so future launches can read pack format directly.
-            if (parsedRecord) {
-              try {
-                await window.electron.writeFile(
-                  datapackDir,
-                  ".mpp-datapack",
-                  JSON.stringify({
-                    ...parsedRecord,
-                    packFormatVersionMax: resolvedPackFormatVersionMax,
-                  }, null, 2),
-                )
-              } catch (error) {
-                console.warn('Failed to backfill datapack packFormatVersionMax metadata:', error)
-              }
+            if (nextMetadataRecord) {
+              nextMetadataRecord.packFormatVersionMax = resolvedPackFormatVersionMax
+              shouldPersistMetadata = true
             }
           }
         }
+
+        if (nextMetadataRecord && shouldPersistMetadata) {
+          try {
+            await window.electron.writeFile(
+              datapackDir,
+              ".mpp-datapack",
+              JSON.stringify(nextMetadataRecord, null, 2),
+            )
+          } catch (error) {
+            console.warn('Failed to backfill datapack metadata defaults:', error)
+          }
+        }
+
         if (parsed && Array.isArray(parsed.tags)) {
           tags = (parsed.tags as unknown[])
             .filter((tag): tag is string => typeof tag === "string")

@@ -45,17 +45,47 @@ const getDefaultMetadataForDirectory = async (datapackDir: string, preferredId?:
   return createDefaultDatapackMetadata(datapackName, datapackId, preferredMinecraftVersion)
 }
 
-const stripUnknownMetadataFields = (rawMetadata: unknown, defaults: DatapackMetadata): DatapackMetadata => {
+const sanitizeDatapackMetadata = (rawMetadata: unknown, defaults: DatapackMetadata): DatapackMetadata => {
   if (!rawMetadata || typeof rawMetadata !== 'object' || Array.isArray(rawMetadata)) {
     return defaults
   }
 
-  const allowedKeys = new Set(Object.keys(defaults))
-  const knownEntries = Object.entries(rawMetadata).filter(([key]) => allowedKeys.has(key))
+  const value = rawMetadata as Record<string, unknown>
 
   return {
-    ...defaults,
-    ...(Object.fromEntries(knownEntries) as Partial<DatapackMetadata>),
+    version: typeof value.version === 'number' && Number.isFinite(value.version)
+      ? value.version
+      : defaults.version,
+    lastOpened: typeof value.lastOpened === 'string'
+      ? value.lastOpened
+      : defaults.lastOpened,
+    name: typeof value.name === 'string'
+      ? value.name
+      : defaults.name,
+    packVersion: typeof value.packVersion === 'string'
+      ? value.packVersion
+      : defaults.packVersion,
+    minecraftVersion: typeof value.minecraftVersion === 'string'
+      ? value.minecraftVersion
+      : defaults.minecraftVersion,
+    id: typeof value.id === 'string'
+      ? value.id
+      : defaults.id,
+    author: typeof value.author === 'string'
+      ? value.author
+      : defaults.author,
+    description: typeof value.description === 'string'
+      ? value.description
+      : defaults.description,
+    packFormatVersionMin: typeof value.packFormatVersionMin === 'number' && Number.isFinite(value.packFormatVersionMin)
+      ? value.packFormatVersionMin
+      : defaults.packFormatVersionMin,
+    packFormatVersionMax: typeof value.packFormatVersionMax === 'number' && Number.isFinite(value.packFormatVersionMax)
+      ? value.packFormatVersionMax
+      : defaults.packFormatVersionMax,
+    tags: Array.isArray(value.tags)
+      ? value.tags.filter((tag): tag is string => typeof tag === 'string')
+      : defaults.tags,
   }
 }
 
@@ -73,7 +103,7 @@ export const parseDatapackMetadata = async (datapackDir: string): Promise<Datapa
       datapackDir,
       typeof preferredId === 'string' ? preferredId : undefined,
     )
-    const sanitized = stripUnknownMetadataFields(parsed, defaults)
+    const sanitized = sanitizeDatapackMetadata(parsed, defaults)
 
     if (JSON.stringify(parsed) !== JSON.stringify(sanitized)) {
       await fs.writeFile(filePath, JSON.stringify(sanitized, null, 2), 'utf-8')
@@ -93,7 +123,7 @@ export const writeDatapackMetadata = async (
   try {
     const filePath = getDatapackMetadataPath(datapackDir)
     const defaults = await getDefaultMetadataForDirectory(datapackDir, data.id)
-    const sanitizedData = stripUnknownMetadataFields(data, defaults)
+    const sanitizedData = sanitizeDatapackMetadata(data, defaults)
     const content = JSON.stringify(sanitizedData, null, 2)
     await fs.writeFile(filePath, content, 'utf-8')
   } catch (error) {
