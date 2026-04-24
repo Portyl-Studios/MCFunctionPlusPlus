@@ -53,6 +53,8 @@ import { useExternalFileWatcher } from "./use-external-file-watcher"
 import { useAppUpdate } from "./use-app-update"
 import { deletePathWithConfirm, renamePathWithPrompt } from "./path-actions"
 import type { MinecraftDataEnsureProgress, MinecraftVersionEntry, ShortcutAction } from "../main/electron-api"
+import datapackSchemaHistory from "../../resources/datapack-schema/history.json"
+import { compareDottedVersions, isDottedNumericVersion } from "../shared/utils"
 
 const FALLBACK_MINECRAFT_VERSION = "26.1.2"
 
@@ -64,7 +66,13 @@ type DatapackEntry = {
   displayName?: string
   packVersion?: string
   minecraftVersion?: string
+  packFormatVersionMax?: number
   tags?: string[]
+}
+
+type DatapackSchemaHistoryEntry = {
+  minVersion?: string | null
+  maxVersion?: string | null
 }
 
 type MinecraftBatchProgressStatus = 'queued' | 'running' | 'completed' | 'cached' | 'failed'
@@ -135,6 +143,48 @@ const EMPTY_EXPANDED_PATHS = new Set<string>()
 const DATAPACK_DRAG_PAYLOAD_MIME = "application/x-mcpp-datapack-entry"
 const TREE_DRAG_PAYLOAD_MIME = "application/x-mcpp-tree-entry"
 const DEFAULT_MINECRAFT_BOOTSTRAP_MESSAGE = 'Checking local cache and preparing source data if needed.'
+const datapackSchemaHistoryEntries = datapackSchemaHistory as Record<string, DatapackSchemaHistoryEntry>
+
+const comparePackFormatVersions = (left: string, right: string): number => {
+  if (isDottedNumericVersion(left) && isDottedNumericVersion(right)) {
+    return compareDottedVersions(left, right)
+  }
+
+  return left.localeCompare(right)
+}
+
+const sortedHistoryPackFormats = Object.keys(datapackSchemaHistoryEntries).sort((left, right) => {
+  return comparePackFormatVersions(right, left)
+})
+
+const resolvePackFormatFromMinecraftVersion = (minecraftVersion?: string): string | undefined => {
+  const normalizedMinecraftVersion = minecraftVersion?.trim()
+  if (!normalizedMinecraftVersion || !isDottedNumericVersion(normalizedMinecraftVersion)) {
+    return undefined
+  }
+
+  for (const packFormat of sortedHistoryPackFormats) {
+    const entry = datapackSchemaHistoryEntries[packFormat]
+    const minVersion = entry?.minVersion?.trim()
+    const maxVersion = entry?.maxVersion?.trim()
+
+    if (!minVersion || !maxVersion) {
+      continue
+    }
+
+    if (!isDottedNumericVersion(minVersion) || !isDottedNumericVersion(maxVersion)) {
+      continue
+    }
+
+    const isAtLeastMinVersion = compareDottedVersions(normalizedMinecraftVersion, minVersion) >= 0
+    const isAtMostMaxVersion = compareDottedVersions(normalizedMinecraftVersion, maxVersion) <= 0
+    if (isAtLeastMinVersion && isAtMostMaxVersion) {
+      return packFormat
+    }
+  }
+
+  return undefined
+}
 
 const createInitialBatchProgressEntry = (): MinecraftBatchProgressEntry => ({
   percent: 0,
@@ -395,6 +445,8 @@ function CodeEditor() {
     try {
       // Ensure selected version can be prepared before persisting metadata.
       await window.electron.minecraftDataEnsure(normalizedVersion)
+      const resolvedPackFormat = resolvePackFormatFromMinecraftVersion(normalizedVersion)
+      const nextPackFormatVersionMax = resolvedPackFormat ? Number.parseFloat(resolvedPackFormat) : undefined
 
       const metadataRaw = await window.electron.readFile(targetDatapack.dir, '.mpp-datapack')
       const parsed = JSON.parse(metadataRaw)
@@ -405,13 +457,22 @@ function CodeEditor() {
       const nextMetadata = {
         ...parsed,
         minecraftVersion: normalizedVersion,
+        ...(typeof nextPackFormatVersionMax === 'number' && Number.isFinite(nextPackFormatVersionMax)
+          ? { packFormatVersionMax: nextPackFormatVersionMax }
+          : {}),
       }
 
       await window.electron.writeFile(targetDatapack.dir, '.mpp-datapack', JSON.stringify(nextMetadata, null, 2))
 
       setDatapacks((prev) => prev.map((entry) => (
         entry.dir === targetDatapack.dir
-          ? { ...entry, minecraftVersion: normalizedVersion }
+          ? {
+              ...entry,
+              minecraftVersion: normalizedVersion,
+              ...(typeof nextPackFormatVersionMax === 'number' && Number.isFinite(nextPackFormatVersionMax)
+                ? { packFormatVersionMax: nextPackFormatVersionMax }
+                : {}),
+            }
           : entry
       )))
     } catch (error) {
@@ -937,10 +998,14 @@ function CodeEditor() {
       let displayName: string | undefined
       let packVersion: string | undefined
       let minecraftVersion: string | undefined
+      let packFormatVersionMax: number | undefined
       let tags: string[] | undefined
       try {
         const metadataRaw = await window.electron.readFile(datapackDir, ".mpp-datapack")
         const parsed = JSON.parse(metadataRaw)
+        const parsedRecord = parsed && typeof parsed === "object" && !Array.isArray(parsed)
+          ? parsed as Record<string, unknown>
+          : null
         if (parsed && typeof parsed.id === "string") {
           id = parsed.id
         }
@@ -952,6 +1017,32 @@ function CodeEditor() {
         }
         if (parsed && typeof parsed.minecraftVersion === "string") {
           minecraftVersion = parsed.minecraftVersion
+        }
+        if (parsed && typeof parsed.packFormatVersionMax === "number" && Number.isFinite(parsed.packFormatVersionMax)) {
+          packFormatVersionMax = parsed.packFormatVersionMax
+        }
+        if (packFormatVersionMax === undefined) {
+          const resolvedPackFormat = resolvePackFormatFromMinecraftVersion(minecraftVersion)
+          const resolvedPackFormatVersionMax = resolvedPackFormat ? Number.parseFloat(resolvedPackFormat) : undefined
+          if (typeof resolvedPackFormatVersionMax === "number" && Number.isFinite(resolvedPackFormatVersionMax)) {
+            packFormatVersionMax = resolvedPackFormatVersionMax
+
+            // Backfill metadata so future launches can read pack format directly.
+            if (parsedRecord) {
+              try {
+                await window.electron.writeFile(
+                  datapackDir,
+                  ".mpp-datapack",
+                  JSON.stringify({
+                    ...parsedRecord,
+                    packFormatVersionMax: resolvedPackFormatVersionMax,
+                  }, null, 2),
+                )
+              } catch (error) {
+                console.warn('Failed to backfill datapack packFormatVersionMax metadata:', error)
+              }
+            }
+          }
         }
         if (parsed && Array.isArray(parsed.tags)) {
           tags = (parsed.tags as unknown[])
@@ -973,6 +1064,7 @@ function CodeEditor() {
         displayName,
         packVersion,
         minecraftVersion,
+        packFormatVersionMax,
         tags,
       }
     } catch {
@@ -4006,6 +4098,7 @@ function CodeEditor() {
                   rootId={datapack.id}
                   rootName={datapack.displayName}
                   rootPackVersion={datapack.packVersion}
+                  rootPackFormatVersion={datapack.packFormatVersionMax}
                   minecraftVersion={datapack.minecraftVersion}
                   rootTags={datapack.tags}
                   basePath={datapack.dir}
@@ -4149,6 +4242,27 @@ function CodeEditor() {
   const orderedLeftPanelTabs = orderTabsByList(leftPanelTabs, leftPanelTabOrder)
   const orderedRightPanelTabs = orderTabsByList(rightPanelTabs, rightPanelTabOrder)
   const orderedBottomPanelTabs = orderTabsByList(bottomPanelTabs, bottomPanelTabOrder)
+
+  const footerVersionLabel = React.useMemo(() => {
+    const targetDatapack = resolveDatapackForMinecraftVersionSelection()
+    const resolvedMinecraftVersion = targetDatapack?.minecraftVersion?.trim() || minecraftDataVersion
+    const resolvedPackFormatFromDatapack = targetDatapack?.packFormatVersionMax
+    const resolvedPackFormat = typeof resolvedPackFormatFromDatapack === 'number' && Number.isFinite(resolvedPackFormatFromDatapack)
+      ? resolvedPackFormatFromDatapack
+      : (() => {
+          const mappedPackFormat = resolvePackFormatFromMinecraftVersion(resolvedMinecraftVersion)
+          const parsedPackFormat = mappedPackFormat ? Number.parseFloat(mappedPackFormat) : undefined
+          return typeof parsedPackFormat === 'number' && Number.isFinite(parsedPackFormat)
+            ? parsedPackFormat
+            : undefined
+        })()
+
+    if (typeof resolvedPackFormat === 'number' && Number.isFinite(resolvedPackFormat)) {
+      return `MC ${resolvedMinecraftVersion} - Pack ${resolvedPackFormat}`
+    }
+
+    return `MC ${resolvedMinecraftVersion}`
+  }, [activeFile, datapacks, minecraftDataVersion])
 
   return (
     <div className="w-full h-full flex flex-col select-none">
@@ -4599,7 +4713,7 @@ function CodeEditor() {
         </Tooltip>
 
         <DropdownMenu
-          label={<>MC v{minecraftDataVersion}</>}
+          label={<>{footerVersionLabel}</>}
           items={minecraftVersionMenuItems}
           isOpen={isMinecraftVersionMenuOpen}
           setIsOpen={setIsMinecraftVersionMenuOpen}

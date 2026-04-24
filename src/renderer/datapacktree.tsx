@@ -21,6 +21,7 @@ interface DataPackTreeProps {
   rootId?: string
   rootName?: string
   rootPackVersion?: string
+  rootPackFormatVersion?: number
   minecraftVersion?: string
   rootTags?: string[]
   basePath?: string
@@ -363,7 +364,7 @@ const isTreePathValidByDatapackJson = (relativePath: string, validLeafPaths: Set
   return false
 }
 
-export function DatapackTree({ paths, className, folderName, rootId, rootName, rootPackVersion, minecraftVersion, rootTags, basePath, onSelect, onFolderCreated, onRefreshRequested, onRemoveFromWorkspaceRequested, onFileRenamed, onFileDeleted, onContextMenuRequest, modifiedFileKeys, fileDiagnosticSummaries, externalSelectedPath, externalSelectedFileKey, externalSelectionRevealNonce, externalExpandedPaths, onExpandedPathsChange, treeContainerRef }: DataPackTreeProps) {
+export function DatapackTree({ paths, className, folderName, rootId, rootName, rootPackVersion, rootPackFormatVersion, minecraftVersion, rootTags, basePath, onSelect, onFolderCreated, onRefreshRequested, onRemoveFromWorkspaceRequested, onFileRenamed, onFileDeleted, onContextMenuRequest, modifiedFileKeys, fileDiagnosticSummaries, externalSelectedPath, externalSelectedFileKey, externalSelectionRevealNonce, externalExpandedPaths, onExpandedPathsChange, treeContainerRef }: DataPackTreeProps) {
   const [versionValidLeafPaths, setVersionValidLeafPaths] = React.useState<Set<string> | null>(null)
   const [datapackSchema, setDatapackSchema] = React.useState<DatapackSchemaNode | undefined>(undefined)
   const lastHandledRevealNonceRef = React.useRef<number | null>(null)
@@ -1664,9 +1665,14 @@ export function DatapackTree({ paths, className, folderName, rootId, rootName, r
                       v{rootPackVersion}
                     </span>
                   )}
-                  {isRoot && node.packFormatVersion && (
-                    <span className="pillbox">
-                      {node.packFormatVersion}
+                  {isRoot && minecraftVersion?.trim() && (
+                    <span className="pillbox bg-fuchsia-800 text-fuchsia-100">
+                      MC {minecraftVersion.trim()}
+                    </span>
+                  )}
+                  {isRoot && typeof rootPackFormatVersion === 'number' && Number.isFinite(rootPackFormatVersion) && (
+                    <span className="pillbox bg-purple-800 text-purple-100">
+                      {rootPackFormatVersion}
                     </span>
                   )}
                   {node.contentType && (
