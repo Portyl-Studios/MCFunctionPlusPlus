@@ -155,6 +155,7 @@ const EMPTY_EXPANDED_PATHS = new Set<string>()
 const DATAPACK_DRAG_PAYLOAD_MIME = "application/x-mcpp-datapack-entry"
 const TREE_DRAG_PAYLOAD_MIME = "application/x-mcpp-tree-entry"
 const DEFAULT_MINECRAFT_BOOTSTRAP_MESSAGE = 'Checking local cache and preparing source data if needed.'
+const PANEL_PREFERENCES_ERROR_TOAST_COOLDOWN_MS = 10_000
 const datapackSchemaHistoryEntries = datapackSchemaHistory as Record<string, DatapackSchemaHistoryEntry>
 const TITLEBAR_DRAG_STYLE: TitlebarAppRegionStyle = { WebkitAppRegion: "drag" }
 const TITLEBAR_NO_DRAG_STYLE: TitlebarAppRegionStyle = { WebkitAppRegion: "no-drag" }
@@ -527,6 +528,32 @@ function CodeEditor() {
   const [leftPanelTabOrder, setLeftPanelTabOrder] = useState<string[]>(["explorer"])
   const [rightPanelTabOrder, setRightPanelTabOrder] = useState<string[]>(["preferences", "settings"])
   const [bottomPanelTabOrder, setBottomPanelTabOrder] = useState<string[]>(["debug"])
+  const panelPreferencesErrorFingerprintRef = useRef<string | null>(null)
+  const panelPreferencesErrorLastShownAtRef = useRef(0)
+  const panelPreferencesErrorSuppressedCountRef = useRef(0)
+
+  const notifyPanelPreferencesError = (operation: 'load' | 'save', error: unknown) => {
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error'
+    const normalizedErrorMessage = errorMessage.trim() || 'Unknown error'
+    const fingerprint = `${operation}:${normalizedErrorMessage}`
+    const now = Date.now()
+    const isSameAsLast = panelPreferencesErrorFingerprintRef.current === fingerprint
+    const isWithinCooldown = now - panelPreferencesErrorLastShownAtRef.current < PANEL_PREFERENCES_ERROR_TOAST_COOLDOWN_MS
+
+    if (isSameAsLast && isWithinCooldown) {
+      panelPreferencesErrorSuppressedCountRef.current += 1
+      return
+    }
+
+    const suppressedCount = isSameAsLast ? panelPreferencesErrorSuppressedCountRef.current : 0
+    panelPreferencesErrorSuppressedCountRef.current = 0
+    panelPreferencesErrorFingerprintRef.current = fingerprint
+    panelPreferencesErrorLastShownAtRef.current = now
+
+    const operationLabel = operation === 'load' ? 'load' : 'save'
+    const suffix = suppressedCount > 0 ? ` (${suppressedCount} similar error${suppressedCount === 1 ? '' : 's'} suppressed)` : ''
+    showToastEvent(`Panel preferences ${operationLabel} failed: ${normalizedErrorMessage}${suffix}`)
+  }
   
   // Toggle handlers for each panel
   const handleToggleLeftTab = (tabId: string, nextState?: boolean) => {
@@ -627,7 +654,7 @@ function CodeEditor() {
         }
       } catch (error) {
         console.error('Failed to load panel preferences:', error)
-        await dialog.showAlert('Error', `Failed to load panel preferences: ${error instanceof Error ? error.message : 'Unknown error'}`)
+        notifyPanelPreferencesError('load', error)
       }
     }
 
@@ -654,7 +681,7 @@ function CodeEditor() {
         })
       } catch (error) {
         console.error('Failed to save panel preferences:', error)
-        await dialog.showAlert('Error', `Failed to save panel preferences: ${error instanceof Error ? error.message : 'Unknown error'}`)
+        notifyPanelPreferencesError('save', error)
       }
     }
 
