@@ -3,7 +3,8 @@ import { subscribeToastRequests, type ToastRequest } from './toast-events'
 
 type ToastItem = {
   id: number
-  message: string
+  baseMessage: string
+  suppressedCount: number
   isFading: boolean
 }
 
@@ -35,6 +36,16 @@ export function ToastStack() {
   const exitTimerRef = React.useRef<Map<number, number>>(new Map())
   const hoveredToastIdsRef = React.useRef<Set<number>>(new Set())
   const exitingToastIdsRef = React.useRef<Record<number, true>>({})
+  const toastsRef = React.useRef<ToastItem[]>([])
+  const toastIdByBaseMessageRef = React.useRef<Map<string, number>>(new Map())
+
+  const formatToastMessage = React.useCallback((toast: Pick<ToastItem, 'baseMessage' | 'suppressedCount'>): string => {
+    if (toast.suppressedCount <= 0) {
+      return toast.baseMessage
+    }
+
+    return `${toast.baseMessage} (${toast.suppressedCount})`
+  }, [])
 
   const clearToastTimers = React.useCallback((toastId: number) => {
     const runtime = toastRuntimeRef.current.get(toastId)
@@ -52,6 +63,17 @@ export function ToastStack() {
   }, [])
 
   const removeToast = React.useCallback((toastId: number) => {
+    const toast = toastRuntimeRef.current.has(toastId)
+      ? toastsRef.current.find((entry) => entry.id === toastId)
+      : null
+
+    if (toast) {
+      const mappedToastId = toastIdByBaseMessageRef.current.get(toast.baseMessage)
+      if (mappedToastId === toastId) {
+        toastIdByBaseMessageRef.current.delete(toast.baseMessage)
+      }
+    }
+
     clearToastTimers(toastId)
     const exitTimerId = exitTimerRef.current.get(toastId)
     if (exitTimerId !== undefined) {
@@ -201,15 +223,42 @@ export function ToastStack() {
     }
   }, [removeToast])
 
+  const restartToastLifetime = React.useCallback((toastId: number) => {
+    const runtime = toastRuntimeRef.current.get(toastId)
+    if (!runtime) return
+
+    clearToastTimers(toastId)
+    runtime.fadeRemainingMs = TOAST_FADE_DELAY_MS
+    runtime.removeRemainingMs = TOAST_FADE_DELAY_MS + TOAST_FADE_DURATION_MS
+    runtime.fadeStartedAtMs = null
+    runtime.removeStartedAtMs = null
+
+    setFadeProgressByToastId((previous) => ({
+      ...previous,
+      [toastId]: 0,
+    }))
+
+    setToasts((previous) => previous.map((toast) => (
+      toast.id === toastId
+        ? { ...toast, isFading: false }
+        : toast
+    )))
+
+    scheduleToastTimers(toastId)
+  }, [clearToastTimers, scheduleToastTimers])
+
   const appendToast = React.useCallback((request: ToastRequest) => {
     const toastId = nextToastIdRef.current
     nextToastIdRef.current += 1
+
+    toastIdByBaseMessageRef.current.set(request.message, toastId)
 
     setToasts((previous) => [
       ...previous,
       {
         id: toastId,
-        message: request.message,
+        baseMessage: request.message,
+        suppressedCount: 0,
         isFading: false,
       },
     ])
@@ -230,26 +279,18 @@ export function ToastStack() {
     scheduleToastTimers(toastId)
   }, [scheduleToastTimers])
 
-  const resetToastTimer = React.useCallback((toastId: number) => {
-    const runtime = toastRuntimeRef.current.get(toastId)
-    if (!runtime) return
-
-    clearToastTimers(toastId)
-    runtime.fadeRemainingMs = TOAST_FADE_DELAY_MS
-    runtime.removeRemainingMs = TOAST_FADE_DELAY_MS + TOAST_FADE_DURATION_MS
-    runtime.fadeStartedAtMs = null
-    runtime.removeStartedAtMs = null
-    setFadeProgressByToastId((previous) => ({
-      ...previous,
-      [toastId]: 0,
-    }))
-
+  const incrementExistingToast = React.useCallback((toastId: number) => {
     setToasts((previous) => previous.map((toast) => (
       toast.id === toastId
-        ? { ...toast, isFading: false }
+        ? { ...toast, suppressedCount: toast.suppressedCount + 1, isFading: false }
         : toast
     )))
-  }, [clearToastTimers])
+    restartToastLifetime(toastId)
+  }, [restartToastLifetime])
+
+  const resetToastTimer = React.useCallback((toastId: number) => {
+    restartToastLifetime(toastId)
+  }, [restartToastLifetime])
 
   const handleToastMouseEnter = React.useCallback((toastId: number) => {
     if (exitingToastIdsRef.current[toastId]) return
@@ -265,6 +306,10 @@ export function ToastStack() {
   React.useEffect(() => {
     exitingToastIdsRef.current = exitingToastIds
   }, [exitingToastIds])
+
+  React.useEffect(() => {
+    toastsRef.current = toasts
+  }, [toasts])
 
   React.useEffect(() => {
     window.addEventListener('pointermove', handleWindowPointerMove)
@@ -314,6 +359,12 @@ export function ToastStack() {
 
   React.useEffect(() => {
     const unsubscribe = subscribeToastRequests((request) => {
+      const existingToastId = toastIdByBaseMessageRef.current.get(request.message)
+      if (typeof existingToastId === 'number' && !exitingToastIdsRef.current[existingToastId]) {
+        incrementExistingToast(existingToastId)
+        return
+      }
+
       appendToast(request)
     })
 
@@ -333,7 +384,7 @@ export function ToastStack() {
       exitTimerRef.current.clear()
       toastRuntimeRef.current.clear()
     }
-  }, [appendToast])
+  }, [appendToast, incrementExistingToast])
 
   if (toasts.length === 0) return null
 
@@ -380,7 +431,7 @@ export function ToastStack() {
             />
           </div>
           <div className="mr-4">
-            {toast.message}
+            {formatToastMessage(toast)}
           </div>
         </div>
       ))}
