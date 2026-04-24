@@ -116,6 +116,9 @@ type ParsedContextCacheEntry = {
   contextIndex: ReturnType<typeof parseMcfunctionContextIndex>
 }
 
+type TitlebarAppRegion = "drag" | "no-drag"
+type TitlebarAppRegionStyle = React.CSSProperties & { WebkitAppRegion: TitlebarAppRegion }
+
 const OPEN_TABS_PREFERENCE_KEY = "openTabs"
 const EXPLORER_EXPANDED_PREFERENCE_KEY = "explorerExpandedPaths"
 const EXPLORER_TAG_FILTER_PREFERENCE_KEY = "explorerTagFilter"
@@ -144,6 +147,8 @@ const DATAPACK_DRAG_PAYLOAD_MIME = "application/x-mcpp-datapack-entry"
 const TREE_DRAG_PAYLOAD_MIME = "application/x-mcpp-tree-entry"
 const DEFAULT_MINECRAFT_BOOTSTRAP_MESSAGE = 'Checking local cache and preparing source data if needed.'
 const datapackSchemaHistoryEntries = datapackSchemaHistory as Record<string, DatapackSchemaHistoryEntry>
+const TITLEBAR_DRAG_STYLE: TitlebarAppRegionStyle = { WebkitAppRegion: "drag" }
+const TITLEBAR_NO_DRAG_STYLE: TitlebarAppRegionStyle = { WebkitAppRegion: "no-drag" }
 
 const comparePackFormatVersions = (left: string, right: string): number => {
   if (isDottedNumericVersion(left) && isDottedNumericVersion(right)) {
@@ -4278,7 +4283,7 @@ function CodeEditor() {
     <div className="w-full h-full flex flex-col select-none">
 
       {/* Title Bar */}
-      <div className="flex flex-row h-9 bg-codemirror-700 text-sm text-codemirror-100 border-b border-codemirror-600" style={{ WebkitAppRegion: "drag" } as any}>
+      <div className="flex flex-row h-9 bg-codemirror-700 text-sm text-codemirror-100 border-b border-codemirror-600" style={TITLEBAR_DRAG_STYLE}>
 
         {/* App Icon */}
         <div className="px-4 py-2 font-bold" onContextMenu={handleTitlebarRightClick}>
@@ -4286,7 +4291,7 @@ function CodeEditor() {
         </div>
         
         {/* Title Bar Buttons */}
-        <div className="flex flex-row flex-1" style={{ WebkitAppRegion: "no-drag" } as any}>
+        <div className="flex flex-row flex-1" style={TITLEBAR_NO_DRAG_STYLE}>
 
           <DropdownMenu 
             label="App"
@@ -4398,7 +4403,7 @@ function CodeEditor() {
             disabled={dialog.isOpen}
           />
 
-          <div className="flex-1" style={{ WebkitAppRegion: "drag" } as any} onContextMenu={handleTitlebarRightClick}></div>
+          <div className="flex-1" style={TITLEBAR_DRAG_STYLE} onContextMenu={handleTitlebarRightClick}></div>
 
           {/* Window Control Buttons */}
           <Tooltip content="Minimize">
