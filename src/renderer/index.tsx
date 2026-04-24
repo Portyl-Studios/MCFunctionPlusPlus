@@ -34,7 +34,16 @@ import { showToastEvent } from "./overlays/toast-events"
 import { ToastStack } from "./overlays/toast"
 import { ContextMenu } from "./overlays/contextmenu"
 import { useContextMenuRequest } from "./overlays/contextmenu-request"
-import { getDirFromPath, toRelativePaths, createFileKey, parseFileKey } from "./utils"
+import {
+  getDirFromPath,
+  toRelativePaths,
+  createFileKey,
+  parseFileKey,
+  getPathLeafName,
+  getPathSegments,
+  normalizePathSeparators,
+  trimLeadingSlashes,
+} from "./utils"
 import {
   clearDatapackContextIndexes,
   loadMcfunctionCommandSchema,
@@ -998,7 +1007,7 @@ function CodeEditor() {
         }
       }
 
-      const name = datapackDir.split(/[\\/]/).pop() || "datapack"
+      const name = getPathLeafName(datapackDir) || "datapack"
       let id: string | undefined
       let displayName: string | undefined
       let packVersion: string | undefined
@@ -1339,7 +1348,7 @@ function CodeEditor() {
 
     try {
       await window.electron.addDatapackFromMetadata(metadataPath)
-      const datapackDir = metadataPath.replace(/\\/g, '/').split('/').slice(0, -1).join('/')
+      const datapackDir = getDirFromPath(metadataPath)
       const existingDirs = datapacks.map((datapack) => datapack.dir)
       await refreshDatapacks([...existingDirs, datapackDir])
 
@@ -1348,14 +1357,14 @@ function CodeEditor() {
           return prev
         }
 
-        const datapackName = datapackDir.split(/[\\/]/).filter(Boolean).pop() || 'Datapack'
+        const datapackName = getPathLeafName(datapackDir) || 'Datapack'
         return {
           ...prev,
           [datapackDir]: new Set([datapackName, `${datapackName}/data`]),
         }
       })
 
-      const datapackName = datapackDir.split(/[\\/]/).filter(Boolean).pop() || 'Datapack'
+      const datapackName = getPathLeafName(datapackDir) || 'Datapack'
       showToastEvent(`Added datapack to workspace: ${datapackName}`)
       return true
     } catch (error) {
@@ -1385,7 +1394,7 @@ function CodeEditor() {
       // Refresh the datapack list
       const updatedDirs = datapacks.filter((dp) => dp.dir !== datapackDir).map((dp) => dp.dir)
       await refreshDatapacks(updatedDirs)
-      const datapackName = datapackDir.split(/[\\/]/).filter(Boolean).pop() || "Datapack"
+      const datapackName = getPathLeafName(datapackDir) || "Datapack"
       showToastEvent(`Removed datapack from workspace: ${datapackName}`)
     } catch (error) {
       console.error("Failed to remove datapack:", error)
@@ -1693,8 +1702,8 @@ function CodeEditor() {
 
     if (!isFile) return
 
-    const rootName = datapackDir.split(/[\\/]/).pop() || ""
-    const normalizedKey = pathKey.replace(/\\/g, "/")
+    const rootName = getPathLeafName(datapackDir)
+    const normalizedKey = trimLeadingSlashes(normalizePathSeparators(pathKey))
     const rootPrefix = rootName ? `${rootName}/` : ""
     const relativePath = normalizedKey === rootName
       ? ""
@@ -1702,7 +1711,7 @@ function CodeEditor() {
         ? normalizedKey.slice(rootPrefix.length)
         : normalizedKey
 
-    const trimmedRelative = relativePath.replace(/^\/+/, "")
+    const trimmedRelative = trimLeadingSlashes(relativePath)
     const fileName = trimmedRelative.split("/").pop() || ""
     if (!trimmedRelative || !fileName.includes(".")) return
 
@@ -3309,11 +3318,7 @@ function CodeEditor() {
   const activeLanguage = detectEditorLanguage(activeRelativePath)
   const showDiagnosticSummary = activeLanguage.supportsDiagnostics
   const activeFileRelativePathLabel = activeRelativePath
-    ? activeRelativePath
-      .replace(/\\/g, "/")
-      .split("/")
-      .filter(Boolean)
-      .join(" > ")
+    ? getPathSegments(activeRelativePath).join(" > ")
     : "No file open"
 
   const fileNameCounts = openedFiles.reduce((counts, file) => {
@@ -3324,7 +3329,7 @@ function CodeEditor() {
   const getDuplicateTabFolderLabel = (file: OpenedFile): string | null => {
     if ((fileNameCounts.get(file.fileName) ?? 0) < 2) return null
 
-    const datapackName = file.datapackDir.split(/[\\/]/).filter(Boolean).pop() || ""
+    const datapackName = getPathLeafName(file.datapackDir)
     const dirs = file.relativePath.split("/").filter(Boolean).slice(0, -1)
     const segments = [datapackName, ...dirs].filter(Boolean)
 
@@ -3332,7 +3337,7 @@ function CodeEditor() {
     if (siblings.length < 2) return null
 
     const siblingSegments = siblings.map((candidate) => {
-      const candidateDatapack = candidate.datapackDir.split(/[\\/]/).filter(Boolean).pop() || ""
+      const candidateDatapack = getPathLeafName(candidate.datapackDir)
       const candidateDirs = candidate.relativePath.split("/").filter(Boolean).slice(0, -1)
       return [candidateDatapack, ...candidateDirs].filter(Boolean)
     })
@@ -3368,8 +3373,8 @@ function CodeEditor() {
   }
 
   const buildExpandedPathsForFile = (rootName: string, relativePath: string) => {
-    const normalizedRelative = relativePath.replace(/\\/g, "/").replace(/^\/+/, "")
-    const segments = normalizedRelative.split("/").filter(Boolean)
+    const normalizedRelative = trimLeadingSlashes(normalizePathSeparators(relativePath))
+    const segments = getPathSegments(normalizedRelative)
     const next = new Set<string>()
     if (!rootName) return next
     next.add(rootName)
@@ -3384,10 +3389,10 @@ function CodeEditor() {
   const focusFileInExplorer = (fileKey: string | null) => {
     if (!fileKey) return
     const { datapackDir, relativePath } = parseFileKey(fileKey)
-    const rootName = datapackDir.split(/[\\/]/).pop() || ""
+    const rootName = getPathLeafName(datapackDir)
     if (!rootName) return
 
-    const normalizedRelative = relativePath.replace(/\\/g, "/").replace(/^\/+/, "")
+    const normalizedRelative = trimLeadingSlashes(normalizePathSeparators(relativePath))
     const pathKey = normalizedRelative ? `${rootName}/${normalizedRelative}` : rootName
     const requiredExpanded = buildExpandedPathsForFile(rootName, normalizedRelative)
 

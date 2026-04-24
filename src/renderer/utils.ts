@@ -1,3 +1,24 @@
+export const normalizePathSeparators = (value: string): string => {
+  return value.replace(/\\/g, '/')
+}
+
+export const trimLeadingSlashes = (value: string): string => {
+  return value.replace(/^\/+/, '')
+}
+
+export const trimPathSlashes = (value: string): string => {
+  return value.replace(/^\/+|\/+$/g, '')
+}
+
+export const getPathSegments = (value: string): string[] => {
+  return normalizePathSeparators(value).split('/').filter(Boolean)
+}
+
+export const getPathLeafName = (value: string): string => {
+  const segments = getPathSegments(value)
+  return segments[segments.length - 1] ?? ''
+}
+
 /**
  * Extracts the directory path from a file path
  * @param filePath - Full file path (can use / or \\ as separator)
@@ -16,9 +37,9 @@ export const getDirFromPath = (filePath: string): string => {
  * @returns Array of relative paths
  */
 export const toRelativePaths = (baseDir: string, rawPaths: string[]): string[] => {
-  const base = baseDir.replace(/\\/g, '/').replace(/\/+$/, '')
+  const base = normalizePathSeparators(baseDir).replace(/\/+$/, '')
   return rawPaths.map((rawPath) => {
-    const normalized = rawPath.replace(/\\/g, '/')
+    const normalized = normalizePathSeparators(rawPath)
     const baseWithSlash = `${base}/`
 
     if (normalized.toLowerCase().startsWith(baseWithSlash.toLowerCase())) {
