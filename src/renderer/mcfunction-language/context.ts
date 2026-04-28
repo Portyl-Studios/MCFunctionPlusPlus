@@ -1,7 +1,7 @@
 import { RangeSetBuilder, StateField, StateEffect, Text, type EditorState, type Extension } from "@codemirror/state"
 import { Decoration, type DecorationSet, EditorView, ViewPlugin } from "@codemirror/view"
 import { normalizeCommandToken } from "./shared"
-import { getQuotedRanges, getRootCommandTokens, isInQuotedRange, type RangedToken, tokenizeCommandWithRanges } from "./parse-utils"
+import { collectEntityTagsFromNbt, getQuotedRanges, getRootCommandTokens, isInQuotedRange, type RangedToken, tokenizeCommandWithRanges } from "./parse-utils"
 
 type ScoreSymbolOccurrence = {
   from: number
@@ -238,6 +238,16 @@ const handleSelectorTagUsage = (index: McfunctionContextIndex, lineFrom: number,
   }
 }
 
+const handleEntityNbtTagUsage = (index: McfunctionContextIndex, lineText: string, pass: ContextParsePass) => {
+  if (pass !== "collect") return
+
+  for (const tagName of collectEntityTagsFromNbt(lineText)) {
+    if (isTagNameToken(tagName)) {
+      index.tags.add(normalizeTagName(tagName))
+    }
+  }
+}
+
 const handleResourcePathUsage = (index: McfunctionContextIndex, lineFrom: number, lineText: string, pass: ContextParsePass) => {
   if (pass === "collect") return
 
@@ -428,6 +438,10 @@ const parseContextIndex = (
 
       if (rootCommand === "tag") {
         handleTagCommandUsage(index, line.from, rootCommandTokens, "collect")
+      }
+
+      if (rootCommand === "summon" || rootCommand === "data") {
+        handleEntityNbtTagUsage(index, text, "collect")
       }
 
       handleInlineScoreUsage(index, line.from, tokens, "collect")

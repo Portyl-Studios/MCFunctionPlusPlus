@@ -2,7 +2,7 @@ import type { EditorView } from "@codemirror/view"
 import type { Diagnostic } from "@codemirror/lint"
 import { mcfunctionStore, normalizeCommandToken } from "./shared"
 import type { McfunctionContextIndex } from "./context"
-import { getQuotedRanges, getRootCommandTokens, isInQuotedRange, type RangedToken, tokenizeCommandWithRanges } from "./parse-utils"
+import { collectEntityTagsFromNbt, getQuotedRanges, getRootCommandTokens, isInQuotedRange, type RangedToken, tokenizeCommandWithRanges } from "./parse-utils"
 
 const findCommandSuggestions = (command: string) => {
   const lower = command.toLowerCase()
@@ -238,6 +238,20 @@ const handleSelectorTagSymbols = (
   }
 }
 
+const handleEntityNbtTagSymbols = (
+  state: SymbolDiagnosticState,
+  lineText: string,
+  pass: DiagnosticPass,
+) => {
+  if (pass !== "collect") return
+
+  for (const tagName of collectEntityTagsFromNbt(lineText)) {
+    if (isTagNameToken(tagName)) {
+      state.registeredTags.add(normalizeTagName(tagName))
+    }
+  }
+}
+
 const hasLineContinuation = (text: string) => !isCommentLine(text) && /\\\s*$/.test(text)
 
 const stripLineContinuation = (text: string) => (hasLineContinuation(text) ? text.replace(/\\\s*$/, "") : text)
@@ -348,6 +362,10 @@ export const mcfunctionDiagnosticSource = (view: EditorView, contextIndex?: Mcfu
 
     if (nestedRootCommand === "tag") {
       handleTagCommandSymbols(symbolState, line.from, rootCommandTokens, "validate")
+    }
+
+    if (nestedRootCommand === "summon" || nestedRootCommand === "data") {
+      handleEntityNbtTagSymbols(symbolState, textForValidation, "collect")
     }
 
     handleSelectorTagSymbols(symbolState, line.from, textForValidation, "validate")
