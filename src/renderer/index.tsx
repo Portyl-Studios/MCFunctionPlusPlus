@@ -67,6 +67,7 @@ import datapackSchemaHistory from "../../resources/datapack-schema/history.json"
 import { compareDottedVersions, isDottedNumericVersion } from "../shared/utils"
 import { PreferencesPanel } from "./preferences-panel"
 import { defaultPreferencesSchema } from "./default-preferences-schema"
+import { DatapackInspectorPanel } from "./datapack-inspector-panel"
 
 const FALLBACK_MINECRAFT_VERSION = "26.1.2"
 
@@ -74,10 +75,15 @@ type DatapackEntry = {
   dir: string
   name: string
   paths: string[]
+  version?: number
   id?: string
   displayName?: string
   packVersion?: string
   minecraftVersion?: string
+  lastOpened?: string
+  author?: string
+  description?: string
+  packFormatVersionMin?: number
   packFormatVersionMax?: number
   tags?: string[]
 }
@@ -136,6 +142,7 @@ const EXPLORER_EXPANDED_PREFERENCE_KEY = "explorerExpandedPaths"
 const EXPLORER_TAG_FILTER_PREFERENCE_KEY = "explorerTagFilter"
 const MINECRAFT_FILTER_PREF_KEY = "minecraft"
 const DATAPACK_INTRODUCED_RELEASE_TIME_MS = Date.parse("2018-07-18T00:00:00.000Z")
+const INSPECTOR_SECTION_EXPANDED_PREFERENCE_KEY = "inspectorSectionExpanded"
 
 type CursorMarkerInfo = {
   line: number
@@ -208,6 +215,33 @@ const createInitialBatchProgressEntry = (): MinecraftBatchProgressEntry => ({
   message: 'Queued',
   status: 'queued',
 })
+
+const normalizeInspectorTabId = (tabId: string): string => tabId === "settings" ? "inspector" : tabId
+
+const normalizeInspectorTabIds = (tabIds: Iterable<string>): string[] => {
+  const normalized = new Set<string>()
+
+  for (const tabId of tabIds) {
+    normalized.add(normalizeInspectorTabId(tabId))
+  }
+
+  return Array.from(normalized)
+}
+
+const parseDatapackMetadataRecord = async (datapackDir: string): Promise<Record<string, unknown> | null> => {
+  try {
+    const metadataRaw = await window.electron.readFile(datapackDir, ".mpp-datapack")
+    const parsed = JSON.parse(metadataRaw)
+
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      return null
+    }
+
+    return parsed as Record<string, unknown>
+  } catch {
+    return null
+  }
+}
 
 const parseReleaseVersionId = (versionId: string): { major: number; minor: number } | null => {
   const normalized = versionId.trim()
@@ -549,6 +583,18 @@ function CodeEditor() {
     return datapacksRef.current[0] ?? null
   }
 
+  const getInspectorDatapack = (): DatapackEntry | null => {
+    const activeDatapackDir = activeFile ? parseFileKey(activeFile).datapackDir : null
+    if (activeDatapackDir) {
+      const activeDatapack = datapacks.find((entry) => entry.dir === activeDatapackDir)
+      if (activeDatapack) {
+        return activeDatapack
+      }
+    }
+
+    return datapacks[0] ?? null
+  }
+
   const applyMinecraftVersionSelection = async (version: string) => {
     const targetDatapack = resolveDatapackForMinecraftVersionSelection()
     if (!targetDatapack) {
@@ -636,12 +682,12 @@ function CodeEditor() {
   
   // Panel tab visibility state
   const [visibleLeftPanelTabs, setVisibleLeftPanelTabs] = useState<Set<string>>(new Set(["explorer"]))
-  const [visibleRightPanelTabs, setVisibleRightPanelTabs] = useState<Set<string>>(new Set(["preferences", "settings"]))
+  const [visibleRightPanelTabs, setVisibleRightPanelTabs] = useState<Set<string>>(new Set(["preferences", "inspector"]))
   const [visibleBottomPanelTabs, setVisibleBottomPanelTabs] = useState<Set<string>>(new Set(["debug"]))
 
   // Panel tab order state
   const [leftPanelTabOrder, setLeftPanelTabOrder] = useState<string[]>(["explorer"])
-  const [rightPanelTabOrder, setRightPanelTabOrder] = useState<string[]>(["preferences", "settings"])
+  const [rightPanelTabOrder, setRightPanelTabOrder] = useState<string[]>(["preferences", "inspector"])
   const [bottomPanelTabOrder, setBottomPanelTabOrder] = useState<string[]>(["debug"])
 
   const notifyPanelPreferencesError = (operation: 'load' | 'save', error: unknown) => {
@@ -736,13 +782,13 @@ function CodeEditor() {
         const panelPrefs = await window.electron.preferencesGet('panels')
         if (panelPrefs) {
           if (panelPrefs.leftPanelTabOrder) setLeftPanelTabOrder(panelPrefs.leftPanelTabOrder)
-          if (panelPrefs.rightPanelTabOrder) setRightPanelTabOrder(panelPrefs.rightPanelTabOrder)
+          if (panelPrefs.rightPanelTabOrder) setRightPanelTabOrder(normalizeInspectorTabIds(panelPrefs.rightPanelTabOrder))
           if (panelPrefs.bottomPanelTabOrder) setBottomPanelTabOrder(panelPrefs.bottomPanelTabOrder)
           if (panelPrefs.visibleLeftPanelTabs) setVisibleLeftPanelTabs(new Set(panelPrefs.visibleLeftPanelTabs))
-          if (panelPrefs.visibleRightPanelTabs) setVisibleRightPanelTabs(new Set(panelPrefs.visibleRightPanelTabs))
+          if (panelPrefs.visibleRightPanelTabs) setVisibleRightPanelTabs(new Set(normalizeInspectorTabIds(panelPrefs.visibleRightPanelTabs)))
           if (panelPrefs.visibleBottomPanelTabs) setVisibleBottomPanelTabs(new Set(panelPrefs.visibleBottomPanelTabs))
           if (panelPrefs.activeLeftTabId) setActiveLeftTabId(panelPrefs.activeLeftTabId)
-          if (panelPrefs.activeRightTabId) setActiveRightTabId(panelPrefs.activeRightTabId)
+          if (panelPrefs.activeRightTabId) setActiveRightTabId(normalizeInspectorTabId(panelPrefs.activeRightTabId))
           if (panelPrefs.activeBottomTabId) setActiveBottomTabId(panelPrefs.activeBottomTabId)
           if (panelPrefs.leftPanelWidth) setLeftPanelWidth(panelPrefs.leftPanelWidth)
           if (panelPrefs.rightPanelWidth) setRightPanelWidth(panelPrefs.rightPanelWidth)
@@ -803,9 +849,9 @@ function CodeEditor() {
       return [
         { label: "Preferences Option", onClick: undefined }
       ]
-    } else if (activeRightTabId === "settings") {
+    } else if (activeRightTabId === "inspector") {
       return [
-        { label: "Settings Option", onClick: undefined }
+        { label: "Inspector Option", onClick: undefined }
       ]
     }
     return []
@@ -837,6 +883,7 @@ function CodeEditor() {
   const [fileDiagnosticSummaries, setFileDiagnosticSummaries] = useState<Record<string, DiagnosticSummary>>({})
   const [cursorMarkerInfo, setCursorMarkerInfo] = useState<CursorMarkerInfo>(defaultCursorMarkerInfo)
   const [diagnosticSummary, setDiagnosticSummary] = useState<DiagnosticSummary>(defaultDiagnosticSummary)
+  const [inspectorContextRevision, setInspectorContextRevision] = useState(0)
   const [diagnosticRefreshStatus, setDiagnosticRefreshStatus] = useState({
     visible: false,
     percent: 0,
@@ -869,7 +916,9 @@ function CodeEditor() {
   const [explorerSelectedFileKeysByDatapack, setExplorerSelectedFileKeysByDatapack] = useState<Record<string, string | null>>({})
   const [explorerSelectionRevealNonceByDatapack, setExplorerSelectionRevealNonceByDatapack] = useState<Record<string, number>>({})
   const [explorerExpandedPathsByDatapack, setExplorerExpandedPathsByDatapack] = useState<Record<string, Set<string>>>({})
+    const [inspectorSectionExpansionById, setInspectorSectionExpansionById] = useState<Record<string, boolean>>({})
   const explorerContainerRefs = useRef<Map<string, React.RefObject<HTMLDivElement | null>>>(new Map())
+    const isRestoringInspectorSectionExpansionRef = useRef(false)
   
   // Refs are used to access current state values inside closures (e.g., editor listeners)
   // without triggering re-renders or stale closure issues
@@ -1107,6 +1156,19 @@ function CodeEditor() {
     }
   }
 
+  const parseWorkspaceInspectorSectionExpansion = (value: unknown): Record<string, boolean> | null => {
+    if (!value || typeof value !== "object") return null
+
+    const entries = value as Record<string, unknown>
+    const next: Record<string, boolean> = {}
+    for (const [sectionId, isExpanded] of Object.entries(entries)) {
+      if (typeof isExpanded !== "boolean") continue
+      next[sectionId] = isExpanded
+    }
+
+    return next
+  }
+
   const loadDatapackEntry = async (datapackDir: string): Promise<DatapackEntry | null> => {
     try {
       const initialFiles = await window.electron.listFiles(datapackDir)
@@ -1131,39 +1193,57 @@ function CodeEditor() {
       }
 
       const name = getPathLeafName(datapackDir) || "datapack"
+      let version: number | undefined
       let id: string | undefined
       let displayName: string | undefined
       let packVersion: string | undefined
       let minecraftVersion: string | undefined
+      let lastOpened: string | undefined
+      let author: string | undefined
+      let description: string | undefined
+      let packFormatVersionMin: number | undefined
       let packFormatVersionMax: number | undefined
       let tags: string[] | undefined
       try {
-        const metadataRaw = await window.electron.readFile(datapackDir, ".mpp-datapack")
-        const parsed = JSON.parse(metadataRaw)
-        const parsedRecord = parsed && typeof parsed === "object" && !Array.isArray(parsed)
-          ? parsed as Record<string, unknown>
-          : null
+        const parsedRecord = await parseDatapackMetadataRecord(datapackDir)
         const nextMetadataRecord = parsedRecord ? { ...parsedRecord } : null
         let shouldPersistMetadata = false
-        if (parsed && typeof parsed.id === "string") {
-          id = parsed.id
+
+        if (parsedRecord && typeof parsedRecord.version === "number" && Number.isFinite(parsedRecord.version)) {
+          version = parsedRecord.version
         }
-        if (parsed && typeof parsed.name === "string") {
-          displayName = parsed.name
+        if (parsedRecord && typeof parsedRecord.id === "string") {
+          id = parsedRecord.id
         }
-        if (parsed && typeof parsed.packVersion === "string") {
-          packVersion = parsed.packVersion
+        if (parsedRecord && typeof parsedRecord.name === "string") {
+          displayName = parsedRecord.name
         }
-        const parsedMinecraftVersion = parsed && typeof parsed.minecraftVersion === "string"
-          ? parsed.minecraftVersion.trim()
+        if (parsedRecord && typeof parsedRecord.packVersion === "string") {
+          packVersion = parsedRecord.packVersion
+        }
+        if (parsedRecord && typeof parsedRecord.lastOpened === "string") {
+          lastOpened = parsedRecord.lastOpened
+        }
+        if (parsedRecord && typeof parsedRecord.author === "string") {
+          author = parsedRecord.author
+        }
+        if (parsedRecord && typeof parsedRecord.description === "string") {
+          description = parsedRecord.description
+        }
+        if (parsedRecord && typeof parsedRecord.packFormatVersionMin === "number" && Number.isFinite(parsedRecord.packFormatVersionMin)) {
+          packFormatVersionMin = parsedRecord.packFormatVersionMin
+        }
+
+        const parsedMinecraftVersion = parsedRecord && typeof parsedRecord.minecraftVersion === "string"
+          ? parsedRecord.minecraftVersion.trim()
           : ""
         minecraftVersion = parsedMinecraftVersion || FALLBACK_MINECRAFT_VERSION
-        if (nextMetadataRecord && (!parsedMinecraftVersion || parsed.minecraftVersion !== parsedMinecraftVersion)) {
+        if (nextMetadataRecord && (!parsedMinecraftVersion || parsedRecord?.minecraftVersion !== parsedMinecraftVersion)) {
           nextMetadataRecord.minecraftVersion = minecraftVersion
           shouldPersistMetadata = true
         }
-        if (parsed && typeof parsed.packFormatVersionMax === "number" && Number.isFinite(parsed.packFormatVersionMax)) {
-          packFormatVersionMax = parsed.packFormatVersionMax
+        if (parsedRecord && typeof parsedRecord.packFormatVersionMax === "number" && Number.isFinite(parsedRecord.packFormatVersionMax)) {
+          packFormatVersionMax = parsedRecord.packFormatVersionMax
         }
         if (packFormatVersionMax === undefined) {
           const resolvedPackFormat = resolvePackFormatFromMinecraftVersion(minecraftVersion)
@@ -1171,7 +1251,6 @@ function CodeEditor() {
           if (typeof resolvedPackFormatVersionMax === "number" && Number.isFinite(resolvedPackFormatVersionMax)) {
             packFormatVersionMax = resolvedPackFormatVersionMax
 
-            // Backfill metadata so future launches can read pack format directly.
             if (nextMetadataRecord) {
               nextMetadataRecord.packFormatVersionMax = resolvedPackFormatVersionMax
               shouldPersistMetadata = true
@@ -1191,26 +1270,36 @@ function CodeEditor() {
           }
         }
 
-        if (parsed && Array.isArray(parsed.tags)) {
-          tags = (parsed.tags as unknown[])
+        if (parsedRecord && Array.isArray(parsedRecord.tags)) {
+          tags = (parsedRecord.tags as unknown[])
             .filter((tag): tag is string => typeof tag === "string")
             .map((tag) => tag.trim())
             .filter((tag) => tag.length > 0)
         }
       } catch {
+        version = undefined
         id = undefined
         displayName = undefined
         packVersion = undefined
         tags = undefined
+        lastOpened = undefined
+        author = undefined
+        description = undefined
+        packFormatVersionMin = undefined
       }
       return {
         dir: datapackDir,
         name,
         paths: toRelativePaths(datapackDir, paths),
+        version,
         id,
         displayName,
         packVersion,
         minecraftVersion,
+        lastOpened,
+        author,
+        description,
+        packFormatVersionMin,
         packFormatVersionMax,
         tags,
       }
@@ -1222,7 +1311,9 @@ function CodeEditor() {
   const refreshDatapacks = async (dirs: string[]) => {
     const uniqueDirs = Array.from(new Set(dirs.filter(Boolean)))
     const entries = await Promise.all(uniqueDirs.map((dir) => loadDatapackEntry(dir)))
-    setDatapacks(entries.filter((entry): entry is DatapackEntry => !!entry))
+    const nextDatapacks = entries.filter((entry): entry is DatapackEntry => !!entry)
+    datapacksRef.current = nextDatapacks
+    setDatapacks(nextDatapacks)
   }
 
   const refreshWorkspaceDatapacks = async (metadataPaths: string[]) => {
@@ -1522,6 +1613,36 @@ function CodeEditor() {
     } catch (error) {
       console.error("Failed to remove datapack:", error)
       await dialog.showAlert("Error", `Failed to remove datapack from workspace: ${error instanceof Error ? error.message : "Unknown error"}`)
+    }
+  }
+
+  const handleInspectorMetadataChange = async (datapackDir: string, fieldKey: string, value: unknown) => {
+    const metadataRecord = await parseDatapackMetadataRecord(datapackDir)
+    if (!metadataRecord) {
+      throw new Error('Invalid datapack metadata format')
+    }
+
+    const nextMetadata = { ...metadataRecord }
+
+    if (fieldKey === 'tags') {
+      const tagValues = typeof value === 'string'
+        ? value.split(',').map((tag) => tag.trim()).filter((tag) => tag.length > 0)
+        : []
+      nextMetadata.tags = Array.from(new Set(tagValues))
+    } else if (fieldKey === 'version' || fieldKey === 'packFormatVersionMin' || fieldKey === 'packFormatVersionMax') {
+      if (typeof value !== 'number' || !Number.isFinite(value)) {
+        return
+      }
+      nextMetadata[fieldKey] = value
+    } else {
+      nextMetadata[fieldKey] = typeof value === 'string' ? value : String(value ?? '')
+    }
+
+    await window.electron.writeFile(datapackDir, '.mpp-datapack', JSON.stringify(nextMetadata, null, 2))
+    await refreshDatapacks(datapacksRef.current.map((datapack) => datapack.dir))
+
+    if (fieldKey === 'minecraftVersion') {
+      await queueContextsThenDiagnosticsReload(datapackDir)
     }
   }
 
@@ -2641,6 +2762,7 @@ function CodeEditor() {
     if (contextDiagnosticsPipelineRunIdRef.current !== pipelineRunId) return
 
     await reloadAllDiagnosticsAsync(datapackDir)
+    setInspectorContextRevision((prev) => prev + 1)
   }
 
   const resolveDatapackMinecraftVersion = (datapackDir: string): string => {
@@ -3171,6 +3293,30 @@ function CodeEditor() {
   }, [workspaceInfo.dir])
 
   useEffect(() => {
+    const restoreInspectorSectionExpansion = async () => {
+      if (!workspaceInfo.dir) {
+        setInspectorSectionExpansionById({})
+        return
+      }
+
+      isRestoringInspectorSectionExpansionRef.current = true
+      try {
+        const savedValue = await window.electron.workspaceGetPreference(INSPECTOR_SECTION_EXPANDED_PREFERENCE_KEY)
+        const parsed = parseWorkspaceInspectorSectionExpansion(savedValue)
+        setInspectorSectionExpansionById(parsed ?? {})
+      } catch (error) {
+        console.error("Failed to restore inspector section expansion state:", error)
+        await dialog.showAlert("Error", `Failed to restore inspector section expansion state: ${error instanceof Error ? error.message : "Unknown error"}`)
+        setInspectorSectionExpansionById({})
+      } finally {
+        isRestoringInspectorSectionExpansionRef.current = false
+      }
+    }
+
+    restoreInspectorSectionExpansion()
+  }, [workspaceInfo.dir])
+
+  useEffect(() => {
     const persistWorkspaceTabs = async () => {
       if (!workspaceInfo.dir) return
       if (isRestoringTabsRef.current) return
@@ -3239,6 +3385,24 @@ function CodeEditor() {
 
     persistExplorerTagFilter()
   }, [workspaceInfo.dir, selectedExplorerTags, explorerTagMatchMode])
+  useEffect(() => {
+    const persistInspectorSectionExpansion = async () => {
+      if (!workspaceInfo.dir) return
+      if (isRestoringInspectorSectionExpansionRef.current) return
+
+      try {
+        await window.electron.workspaceUpdatePreference(
+          INSPECTOR_SECTION_EXPANDED_PREFERENCE_KEY,
+          inspectorSectionExpansionById,
+        )
+      } catch (error) {
+        console.error("Failed to save inspector section expansion state:", error)
+        await dialog.showAlert("Error", `Failed to save inspector section expansion state: ${error instanceof Error ? error.message : "Unknown error"}`)
+      }
+    }
+
+    persistInspectorSectionExpansion()
+  }, [workspaceInfo.dir, inspectorSectionExpansionById])
 
   // Pause auto-save while dialogs are open to prevent saves during user confirmation prompts
   // Resume auto-save when dialog closes to continue saving modified files
@@ -4347,6 +4511,8 @@ function CodeEditor() {
     }
   ]
 
+  const inspectorDatapack = getInspectorDatapack()
+
   const rightPanelTabs: PanelTab[] = [
     {
       id: "preferences",
@@ -4363,12 +4529,26 @@ function CodeEditor() {
       )
     },
     {
-      id: "settings",
-      title: "Settings",
-      icon: "codicon-gear",
-      visible: visibleRightPanelTabs.has("settings"),
+      id: "inspector",
+      title: "Inspector",
+      icon: "codicon-eye",
+      visible: visibleRightPanelTabs.has("inspector"),
       content: (
-        <div className="text-sm text-codemirror-300">Update controls are available from the footer version button.</div>
+        <DatapackInspectorPanel
+          datapack={inspectorDatapack}
+          contextRevision={inspectorContextRevision}
+          onMetadataChange={(fieldKey, value) => {
+            if (!inspectorDatapack) return
+            void handleInspectorMetadataChange(inspectorDatapack.dir, fieldKey, value)
+          }}
+          sectionExpansionById={inspectorSectionExpansionById}
+          onSectionExpansionChange={(sectionId, expanded) => {
+            setInspectorSectionExpansionById((prev) => ({
+              ...prev,
+              [sectionId]: expanded,
+            }))
+          }}
+        />
       )
     }
   ]
@@ -4521,10 +4701,10 @@ function CodeEditor() {
                 onToggle: (nextState) => handleToggleBottomTab("debug", nextState)
               },
               { 
-                label: "Settings",
+                label: "Inspector",
                 toggleable: true,
-                toggled: visibleRightPanelTabs.has("settings"),
-                onToggle: (nextState) => handleToggleRightTab("settings", nextState)
+                toggled: visibleRightPanelTabs.has("inspector"),
+                onToggle: (nextState) => handleToggleRightTab("inspector", nextState)
               }
             ] as MenuItem[]}
             isOpen={isHeaderMenuSixOpen}

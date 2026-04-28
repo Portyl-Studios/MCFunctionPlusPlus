@@ -43,11 +43,11 @@ function CollapsiblePreferenceSection({
   }
 
   return (
-    <div className="border-b border-codemirror-600 last:border-b-0">
+    <div className="inspector-panel-section">
       {/* Section Header */}
       <button
         onClick={() => setIsExpanded(!isExpanded)}
-        className="w-full flex items-center gap-2 px-3 py-2.5 hover:bg-codemirror-600 transition-colors group"
+        className="inspector-panel-section-button"
       >
         <span
           className={`codicon codicon-chevron-right text-codemirror-400 transform transition-transform ${
@@ -55,26 +55,26 @@ function CollapsiblePreferenceSection({
           }`}
         />
         <div className="flex-1 text-left">
-          <div className="font-semibold text-codemirror-100 text-sm">{section.title}</div>
+          <div className="inspector-panel-section-title">{section.title}</div>
           {section.description && (
-            <div className="text-xs text-codemirror-400 mt-0.5">{section.description}</div>
+            <div className="inspector-panel-section-description">{section.description}</div>
           )}
         </div>
       </button>
 
       {/* Section Content */}
       {isExpanded && (
-        <div className="px-3 py-2 bg-codemirror-700 space-y-3">
+        <div className="inspector-panel-section-content">
           {Object.entries(fields).map(([fieldKey, config]) => {
             const currentValue = sectionData[fieldKey]
 
             return (
-              <div key={fieldKey} className="space-y-1">
+              <div key={fieldKey} className="inspector-panel-field">
                 {/* Field Label */}
-                <label className="block text-xs font-medium text-codemirror-200">
+                <label className="inspector-panel-field-label">
                   <span>{config.label}</span>
                   {config.readOnly && (
-                    <span className="ml-2 rounded border border-codemirror-500 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-codemirror-400">
+                    <span className="inspector-panel-readonly-pill">
                       Read only
                     </span>
                   )}
@@ -82,11 +82,11 @@ function CollapsiblePreferenceSection({
 
                 {/* Field Description */}
                 {config.description && (
-                  <p className="text-xs text-codemirror-400 mb-1.5">{config.description}</p>
+                  <p className="inspector-panel-field-description">{config.description}</p>
                 )}
 
                 {/* Field Input */}
-                <div className="pl-3 border-l border-codemirror-500">
+                <div className="inspector-panel-field-input">
                   <PreferenceFieldRenderer
                     fieldKey={fieldKey}
                     config={config}
@@ -115,16 +115,16 @@ export function PreferencesPanel({
 }: PreferencesPanelProps) {
   if (isLoading) {
     return (
-      <div className="flex items-center justify-center h-full">
-        <div className="text-codemirror-400 text-sm">Loading preferences...</div>
+      <div className="inspector-panel-loading">
+        <div className="inspector-panel-loading-text">Loading preferences...</div>
       </div>
     )
   }
 
   return (
-    <div className="flex flex-col h-full bg-codemirror-700">
+    <div className="inspector-panel-root">
       {/* Content */}
-      <div className="flex-1 overflow-y-auto">
+      <div className="inspector-panel-scroll">
         {schema.sections.map((section) => (
           <CollapsiblePreferenceSection
             key={section.id}

@@ -12,6 +12,7 @@ type ScoreSymbolOccurrence = {
 export type McfunctionContextIndex = {
   holders: Set<string>
   objectives: Set<string>
+  macroVariables: Set<string>
   resourcePaths: Set<string>
   tags: Set<string>
   objectivesByHolder: Map<string, Set<string>>
@@ -25,10 +26,11 @@ type McfunctionContextState = {
 
 type ContextParsePass = "collect" | "resolve"
 
-const HOLDER_REGEX = /^(@[a-z](?:\[[^\]]*\])?|\*|[\$#A-Za-z0-9_+.=-]+)$/i
+const HOLDER_REGEX = /^(\*|[\$#A-Za-z0-9_+.=-]+)$/i
 const OBJECTIVE_REGEX = /^[A-Za-z0-9_.+-]{1,16}$/
 const RESOURCE_PATH_REGEX = /^#?[a-z_][a-z0-9_.-]*:[a-z0-9_./-]+$/i
 const RESOURCE_PATH_GLOBAL_REGEX = /#?[a-z_][a-z0-9_.-]*:[a-z0-9_./-]+/gi
+const MACRO_VARIABLE_GLOBAL_REGEX = /\$\(([^)]+)\)/g
 const TAG_NAME_REGEX = /^[A-Za-z0-9_./:-]+$/
 const SELECTOR_TAG_GLOBAL_REGEX = /(?:^|[\[,])\s*tag\s*=\s*(!?)([A-Za-z0-9_./:-]+)/gi
 const FUNCTION_FILE_PATH_REGEX = /^data\/([a-z0-9_.-]+)\/functions?\/(.+)\.mcfunction$/i
@@ -271,6 +273,14 @@ const handleResourcePathUsage = (index: McfunctionContextIndex, lineFrom: number
   }
 }
 
+const handleMacroVariableUsage = (index: McfunctionContextIndex, lineText: string) => {
+  for (const match of lineText.matchAll(MACRO_VARIABLE_GLOBAL_REGEX)) {
+    const rawName = (match[1] ?? "").trim()
+    if (!rawName) continue
+    index.macroVariables.add(rawName)
+  }
+}
+
 const createResourcePathFromFilePath = (relativePath: string) => {
   const normalized = relativePath.replace(/\\/g, "/").replace(/^\/+/, "")
   const match = normalized.match(FUNCTION_FILE_PATH_REGEX)
@@ -308,6 +318,7 @@ export const setWorkspaceResourcePathsFromRelativePaths = (relativePaths: string
 const createEmptyIndex = (): McfunctionContextIndex => ({
   holders: new Set<string>(),
   objectives: new Set<string>(),
+  macroVariables: new Set<string>(),
   resourcePaths: new Set<string>(),
   tags: new Set<string>(),
   objectivesByHolder: new Map<string, Set<string>>(),
@@ -317,6 +328,7 @@ const createEmptyIndex = (): McfunctionContextIndex => ({
 const cloneContextIndex = (source: McfunctionContextIndex): McfunctionContextIndex => ({
   holders: new Set(source.holders),
   objectives: new Set(source.objectives),
+  macroVariables: new Set(source.macroVariables),
   resourcePaths: new Set(source.resourcePaths),
   tags: new Set(source.tags),
   objectivesByHolder: new Map(
@@ -328,6 +340,7 @@ const cloneContextIndex = (source: McfunctionContextIndex): McfunctionContextInd
 const mergeContextInto = (target: McfunctionContextIndex, source: McfunctionContextIndex, includeOccurrences = false) => {
   for (const holder of source.holders) target.holders.add(holder)
   for (const objective of source.objectives) target.objectives.add(objective)
+  for (const macroVariable of source.macroVariables) target.macroVariables.add(macroVariable)
   for (const resourcePath of source.resourcePaths) target.resourcePaths.add(resourcePath)
   for (const tag of source.tags) target.tags.add(tag)
 
@@ -444,6 +457,7 @@ const parseContextIndex = (
         handleEntityNbtTagUsage(index, text, "collect")
       }
 
+      handleMacroVariableUsage(index, text)
       handleInlineScoreUsage(index, line.from, tokens, "collect")
       handleSelectorTagUsage(index, line.from, text, "collect")
       handleResourcePathUsage(index, line.from, text, "collect")
@@ -473,6 +487,7 @@ const parseContextIndex = (
       handleTagCommandUsage(index, line.from, rootCommandTokens, "resolve")
     }
 
+    handleMacroVariableUsage(index, text)
     handleInlineScoreUsage(index, line.from, tokens, "resolve")
     handleSelectorTagUsage(index, line.from, text, "resolve")
     handleResourcePathUsage(index, line.from, text, "resolve")
@@ -612,6 +627,10 @@ export const isMcfunctionContextIndexEqual = (a: McfunctionContextIndex, b: Mcfu
   }
   
   if (a.objectives.size !== b.objectives.size || ![...a.objectives].every(v => b.objectives.has(v))) {
+    return false
+  }
+
+  if (a.macroVariables.size !== b.macroVariables.size || ![...a.macroVariables].every(v => b.macroVariables.has(v))) {
     return false
   }
   

@@ -72,6 +72,126 @@
     ;
   }
 
+  .inspector-panel-root {
+    @apply
+      flex flex-col h-full
+      bg-codemirror-700
+    ;
+  }
+
+  .inspector-panel-loading {
+    @apply
+      flex items-center justify-center h-full
+    ;
+  }
+
+  .inspector-panel-loading-text {
+    @apply
+      text-codemirror-400 text-sm
+    ;
+  }
+
+  .inspector-panel-scroll {
+    @apply
+      flex-1 overflow-y-auto
+    ;
+  }
+
+  .inspector-panel-section {
+    @apply
+      border-b border-codemirror-600 last:border-b-0
+    ;
+  }
+
+  .inspector-panel-section-button {
+    @apply
+      w-full flex items-center gap-2
+      px-3 py-2.5
+      hover:bg-codemirror-600
+      transition-colors
+    ;
+  }
+
+  .inspector-panel-section-title {
+    @apply
+      font-semibold text-codemirror-100 text-sm
+    ;
+  }
+
+  .inspector-panel-section-description {
+    @apply
+      text-xs text-codemirror-400 mt-0.5
+    ;
+  }
+
+  .inspector-panel-section-content {
+    @apply
+      px-3 py-2 bg-codemirror-700 space-y-3
+    ;
+  }
+
+  .inspector-panel-field {
+    @apply
+      space-y-1
+    ;
+  }
+
+  .inspector-panel-field-label {
+    @apply
+      block text-xs font-medium text-codemirror-200 mb-2
+    ;
+  }
+
+  .inspector-panel-field-description {
+    @apply
+      text-xs text-codemirror-400 mb-1.5
+    ;
+  }
+
+  .inspector-panel-field-input {
+    @apply
+      pl-3 border-l border-codemirror-500
+    ;
+  }
+
+  .inspector-panel-header {
+    @apply
+      border-b border-codemirror-600
+      px-3 py-3 space-y-2
+      bg-linear-to-b from-codemirror-700 to-codemirror-800
+    ;
+  }
+
+  .inspector-panel-header-title {
+    @apply
+      text-sm font-semibold text-codemirror-100
+    ;
+  }
+
+  .inspector-panel-header-path {
+    @apply
+      text-[11px] text-codemirror-400 break-all
+    ;
+  }
+
+  .inspector-panel-header-summary {
+    @apply
+      text-xs text-codemirror-400
+    ;
+  }
+
+  .inspector-panel-readonly-pill {
+    @apply
+      ml-2
+      rounded
+      border border-codemirror-500
+      px-1.5 py-0.5
+      text-[9px] uppercase tracking-wide
+      text-codemirror-400
+      select-none
+    ;
+  }
+
   .explorer-filter-floating-row {
     @apply
       sticky top-0 z-40 isolate
