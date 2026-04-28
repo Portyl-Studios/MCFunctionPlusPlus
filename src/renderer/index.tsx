@@ -62,8 +62,11 @@ import { useExternalFileWatcher } from "./use-external-file-watcher"
 import { useAppUpdate } from "./use-app-update"
 import { deletePathWithConfirm, renamePathWithPrompt } from "./path-actions"
 import type { MinecraftDataEnsureProgress, MinecraftVersionEntry, ShortcutAction } from "../main/electron-api"
+import type { AppPreferences } from "../main/preferences"
 import datapackSchemaHistory from "../../resources/datapack-schema/history.json"
 import { compareDottedVersions, isDottedNumericVersion } from "../shared/utils"
+import { PreferencesPanel } from "./preferences-panel"
+import { defaultPreferencesSchema } from "./default-preferences-schema"
 
 const FALLBACK_MINECRAFT_VERSION = "26.1.2"
 
@@ -310,6 +313,32 @@ function CodeEditor() {
   const [isMinecraftVersionMenuOpen, setIsMinecraftVersionMenuOpen] = useState(false)
   const [hideSnapshotVersions, setHideSnapshotVersions] = useState(true)
   const isRestoringMinecraftFilterRef = useRef(false)
+  
+  // Preferences state
+  const [appPreferences, setAppPreferences] = useState<AppPreferences>({})
+  const [isPreferencesLoading, setIsPreferencesLoading] = useState(true)
+
+  const loadPreferences = async () => {
+    const [panels, windowPreferences, updates, workspace, minecraft] = await Promise.all([
+      window.electron.preferencesGet('panels'),
+      window.electron.preferencesGet('window'),
+      window.electron.preferencesGet('updates'),
+      window.electron.preferencesGet('workspace'),
+      window.electron.preferencesGet('minecraft'),
+    ])
+
+    setAppPreferences({
+      panels,
+      window: windowPreferences,
+      updates,
+      workspace,
+      minecraft,
+    })
+    // Keep the UI filter state in sync with loaded preferences
+    if (minecraft && typeof minecraft.hideSnapshotsInVersionMenu === 'boolean') {
+      setHideSnapshotVersions(minecraft.hideSnapshotsInVersionMenu)
+    }
+  }
 
   useEffect(() => {
     let isDisposed = false
@@ -325,6 +354,91 @@ function CodeEditor() {
 
     return () => {
       isDisposed = true
+    }
+  }, [])
+
+  // Load all preferences on mount
+  useEffect(() => {
+    const loadAllPreferences = async () => {
+      try {
+        await loadPreferences()
+      } catch (error) {
+        console.error('Failed to load preferences:', error)
+      } finally {
+        setIsPreferencesLoading(false)
+      }
+    }
+
+    void loadAllPreferences()
+  }, [])
+
+  // Handler for preference changes
+  const handlePreferenceChange = async (sectionId: string, fieldKey: string, value: unknown) => {
+    try {
+      // Persist to backend: fetch authoritative section first to avoid overwriting other fields
+      const currentSection = await window.electron.preferencesGet(sectionId as keyof AppPreferences)
+      const merged = {
+        ...(currentSection && typeof currentSection === 'object' ? currentSection : {}),
+        [fieldKey]: value,
+      }
+
+      await window.electron.preferencesSet(sectionId as any, merged)
+
+      const refreshedSection = await window.electron.preferencesGet(sectionId as keyof AppPreferences)
+      setAppPreferences(prev => ({
+        ...prev,
+        [sectionId]: refreshedSection,
+      }))
+      // If the minecraft section changed, update UI filter state too
+      if (sectionId === 'minecraft' && refreshedSection && typeof (refreshedSection as any).hideSnapshotsInVersionMenu === 'boolean') {
+        setHideSnapshotVersions((refreshedSection as any).hideSnapshotsInVersionMenu)
+      }
+    } catch (error) {
+      console.error('Failed to save preference:', error)
+      showToastEvent(`Failed to save preference: ${error instanceof Error ? error.message : 'Unknown error'}`)
+    }
+  }
+
+  useEffect(() => {
+    const unsubscribe = window.electron.onPreferencesChanged(async ({ keys }) => {
+      try {
+        if (!keys.length) {
+          await loadPreferences()
+          return
+        }
+
+        const uniqueKeys = [...new Set(keys)]
+
+        for (const key of uniqueKeys) {
+          const section = await window.electron.preferencesGet(key as keyof AppPreferences)
+          setAppPreferences((prev) => {
+            switch (key) {
+              case 'panels':
+                return { ...prev, panels: section as AppPreferences['panels'] }
+              case 'window':
+                return { ...prev, window: section as AppPreferences['window'] }
+              case 'updates':
+                return { ...prev, updates: section as AppPreferences['updates'] }
+              case 'workspace':
+                return { ...prev, workspace: section as AppPreferences['workspace'] }
+              case 'minecraft':
+                // update both preferences and the UI filter state
+                if (section && typeof (section as any).hideSnapshotsInVersionMenu === 'boolean') {
+                  setHideSnapshotVersions((section as any).hideSnapshotsInVersionMenu)
+                }
+                return { ...prev, minecraft: section as AppPreferences['minecraft'] }
+              default:
+                return prev
+            }
+          })
+        }
+      } catch (error) {
+        console.error('Failed to refresh preferences after save:', error)
+      }
+    })
+
+    return () => {
+      unsubscribe()
     }
   }, [])
 
@@ -355,7 +469,9 @@ function CodeEditor() {
 
     const persistMinecraftFilterPreference = async () => {
       try {
+        const currentMinecraftPrefs = await window.electron.preferencesGet(MINECRAFT_FILTER_PREF_KEY)
         await window.electron.preferencesSet(MINECRAFT_FILTER_PREF_KEY, {
+          ...(currentMinecraftPrefs && typeof currentMinecraftPrefs === 'object' ? currentMinecraftPrefs : {}),
           hideSnapshotsInVersionMenu: hideSnapshotVersions,
         })
       } catch (error) {
@@ -4237,12 +4353,13 @@ function CodeEditor() {
       title: "Preferences",
       icon: "codicon-settings",
       visible: visibleRightPanelTabs.has("preferences"),
-      content: workspaceInfo.dir ? (
-        <div className="text-sm text-codemirror-300">
-          <div className="font-mono wrap-break-word">{workspaceInfo.dir}</div>
-        </div>
-      ) : (
-        <div className="text-sm text-codemirror-300">No folder selected</div>
+      content: (
+        <PreferencesPanel
+          preferences={appPreferences}
+          schema={defaultPreferencesSchema}
+          onPreferenceChange={handlePreferenceChange}
+          isLoading={isPreferencesLoading}
+        />
       )
     },
     {

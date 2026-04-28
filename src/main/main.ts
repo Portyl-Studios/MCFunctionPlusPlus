@@ -619,11 +619,15 @@ ipcMain.handle('preferences-get', async (_event, { key }) => {
 })
 
 ipcMain.handle('preferences-set', async (_event, { key, value }) => {
-  return await preferencesManager.set(key, value)
+  const result = await preferencesManager.set(key, value)
+  mainWindow?.webContents.send('preferences-changed', { keys: [key] })
+  return result
 })
 
 ipcMain.handle('preferences-update', async (_event, { updates }) => {
-  return await preferencesManager.update(updates)
+  const result = await preferencesManager.update(updates)
+  mainWindow?.webContents.send('preferences-changed', { keys: Object.keys(updates) })
+  return result
 })
 
 ipcMain.handle('minecraft-default-version-sync-error-get', async () => {

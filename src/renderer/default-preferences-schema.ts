@@ -1,0 +1,38 @@
+/**
+ * Default Preferences Schema
+ * 
+ * This defines the structure and rendering configuration for all app preferences.
+ * Update this file to add new preferences or modify how they're displayed.
+ */
+
+import type { PreferenceSchema } from './preferences-schema'
+import { fieldConfigs } from './preferences-schema'
+
+export const defaultPreferencesSchema: PreferenceSchema = {
+  sections: [
+    {
+      id: 'minecraft',
+      title: 'Minecraft',
+      description: 'Minecraft version and data settings',
+      fields: {
+        defaultVersion: fieldConfigs.text('Default Version', {
+          description: 'Default Minecraft version for new datapacks',
+          readOnly: true,
+        }),
+        hideSnapshotsInVersionMenu: fieldConfigs.checkbox('Hide Snapshots', {
+          description: 'Hide snapshot versions in the version selection menu',
+        }),
+      },
+    },
+    {
+      id: 'window',
+      title: 'Window',
+      description: 'Application window settings',
+      fields: {
+        isFullScreen: fieldConfigs.checkbox('Full Screen', {
+          description: 'Launch application in full screen mode',
+        }),
+      },
+    },
+  ],
+}

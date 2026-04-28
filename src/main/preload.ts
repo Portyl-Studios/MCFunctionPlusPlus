@@ -2,7 +2,7 @@
 const { contextBridge, ipcRenderer } = require('electron')
 
 import type { IpcRendererEvent } from 'electron'
-import type { AppUpdateStatus, ElectronAPI, ExternalDestination, ExternalDirectoryChangeEvent, ExternalFileChangeEvent, MinecraftDataEnsureProgress, ShortcutHandler, TitlebarContextMenuPosition } from './electron-api'
+import type { AppUpdateStatus, ElectronAPI, ExternalDestination, ExternalDirectoryChangeEvent, ExternalFileChangeEvent, MinecraftDataEnsureProgress, PreferencesChangedEvent, ShortcutHandler, TitlebarContextMenuPosition } from './electron-api'
 import type { AppPreferences } from './preferences'
 
 const electronApi: ElectronAPI = {
@@ -189,6 +189,13 @@ const electronApi: ElectronAPI = {
   },
   preferencesUpdate: (updates: Partial<AppPreferences>) => {
     return ipcRenderer.invoke('preferences-update', { updates })
+  },
+  onPreferencesChanged: (callback: (event: PreferencesChangedEvent) => void) => {
+    const listener = (_event: IpcRendererEvent, payload: PreferencesChangedEvent) => callback(payload)
+    ipcRenderer.on('preferences-changed', listener)
+    return () => {
+      ipcRenderer.removeListener('preferences-changed', listener)
+    }
   },
   minecraftVersionsGet: () => {
     return ipcRenderer.invoke('minecraft-versions-list')

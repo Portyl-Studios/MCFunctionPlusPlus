@@ -77,6 +77,10 @@ export type ExternalDirectoryChangeEvent = {
 
 export type ExternalDestination = 'bug-report'
 
+export type PreferencesChangedEvent = {
+  keys: Array<keyof AppPreferences>
+}
+
 export interface ElectronAPI {
   isDevMode: () => Promise<boolean>
   minimize: () => Promise<void>
@@ -129,6 +133,7 @@ export interface ElectronAPI {
   preferencesGet: <K extends keyof AppPreferences>(key: K) => Promise<AppPreferences[K] | undefined>
   preferencesSet: <K extends keyof AppPreferences>(key: K, value: AppPreferences[K]) => Promise<void>
   preferencesUpdate: (updates: Partial<AppPreferences>) => Promise<void>
+  onPreferencesChanged: (callback: (event: PreferencesChangedEvent) => void) => () => void
   minecraftVersionsGet: () => Promise<MinecraftVersionEntry[]>
   minecraftDataEnsure: (version: string) => Promise<boolean>
   minecraftDataCancel: (version?: string) => Promise<boolean>
