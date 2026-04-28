@@ -1661,17 +1661,17 @@ export function DatapackTree({ paths, className, folderName, rootId, rootName, r
 
                   {/* Pillboxes */}
                   {isRoot && rootPackVersion && (
-                    <span className="pillbox bg-indigo-800 text-indigo-100">
+                    <span className="pillbox shrink-0 whitespace-nowrap bg-indigo-800 text-indigo-100">
                       v{rootPackVersion}
                     </span>
                   )}
                   {isRoot && minecraftVersion?.trim() && (
-                    <span className="pillbox bg-fuchsia-800 text-fuchsia-100">
+                    <span className="pillbox shrink-0 whitespace-nowrap bg-fuchsia-800 text-fuchsia-100">
                       MC {minecraftVersion.trim()}
                     </span>
                   )}
                   {isRoot && typeof rootPackFormatVersion === 'number' && Number.isFinite(rootPackFormatVersion) && (
-                    <span className="pillbox bg-purple-800 text-purple-100">
+                    <span className="pillbox shrink-0 whitespace-nowrap bg-purple-800 text-purple-100">
                       {rootPackFormatVersion}
                     </span>
                   )}
