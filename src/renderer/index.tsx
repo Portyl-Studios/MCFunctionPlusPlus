@@ -4726,7 +4726,7 @@ function CodeEditor() {
 
         <div className="footer-element">Made by touchportyl</div>
 
-        <Tooltip content={appUpdateTooltipContent} disabled={!hasPendingAppUpdate}>
+        <Tooltip content={appUpdateTooltipContent}>
           <div
             className={`footer-element ${isManualUpdateCheckInProgress ? "opacity-60 cursor-not-allowed" : "cursor-pointer hover:bg-codemirror-highlight"}`}
             onClick={() => {
@@ -4739,14 +4739,17 @@ function CodeEditor() {
           </div>
         </Tooltip>
 
-        <DropdownMenu
-          label={<>{footerVersionLabel}</>}
-          items={minecraftVersionMenuItems}
-          isOpen={isMinecraftVersionMenuOpen}
-          setIsOpen={setIsMinecraftVersionMenuOpen}
-          buttonClassName="footer-element cursor-pointer hover:bg-codemirror-highlight"
-          horizontalAlign="center"
-        />
+        <Tooltip content="Select MC Version" disabled={isMinecraftVersionMenuOpen}>
+          <DropdownMenu
+            label={<>{footerVersionLabel}</>}
+            items={minecraftVersionMenuItems}
+            isOpen={isMinecraftVersionMenuOpen}
+            setIsOpen={setIsMinecraftVersionMenuOpen}
+            className="h-full"
+            buttonClassName="footer-element footer-button cursor-pointer hover:bg-codemirror-highlight"
+            horizontalAlign="center"
+          />
+        </Tooltip>
 
         <div className="flex-1"/>
 

@@ -85,7 +85,6 @@ export function MenuItems({ items, onItemClick, maxItems = 5 }: MenuItemsProps) 
 
   const handleMenuItemClick = (item: MenuItem, hasChildren: boolean, isDisabled: boolean) => {
     if (hasChildren || isDisabled) return
-
     const didToggle = !!(item.toggleable && item.onToggle)
     if (didToggle) {
       item.onToggle?.(!item.toggled)
@@ -96,7 +95,9 @@ export function MenuItems({ items, onItemClick, maxItems = 5 }: MenuItemsProps) 
       item.onClick?.()
     }
 
-    if (!didToggle && didClick) {
+    // Do not close the menu when the item is toggleable (e.g., a preference toggle).
+    const shouldClose = !item.toggleable
+    if (shouldClose) {
       onItemClick?.()
     }
   }

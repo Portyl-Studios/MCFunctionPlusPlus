@@ -376,7 +376,7 @@ export const useAppUpdate = ({ dialog, modifiedFilesCount, saveAllFiles }: UseAp
   const hasPendingAppUpdate = appUpdateStatus.updateAvailable
   const appUpdateTooltipContent = hasPendingAppUpdate
     ? `New version${appUpdateStatus.latestVersion ? ` (${appUpdateStatus.latestVersion})` : ""} available. Click to check updates.`
-    : ""
+    : "Check for updates"
 
   return {
     appUpdateStatus,

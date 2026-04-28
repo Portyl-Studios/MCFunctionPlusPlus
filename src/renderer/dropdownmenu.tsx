@@ -10,12 +10,13 @@ interface DropdownMenuProps {
   items: MenuItem[]
   isOpen: boolean
   setIsOpen: (open: boolean) => void
+  className?: string
   buttonClassName?: string
   disabled?: boolean
   horizontalAlign?: 'start' | 'center' | 'end'
 }
 
-export function DropdownMenu({ label, items, isOpen, setIsOpen, buttonClassName, disabled, horizontalAlign = 'start' }: DropdownMenuProps) {
+export function DropdownMenu({ label, items, isOpen, setIsOpen, className, buttonClassName, disabled, horizontalAlign = 'start' }: DropdownMenuProps) {
   const menuRef = useRef<HTMLDivElement>(null)
   const triggerRef = useRef<HTMLDivElement>(null)
   const menuLayerRef = useRef<HTMLDivElement>(null)
@@ -97,7 +98,7 @@ export function DropdownMenu({ label, items, isOpen, setIsOpen, buttonClassName,
   }, [isOpen, setIsOpen])
 
   return (
-    <div ref={menuRef} className="relative">
+    <div ref={menuRef} className={`relative ${className ?? ''}`.trim()}>
       <div 
         ref={triggerRef}
         onClick={() => {
