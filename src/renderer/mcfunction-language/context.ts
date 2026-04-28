@@ -600,3 +600,54 @@ export const getMcfunctionContextIndex = (state: EditorState): McfunctionContext
     return EMPTY_CONTEXT_INDEX
   }
 }
+
+/**
+ * Check if two context indexes have the same data content.
+ * Uses deep equality for Set and Map contents instead of reference comparison.
+ */
+export const isMcfunctionContextIndexEqual = (a: McfunctionContextIndex, b: McfunctionContextIndex): boolean => {
+  // Compare Set contents
+  if (a.holders.size !== b.holders.size || ![...a.holders].every(v => b.holders.has(v))) {
+    return false
+  }
+  
+  if (a.objectives.size !== b.objectives.size || ![...a.objectives].every(v => b.objectives.has(v))) {
+    return false
+  }
+  
+  if (a.resourcePaths.size !== b.resourcePaths.size || ![...a.resourcePaths].every(v => b.resourcePaths.has(v))) {
+    return false
+  }
+  
+  if (a.tags.size !== b.tags.size || ![...a.tags].every(v => b.tags.has(v))) {
+    return false
+  }
+  
+  // Compare Map contents (objectivesByHolder)
+  if (a.objectivesByHolder.size !== b.objectivesByHolder.size) {
+    return false
+  }
+  
+  for (const [key, valueSet] of a.objectivesByHolder.entries()) {
+    const otherSet = b.objectivesByHolder.get(key)
+    if (!otherSet || valueSet.size !== otherSet.size || ![...valueSet].every(v => otherSet.has(v))) {
+      return false
+    }
+  }
+  
+  // Compare occurrences array
+  if (a.occurrences.length !== b.occurrences.length) {
+    return false
+  }
+  
+  for (let i = 0; i < a.occurrences.length; i++) {
+    const aOcc = a.occurrences[i]
+    const bOcc = b.occurrences[i]
+    if (aOcc.from !== bOcc.from || aOcc.to !== bOcc.to || aOcc.kind !== bOcc.kind) {
+      return false
+    }
+  }
+  
+  // All data is equal
+  return true
+}

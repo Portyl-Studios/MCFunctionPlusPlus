@@ -13,6 +13,7 @@ import {
   mcfunctionLiveLintingSource,
   mcfunctionContextDiagnosticsSource,
   getMcfunctionContextIndex,
+  isMcfunctionContextIndexEqual,
   getActiveDatapackContextIndex,
 } from "./mcfunction-language"
 
@@ -119,12 +120,13 @@ const LANGUAGE_DEFINITIONS_INTERNAL: EditorLanguageDefinition[] = [
         }
       }, {
         // Context updates are dispatched via state effects without doc changes.
-        // Re-run this linter when the derived context index instance changes.
+        // Re-run this linter only when the actual context data changes (deep equality check).
         needsRefresh: (update) => {
           if (update.docChanged) return true
           const previousContextIndex = getMcfunctionContextIndex(update.startState)
           const currentContextIndex = getMcfunctionContextIndex(update.state)
-          return previousContextIndex !== currentContextIndex
+          // Use deep equality instead of reference comparison
+          return !isMcfunctionContextIndexEqual(previousContextIndex, currentContextIndex)
         },
       }),
       mcfunctionEnterAutocompleteKeymap,

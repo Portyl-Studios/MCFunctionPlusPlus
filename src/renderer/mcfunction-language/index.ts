@@ -12,6 +12,7 @@ export { mcfunctionContextDiagnosticsSource } from "./context-diagnostics"
 export {
   mcfunctionContextExtension,
   getMcfunctionContextIndex,
+  isMcfunctionContextIndexEqual,
   setWorkspaceResourcePathsFromRelativePaths,
   parseMcfunctionContextIndex,
   mergeMcfunctionContextIndexes,
