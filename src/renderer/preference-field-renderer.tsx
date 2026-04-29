@@ -120,7 +120,7 @@ function CheckboxFieldRenderer({
         checked={boolValue}
         onChange={(e) => onChange(e.target.checked)}
         disabled={isReadOnly}
-        className="w-4 h-4 cursor-pointer"
+        className="checkbox"
       />
     </div>
   )

@@ -51,6 +51,20 @@
     scrollbar-gutter: stable both-edges;
   }
 
+  .checkbox {
+    @apply
+      w-4.5 h-4.5 cursor-pointer
+      appearance-none border-2 border-gray-400 rounded
+      checked:bg-sky-600 checked:border-sky-600
+      focus:outline-none focus:ring-2 focus:ring-sky-500/80
+      disabled:opacity-50 disabled:cursor-not-allowed
+      transition-all duration-200
+      relative
+      after:content-[''] after:absolute after:hidden checked:after:block
+      after:left-1 after:top-0.5 after:w-1.5 after:h-2.5
+      after:border-white after:border-b-2 after:border-r-2 after:rotate-45
+  }
+
   .button {
     @apply
       bg-codemirror-600 hover:bg-codemirror-500
