@@ -9,10 +9,12 @@ import React, { useState, useEffect } from 'react'
 import type {
   FieldConfig,
   TextFieldConfig,
+  TextareaFieldConfig,
   NumberFieldConfig,
   CheckboxFieldConfig,
   DropdownFieldConfig,
   DropdownOption,
+  ColorFieldConfig,
 } from './preferences-schema'
 
 interface FieldRendererProps {
@@ -202,7 +204,7 @@ function ColorFieldRenderer({
   onChange,
   disabled,
 }: {
-  config: { allowAlpha?: boolean }
+  config: ColorFieldConfig
   value: unknown
   onChange: (value: string) => void
   disabled?: boolean
@@ -217,6 +219,35 @@ function ColorFieldRenderer({
       onChange={(e) => onChange(e.target.value)}
       disabled={isReadOnly}
       className="w-full h-8 cursor-pointer"
+    />
+  )
+}
+
+/**
+ * Renders a textarea field
+ */
+function TextareaFieldRenderer({
+  config,
+  value,
+  onChange,
+  disabled,
+}: {
+  config: TextareaFieldConfig
+  value: unknown
+  onChange: (value: string) => void
+  disabled?: boolean
+}) {
+  const stringValue = typeof value === 'string' ? value : ''
+  const isReadOnly = !!disabled || !!config.readOnly
+
+  return (
+    <textarea
+      value={stringValue}
+      onChange={(e) => onChange(e.target.value)}
+      placeholder={config.placeholder}
+      readOnly={isReadOnly}
+      rows={config.rows ?? 4}
+      className={`w-full px-2 py-1 bg-codemirror-600 border border-codemirror-500 rounded text-codemirror-100 text-sm font-mono focus:outline-none focus:border-codemirror-400 ${isReadOnly ? 'opacity-80' : ''}`}
     />
   )
 }
@@ -280,8 +311,8 @@ export function PreferenceFieldRenderer({
       )
     case 'textarea':
       return (
-        <TextFieldRenderer
-          config={{ ...config, multiline: true }}
+        <TextareaFieldRenderer
+          config={config}
           value={value}
           onChange={onChange}
           disabled={disabled}
