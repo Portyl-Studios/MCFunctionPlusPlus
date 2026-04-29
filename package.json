@@ -1,7 +1,7 @@
 {
   "name": "mcfunctionplusplus",
   "productName": "MCFunction++",
-  "version": "1.0.15",
+  "version": "1.0.16",
   "description": "MCFunction++ streamlines professional datapack workflows with a unified IDE for authoring, validation, and release-ready packaging.",
   "type": "module",
   "main": "./out/main/main.js",
