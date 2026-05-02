@@ -352,7 +352,7 @@ const highlighter = {
     }
 
     // Node: numeric ranges and numeric literals with optional suffixes.
-    if (stream.match(/^-?\d+\.\.\d+|-?\d+\.\.|\.\.-?\d+|-?\d+(\.\d+)?[bslfdts]?/)) return "number"
+    if (stream.match(/^-?\d+\.\.\d+|-?\d+\.\.|\.\.-?\d+|-?\d+(\.\d+)?[blfdts]?/)) return "number"
 
     // Node group: unquoted bracket key/value identifiers.
     if (state.squareBracketDepth > 0 || state.braceDepth > 0 || state.parenDepth > 0) {
