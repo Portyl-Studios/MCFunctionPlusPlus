@@ -6,7 +6,7 @@
  * automatically render fields based on their configuration.
  */
 
-import React, { useState, useEffect } from 'react'
+import React, { useState } from 'react'
 import type { AppPreferences } from '../main/preferences'
 import type { PreferenceSchema, PreferenceSection } from './preferences-schema'
 import { getSectionFields } from './preferences-schema'

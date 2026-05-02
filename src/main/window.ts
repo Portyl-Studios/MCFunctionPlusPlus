@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, shell } from 'electron'
+import { BrowserWindow, ipcMain, shell } from 'electron'
 import { quitAppRespectingInstallFlag } from './quit-manager'
 import type { ExternalDestination } from './electron-api'
 

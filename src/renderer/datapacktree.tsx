@@ -1551,7 +1551,6 @@ export function DatapackTree({ paths, className, folderName, rootId, rootName, r
       ? externalSelectedFileKey === nodeFileKey
       : effectiveSelectedPath === pathKey
     const isDragOverTarget = !node.isFile && dragOverPathKey === pathKey && dragBlockedPathKey !== pathKey
-    const isDragBlockedTarget = !node.isFile && dragBlockedPathKey === pathKey
     const isDraggingSource = draggingSourcePathKey === pathKey
     const isRoot = depth === 0
     const isDisabledMetaFile = node.isFile && (relativePath || node.name) === 'pack.mcmeta.disabled'

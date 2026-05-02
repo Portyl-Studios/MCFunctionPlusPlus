@@ -14,7 +14,6 @@ import {
   mcfunctionContextDiagnosticsSource,
   getMcfunctionContextIndex,
   isMcfunctionContextIndexEqual,
-  getActiveDatapackContextIndex,
 } from "./mcfunction-language"
 
 export type EditorLanguageId = "mcfunction" | "json" | "markdown" | "plaintext"

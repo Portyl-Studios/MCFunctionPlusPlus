@@ -29,14 +29,6 @@ type DiagnosticParseState = {
   escaped: boolean
 }
 
-const createDiagnosticParseState = (): DiagnosticParseState => ({
-  containerStack: [],
-  quote: null,
-  quoteStartPos: null,
-  quoteRole: null,
-  escaped: false,
-})
-
 const isCommentLine = (text: string) => /^\s*#/.test(text)
 
 type DiagnosticPass = "collect" | "validate"
@@ -289,7 +281,6 @@ export const mcfunctionDiagnosticSource = (view: EditorView, contextIndex?: Mcfu
     }
 
     const tokens = tokenizeCommandWithRanges(textForValidation)
-    const rootCommand = tokens[0] ? normalizeCommandToken(tokens[0].value) : null
     const rootCommandTokens = getRootCommandTokens(tokens)
     const nestedRootCommand = rootCommandTokens[0] ? normalizeCommandToken(rootCommandTokens[0].value) : null
 

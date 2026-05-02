@@ -47,7 +47,6 @@ export const mcfunctionLiveLintingSource = (view: EditorView): Diagnostic[] => {
       continue
     }
 
-    const tokens = tokenizeCommandWithRanges(textForValidation)
     const commandMatch = textForValidation.match(/^\s*\/?([a-z0-9_:-]+)/i)
 
     // Check for macro variable usage without $ prefix
