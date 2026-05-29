@@ -95,7 +95,7 @@ function CollapsiblePreferenceSection({
                     config={config}
                     value={currentValue}
                     onChange={(newValue) => onFieldChange(fieldKey, newValue)}
-                    disabled={config.readOnly}
+                    disabled={false}
                     onAction={onAction}
                   />
                 </div>

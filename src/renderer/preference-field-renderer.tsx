@@ -18,6 +18,13 @@ import type {
   ButtonFieldConfig,
 } from './preferences-schema'
 
+const baseFieldClasses = 'w-full px-2 py-1 bg-codemirror-600 border border-codemirror-500 rounded text-codemirror-100 text-sm font-mono focus:outline-none focus:border-codemirror-400'
+const horizontalScrollClasses = 'whitespace-nowrap overflow-x-auto'
+const readOnlyOpacityClass = 'opacity-80'
+const smallButtonClasses = 'shrink-0 button text-sm'
+const smallBorderButtonClasses = 'shrink-0 button border-codemirror-400 text-sm'
+const actionButtonClasses = 'button border-codemirror-400 text-sm'
+
 interface FieldRendererProps {
   fieldKey: string
   config: FieldConfig
@@ -44,9 +51,10 @@ function TextFieldRenderer({
   const [isBrowsing, setIsBrowsing] = useState(false)
   const stringValue = typeof value === 'string' ? value : ''
   const isReadOnly = !!disabled || !!config.readOnly
+  const isForceDisabled = !!disabled
 
   const handleBrowse = async () => {
-    if (!config.browseAction || isReadOnly || isBrowsing) return
+    if (!config.browseAction || isForceDisabled || isBrowsing) return
 
     try {
       setIsBrowsing(true)
@@ -76,14 +84,14 @@ function TextFieldRenderer({
           readOnly={isReadOnly}
           disabled={isReadOnly}
           rows={4}
-          className={`w-full px-2 py-1 bg-codemirror-600 border border-codemirror-500 rounded text-codemirror-100 text-sm font-mono focus:outline-none focus:border-codemirror-400 ${isReadOnly ? 'opacity-80' : ''}`}
+          className={`${baseFieldClasses} ${isReadOnly ? readOnlyOpacityClass : ''}`}
         />
         {showBrowseButton && (
           <button
             type="button"
             onClick={handleBrowse}
-            disabled={isReadOnly || isBrowsing}
-            className="shrink-0 px-3 py-1 bg-codemirror-500 border border-codemirror-400 rounded text-codemirror-100 text-sm hover:bg-codemirror-400 disabled:opacity-60"
+            disabled={isForceDisabled || isBrowsing}
+            className={smallButtonClasses}
           >
             {isBrowsing ? '...' : browseButtonLabel}
           </button>
@@ -101,14 +109,14 @@ function TextFieldRenderer({
         placeholder={config.placeholder}
         readOnly={isReadOnly}
         disabled={isReadOnly}
-        className={`w-full px-2 py-1 bg-codemirror-600 border border-codemirror-500 rounded text-codemirror-100 text-sm font-mono whitespace-nowrap overflow-x-auto focus:outline-none focus:border-codemirror-400 ${isReadOnly ? 'opacity-80' : ''}`}
+        className={`${baseFieldClasses} ${horizontalScrollClasses} ${isReadOnly ? readOnlyOpacityClass : ''}`}
       />
       {showBrowseButton && (
         <button
           type="button"
           onClick={handleBrowse}
-          disabled={isReadOnly || isBrowsing}
-          className="shrink-0 px-3 py-1 bg-codemirror-500 border border-codemirror-400 rounded text-codemirror-100 text-sm hover:bg-codemirror-400 disabled:opacity-60"
+          disabled={isForceDisabled || isBrowsing}
+          className={smallBorderButtonClasses}
         >
           {isBrowsing ? '...' : browseButtonLabel}
         </button>
@@ -143,7 +151,7 @@ function NumberFieldRenderer({
       max={config.max}
       step={config.step}
       readOnly={isReadOnly}
-      className={`w-full px-2 py-1 bg-codemirror-600 border border-codemirror-500 rounded text-codemirror-100 text-sm font-mono focus:outline-none focus:border-codemirror-400 ${isReadOnly ? 'opacity-80' : ''}`}
+      className={`${baseFieldClasses} ${isReadOnly ? readOnlyOpacityClass : ''}`}
     />
   )
 }
@@ -233,7 +241,7 @@ function DropdownFieldRenderer({
         }
       }}
       disabled={isReadOnly}
-      className="w-full px-2 py-1 bg-codemirror-600 border border-codemirror-500 rounded text-codemirror-100 text-sm font-mono focus:outline-none focus:border-codemirror-400"
+      className={baseFieldClasses}
     >
       <option value="">-- Select --</option>
       {options.map((option) => (
@@ -297,7 +305,7 @@ function TextareaFieldRenderer({
       placeholder={config.placeholder}
       readOnly={isReadOnly}
       rows={config.rows ?? 4}
-      className={`w-full px-2 py-1 bg-codemirror-600 border border-codemirror-500 rounded text-codemirror-100 text-sm font-mono focus:outline-none focus:border-codemirror-400 ${isReadOnly ? 'opacity-80' : ''}`}
+      className={`${baseFieldClasses} ${isReadOnly ? readOnlyOpacityClass : ''}`}
     />
   )
 }
@@ -335,7 +343,7 @@ function ButtonFieldRenderer({
       type="button"
       onClick={handleClick}
       disabled={isReadOnly || isRunning}
-      className="px-3 py-1 bg-codemirror-500 border border-codemirror-400 rounded text-codemirror-100 text-sm hover:bg-codemirror-400 disabled:opacity-60"
+      className={actionButtonClasses}
     >
       {isRunning ? 'Running...' : (config.buttonLabel ?? config.label)}
     </button>
