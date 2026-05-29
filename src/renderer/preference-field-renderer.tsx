@@ -44,6 +44,7 @@ function TextFieldRenderer({
   const [isBrowsing, setIsBrowsing] = useState(false)
   const stringValue = typeof value === 'string' ? value : ''
   const isReadOnly = !!disabled || !!config.readOnly
+  const isEditable = config.editable !== false && !isReadOnly
 
   const handleBrowse = async () => {
     if (!config.browseAction || isReadOnly || isBrowsing) return
@@ -98,8 +99,8 @@ function TextFieldRenderer({
         value={stringValue}
         onChange={(e) => onChange(e.target.value)}
         placeholder={config.placeholder}
-        readOnly={isReadOnly}
-        className={`w-full px-2 py-1 bg-codemirror-600 border border-codemirror-500 rounded text-codemirror-100 text-sm font-mono focus:outline-none focus:border-codemirror-400 ${isReadOnly ? 'opacity-80' : ''}`}
+        readOnly={!isEditable}
+        className={`w-full px-2 py-1 bg-codemirror-600 border border-codemirror-500 rounded text-codemirror-100 text-sm font-mono whitespace-nowrap overflow-x-auto focus:outline-none focus:border-codemirror-400 ${!isEditable ? 'opacity-80' : ''}`}
       />
       {showBrowseButton && (
         <button
