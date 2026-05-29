@@ -24,7 +24,7 @@ export const defaultPreferencesSchema: PreferenceSchema = {
         }),
         javaPath: fieldConfigs.text('Java Path', {
           description: 'Custom path to java.exe used for Minecraft data generation. Leave blank to use java from PATH.',
-          editable: false,
+          readOnly: true,
           browseAction: 'pickJavaExecutable',
           browseButtonLabel: 'Browse',
         }),
