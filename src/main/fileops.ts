@@ -208,6 +208,29 @@ export const registerPickDatapackMetadataFileHandler = (
   })
 }
 
+export const registerPickJavaExecutableHandler = (
+  getMainWindow: () => BrowserWindow | null,
+) => {
+  ipcMain.handle('pick-java-executable', async () => {
+    const mainWindow = getMainWindow()
+    if (!mainWindow) throw new Error('No main window')
+
+    const result = await dialog.showOpenDialog(mainWindow, {
+      properties: ['openFile'],
+      filters: [
+        { name: 'Java Executable', extensions: ['exe'] },
+        { name: 'All Files', extensions: ['*'] },
+      ],
+    })
+
+    if (result.canceled || result.filePaths.length === 0) {
+      return null
+    }
+
+    return result.filePaths[0]
+  })
+}
+
 export const getAllFiles = async (rootDir: string): Promise<string[]> => {
   const results: string[] = []
   const entries = await withFileBusyRetry('List files', () => fs.readdir(rootDir, { withFileTypes: true }))

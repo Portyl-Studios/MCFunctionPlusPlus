@@ -5,7 +5,7 @@ import parcelWatcher from '@parcel/watcher'
 import type { AsyncSubscription } from '@parcel/watcher'
 import { fileURLToPath } from 'url'
 import { registerWindowControlHandlers } from './window'
-import { readFile, registerFileOperationHandlers, registerPickDatapackMetadataFileHandler, validateDatapackFolder } from './fileops'
+import { readFile, registerFileOperationHandlers, registerPickDatapackMetadataFileHandler, registerPickJavaExecutableHandler, validateDatapackFolder } from './fileops'
 import { registerWorkspaceHandlers } from './workspace'
 import workspaceManager from './workspace'
 import { registerDatapackHandlers, datapackManager } from './datapack'
@@ -334,6 +334,7 @@ const setupWindowShortcuts = (window: BrowserWindow): void => {
 }
 
 registerPickDatapackMetadataFileHandler(() => mainWindow)
+registerPickJavaExecutableHandler(() => mainWindow)
 registerWindowControlHandlers(() => mainWindow, {
   onQuitConfirmed: async () => {
     isAppQuitting = true

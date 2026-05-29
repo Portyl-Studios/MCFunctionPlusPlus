@@ -39,31 +39,77 @@ function TextFieldRenderer({
   onChange: (value: string) => void
   disabled?: boolean
 }) {
+  const [isBrowsing, setIsBrowsing] = useState(false)
   const stringValue = typeof value === 'string' ? value : ''
   const isReadOnly = !!disabled || !!config.readOnly
 
+  const handleBrowse = async () => {
+    if (!config.browseAction || isReadOnly || isBrowsing) return
+
+    try {
+      setIsBrowsing(true)
+      if (config.browseAction === 'pickJavaExecutable') {
+        const selectedPath = await window.electron.pickJavaExecutable()
+        if (typeof selectedPath === 'string' && selectedPath.trim()) {
+          onChange(selectedPath.trim())
+        }
+      }
+    } catch (error) {
+      console.error('Failed to browse for path:', error)
+    } finally {
+      setIsBrowsing(false)
+    }
+  }
+
+  const showBrowseButton = !!config.browseAction
+  const browseButtonLabel = config.browseButtonLabel ?? 'Browse'
+
   if (config.multiline) {
     return (
-      <textarea
-        value={stringValue}
-        onChange={(e) => onChange(e.target.value)}
-        placeholder={config.placeholder}
-        readOnly={isReadOnly}
-        rows={4}
-        className={`w-full px-2 py-1 bg-codemirror-600 border border-codemirror-500 rounded text-codemirror-100 text-sm font-mono focus:outline-none focus:border-codemirror-400 ${isReadOnly ? 'opacity-80' : ''}`}
-      />
+      <div className="flex gap-2">
+        <textarea
+          value={stringValue}
+          onChange={(e) => onChange(e.target.value)}
+          placeholder={config.placeholder}
+          readOnly={isReadOnly}
+          rows={4}
+          className={`w-full px-2 py-1 bg-codemirror-600 border border-codemirror-500 rounded text-codemirror-100 text-sm font-mono focus:outline-none focus:border-codemirror-400 ${isReadOnly ? 'opacity-80' : ''}`}
+        />
+        {showBrowseButton && (
+          <button
+            type="button"
+            onClick={handleBrowse}
+            disabled={isReadOnly || isBrowsing}
+            className="shrink-0 px-3 py-1 bg-codemirror-500 border border-codemirror-400 rounded text-codemirror-100 text-sm hover:bg-codemirror-400 disabled:opacity-60"
+          >
+            {isBrowsing ? '...' : browseButtonLabel}
+          </button>
+        )}
+      </div>
     )
   }
 
   return (
-    <input
-      type="text"
-      value={stringValue}
-      onChange={(e) => onChange(e.target.value)}
-      placeholder={config.placeholder}
-      readOnly={isReadOnly}
-      className={`w-full px-2 py-1 bg-codemirror-600 border border-codemirror-500 rounded text-codemirror-100 text-sm font-mono focus:outline-none focus:border-codemirror-400 ${isReadOnly ? 'opacity-80' : ''}`}
-    />
+    <div className="flex gap-2">
+      <input
+        type="text"
+        value={stringValue}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder={config.placeholder}
+        readOnly={isReadOnly}
+        className={`w-full px-2 py-1 bg-codemirror-600 border border-codemirror-500 rounded text-codemirror-100 text-sm font-mono focus:outline-none focus:border-codemirror-400 ${isReadOnly ? 'opacity-80' : ''}`}
+      />
+      {showBrowseButton && (
+        <button
+          type="button"
+          onClick={handleBrowse}
+          disabled={isReadOnly || isBrowsing}
+          className="shrink-0 px-3 py-1 bg-codemirror-500 border border-codemirror-400 rounded text-codemirror-100 text-sm hover:bg-codemirror-400 disabled:opacity-60"
+        >
+          {isBrowsing ? '...' : browseButtonLabel}
+        </button>
+      )}
+    </div>
   )
 }
 

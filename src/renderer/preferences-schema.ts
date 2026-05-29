@@ -27,6 +27,8 @@ export interface TextFieldConfig extends BaseFieldConfig {
   type: 'text'
   placeholder?: string
   multiline?: boolean
+  browseAction?: 'pickJavaExecutable'
+  browseButtonLabel?: string
 }
 
 export interface NumberFieldConfig extends BaseFieldConfig {

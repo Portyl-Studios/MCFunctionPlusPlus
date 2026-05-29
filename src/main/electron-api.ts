@@ -92,6 +92,7 @@ export interface ElectronAPI {
   quit: () => Promise<void>
   quitCancelled: () => Promise<void>
   pickDatapackMetadataFile: () => Promise<string | null>
+  pickJavaExecutable: () => Promise<string | null>
   writeFile: (directory: string, filename: string, contents: string) => Promise<string>
   saveFile: (directory: string, relativePath: string, contents: string) => Promise<string>
   readFile: (directory: string, filePath: string) => Promise<string>

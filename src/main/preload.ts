@@ -48,6 +48,9 @@ const electronApi: ElectronAPI = {
   pickDatapackMetadataFile: () => {
     return ipcRenderer.invoke('pick-datapack-metadata-file')
   },
+  pickJavaExecutable: () => {
+    return ipcRenderer.invoke('pick-java-executable')
+  },
   writeFile: (directory: string, filename: string, contents: string) => {
     return ipcRenderer.invoke('write-file', { directory, filename, contents })
   },

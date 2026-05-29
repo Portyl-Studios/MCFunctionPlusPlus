@@ -6,6 +6,7 @@ import { Readable } from 'stream'
 import { pipeline } from 'stream/promises'
 import { readFile } from './fileops'
 import { compareDottedVersions, isDottedNumericVersion } from '../shared/utils'
+import { preferencesManager } from './preferences'
 
 const MINECRAFT_DATA_CACHE_DIR = 'Minecraft Data Cache'
 const MOJANG_VERSION_MANIFEST_URL = 'https://piston-meta.mojang.com/mc/game/version_manifest_v2.json'
@@ -328,9 +329,28 @@ const parseJavaMajorVersion = (rawOutput: string): number | null => {
   return Number.isFinite(genericMajor) ? genericMajor : null
 }
 
+const normalizeJavaExecutablePath = (value: string): string => {
+  const trimmed = value.trim()
+  if ((trimmed.startsWith('"') && trimmed.endsWith('"')) || (trimmed.startsWith("'") && trimmed.endsWith("'"))) {
+    return trimmed.slice(1, -1).trim()
+  }
+
+  return trimmed
+}
+
+const getConfiguredJavaExecutable = async (): Promise<string> => {
+  const minecraftPrefs = await preferencesManager.get('minecraft')
+  const configuredPath = typeof minecraftPrefs?.javaPath === 'string'
+    ? normalizeJavaExecutablePath(minecraftPrefs.javaPath)
+    : ''
+
+  return configuredPath || 'java'
+}
+
 const getJavaRuntimeInfo = async (): Promise<JavaRuntimeInfo> => {
+  const javaExecutable = await getConfiguredJavaExecutable()
   return await new Promise<JavaRuntimeInfo>((resolve) => {
-    const child = spawn('java', ['-version'], {
+    const child = spawn(javaExecutable, ['-version'], {
       windowsHide: true,
       stdio: ['ignore', 'pipe', 'pipe'],
     })
@@ -350,7 +370,7 @@ const getJavaRuntimeInfo = async (): Promise<JavaRuntimeInfo> => {
         resolve({
           found: false,
           major: null,
-          output: 'java executable was not found in PATH',
+          output: `java executable was not found: ${javaExecutable}`,
         })
         return
       }
@@ -424,8 +444,9 @@ const downloadToFile = async (url: string, targetPath: string, operation: Ensure
 
 const runJavaReports = async (jarPath: string, workingDirectory: string, operation: EnsureOperation): Promise<void> => {
   throwIfCancelled(operation)
+  const javaExecutable = await getConfiguredJavaExecutable()
   await new Promise<void>((resolve, reject) => {
-    const child = spawn('java', ['-DbundlerMainClass=net.minecraft.data.Main', '-jar', jarPath, '--reports'], {
+    const child = spawn(javaExecutable, ['-DbundlerMainClass=net.minecraft.data.Main', '-jar', jarPath, '--reports'], {
       cwd: workingDirectory,
       windowsHide: true,
       stdio: ['ignore', 'pipe', 'pipe'],
@@ -526,8 +547,9 @@ const ensureMinecraftDataInternal = async (
   const javaRuntime = await getJavaRuntimeInfo()
   throwIfCancelled(operation)
   if (!javaRuntime.found) {
+    const javaExecutable = await getConfiguredJavaExecutable()
     throw new Error(
-      `Java was not found in PATH while preparing Minecraft ${normalizedVersion}. Install Java and add it to PATH, then retry.`
+      `Java was not found while preparing Minecraft ${normalizedVersion}. Configure a valid Java path (${javaExecutable}) or install Java and retry.`
     )
   }
 

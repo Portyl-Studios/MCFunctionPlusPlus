@@ -36,6 +36,7 @@ interface WorkspacePreferences {
 interface MinecraftPreferences {
   hideSnapshotsInVersionMenu?: boolean
   defaultVersion?: string
+  javaPath?: string
 }
 
 interface AppPreferences {
@@ -79,6 +80,7 @@ const createDefaultWorkspacePreferences = (): WorkspacePreferences => ({
 const createDefaultMinecraftPreferences = (): MinecraftPreferences => ({
   hideSnapshotsInVersionMenu: false,
   defaultVersion: '',
+  javaPath: '',
 })
 
 const createDefaultAppPreferences = (): AppPreferences => ({
@@ -188,6 +190,9 @@ const sanitizeMinecraftPreferences = (value: unknown): MinecraftPreferences => {
     defaultVersion: typeof value.defaultVersion === 'string' && isDottedNumericVersion(value.defaultVersion)
       ? value.defaultVersion
       : defaults.defaultVersion,
+    javaPath: typeof value.javaPath === 'string'
+      ? value.javaPath.trim()
+      : defaults.javaPath,
   }
 }
 
