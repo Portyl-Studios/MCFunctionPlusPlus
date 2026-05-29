@@ -28,6 +28,11 @@ export const defaultPreferencesSchema: PreferenceSchema = {
           browseAction: 'pickJavaExecutable',
           browseButtonLabel: 'Browse',
         }),
+        retryMinecraftDataBootstrap: fieldConfigs.button('Retry Minecraft Data Sync', {
+          description: 'Run the Minecraft data preparation flow again after changing Java settings.',
+          buttonLabel: 'Run Again',
+          actionId: 'retryMinecraftDataBootstrap',
+        }),
       },
     },
     {

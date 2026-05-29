@@ -400,7 +400,7 @@ const classFileVersionToJavaMajor = (classFileVersion: number): number => {
 const formatJavaRuntimeError = (error: unknown, version: string, javaRuntime: JavaRuntimeInfo): Error => {
   if ((error as NodeJS.ErrnoException)?.code === 'ENOENT') {
     return new Error(
-      `Java was not found in PATH while preparing Minecraft ${version}. Install Java and add it to PATH, then retry.`
+      `Java was not found while preparing Minecraft ${version}. Set the Java Path preference in Preferences > Minecraft to the full java.exe path, or install Java and retry.`
     )
   }
 
@@ -549,7 +549,7 @@ const ensureMinecraftDataInternal = async (
   if (!javaRuntime.found) {
     const javaExecutable = await getConfiguredJavaExecutable()
     throw new Error(
-      `Java was not found while preparing Minecraft ${normalizedVersion}. Configure a valid Java path (${javaExecutable}) or install Java and retry.`
+      `Java was not found while preparing Minecraft ${normalizedVersion}. Set the Java Path preference in Preferences > Minecraft to the full java.exe path (${javaExecutable}), or install Java and retry.`
     )
   }
 

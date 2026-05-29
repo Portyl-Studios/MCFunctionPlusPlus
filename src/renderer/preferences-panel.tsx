@@ -16,6 +16,7 @@ interface PreferencesPanelProps {
   preferences: AppPreferences
   schema: PreferenceSchema
   onPreferenceChange: (sectionId: string, fieldKey: string, value: unknown) => void
+  onPreferenceAction?: (actionId: string) => void | Promise<void>
   isLoading?: boolean
 }
 
@@ -23,6 +24,7 @@ interface CollapsibleSectionProps {
   section: PreferenceSection
   preferences: AppPreferences
   onFieldChange: (fieldKey: string, value: unknown) => void
+  onAction?: (actionId: string) => void | Promise<void>
 }
 
 /**
@@ -32,6 +34,7 @@ function CollapsiblePreferenceSection({
   section,
   preferences,
   onFieldChange,
+  onAction,
 }: CollapsibleSectionProps) {
   const [isExpanded, setIsExpanded] = useState(true)
   const fields = getSectionFields(section)
@@ -93,6 +96,7 @@ function CollapsiblePreferenceSection({
                     value={currentValue}
                     onChange={(newValue) => onFieldChange(fieldKey, newValue)}
                     disabled={config.readOnly}
+                    onAction={onAction}
                   />
                 </div>
               </div>
@@ -111,6 +115,7 @@ export function PreferencesPanel({
   preferences,
   schema,
   onPreferenceChange,
+  onPreferenceAction,
   isLoading,
 }: PreferencesPanelProps) {
   if (isLoading) {
@@ -133,6 +138,7 @@ export function PreferencesPanel({
             onFieldChange={(fieldKey, value) =>
               onPreferenceChange(section.id, fieldKey, value)
             }
+            onAction={onPreferenceAction}
           />
         ))}
       </div>

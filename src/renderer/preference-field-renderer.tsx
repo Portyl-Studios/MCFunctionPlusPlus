@@ -15,6 +15,7 @@ import type {
   DropdownFieldConfig,
   DropdownOption,
   ColorFieldConfig,
+  ButtonFieldConfig,
 } from './preferences-schema'
 
 interface FieldRendererProps {
@@ -23,6 +24,7 @@ interface FieldRendererProps {
   value: unknown
   onChange: (value: unknown) => void
   disabled?: boolean
+  onAction?: (actionId: string) => void | Promise<void>
 }
 
 /**
@@ -299,6 +301,46 @@ function TextareaFieldRenderer({
 }
 
 /**
+ * Renders a button field
+ */
+function ButtonFieldRenderer({
+  config,
+  disabled,
+  onAction,
+}: {
+  config: ButtonFieldConfig
+  disabled?: boolean
+  onAction?: (actionId: string) => void | Promise<void>
+}) {
+  const [isRunning, setIsRunning] = useState(false)
+  const isReadOnly = !!disabled || !!config.readOnly
+
+  const handleClick = async () => {
+    if (!onAction || isReadOnly || isRunning) return
+
+    try {
+      setIsRunning(true)
+      await onAction(config.actionId)
+    } catch (error) {
+      console.error('Failed to run preference action:', error)
+    } finally {
+      setIsRunning(false)
+    }
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={handleClick}
+      disabled={isReadOnly || isRunning}
+      className="px-3 py-1 bg-codemirror-500 border border-codemirror-400 rounded text-codemirror-100 text-sm hover:bg-codemirror-400 disabled:opacity-60"
+    >
+      {isRunning ? 'Running...' : (config.buttonLabel ?? config.label)}
+    </button>
+  )
+}
+
+/**
  * Main field renderer that dispatches to specific renderers based on field type
  */
 export function PreferenceFieldRenderer({
@@ -307,6 +349,7 @@ export function PreferenceFieldRenderer({
   value,
   onChange,
   disabled,
+  onAction,
 }: FieldRendererProps) {
   switch (config.type) {
     case 'text':
@@ -362,6 +405,14 @@ export function PreferenceFieldRenderer({
           value={value}
           onChange={onChange}
           disabled={disabled}
+        />
+      )
+    case 'button':
+      return (
+        <ButtonFieldRenderer
+          config={config}
+          disabled={disabled}
+          onAction={onAction}
         />
       )
     default:

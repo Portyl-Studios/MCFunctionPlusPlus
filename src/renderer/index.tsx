@@ -2445,7 +2445,7 @@ function CodeEditor() {
     setMinecraftDataVersion((currentVersion) => currentVersion === nextVersion ? currentVersion : nextVersion)
   }, [activeFile, datapacks])
 
-  useEffect(() => {
+  const runMinecraftDataBootstrap = async () => {
     const runId = minecraftDataBootstrapRunIdRef.current + 1
     minecraftDataBootstrapRunIdRef.current = runId
     setMinecraftDataBootstrapTargetVersion(minecraftDataVersion)
@@ -2453,40 +2453,49 @@ function CodeEditor() {
     setMinecraftDataBootstrapProgressMessage(`Checking local cache for Minecraft ${minecraftDataVersion}...`)
     setIsMinecraftDataBootstrapOpen(true)
 
-    void (async () => {
-      try {
-        await window.electron.minecraftDataEnsure(minecraftDataVersion)
-        const schemaLoaded = await loadMcfunctionCommandSchema(minecraftDataVersion)
-        if (!schemaLoaded) {
-          throw new Error(`Failed to load command schema for Minecraft ${minecraftDataVersion}.`)
-        }
-        await loadMinecraftData(minecraftDataVersion)
-        if (lastShownJavaVersionErrorRef.current) {
-          lastShownJavaVersionErrorRef.current = null
-        }
-      } catch (error) {
-        const errorMessage = error instanceof Error ? error.message : String(error)
-        const errorSignature = `${minecraftDataVersion}|${errorMessage}`
-        if (lastShownJavaVersionErrorRef.current !== errorSignature) {
-          lastShownJavaVersionErrorRef.current = errorSignature
-          dialog.openDialog({
-            title: 'Minecraft Version Preparation Failed',
-            message: errorMessage,
-            buttons: [
-              {
-                label: 'OK',
-                onClick: () => undefined,
-              },
-            ],
-          })
-        }
-        console.error("Failed to load mcfunction command schema:", error)
-      } finally {
-        if (minecraftDataBootstrapRunIdRef.current === runId) {
-          setIsMinecraftDataBootstrapOpen(false)
-        }
+    try {
+      await window.electron.minecraftDataEnsure(minecraftDataVersion)
+      const schemaLoaded = await loadMcfunctionCommandSchema(minecraftDataVersion)
+      if (!schemaLoaded) {
+        throw new Error(`Failed to load command schema for Minecraft ${minecraftDataVersion}.`)
       }
-    })()
+      await loadMinecraftData(minecraftDataVersion)
+      if (lastShownJavaVersionErrorRef.current) {
+        lastShownJavaVersionErrorRef.current = null
+      }
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error)
+      const errorSignature = `${minecraftDataVersion}|${errorMessage}`
+      if (lastShownJavaVersionErrorRef.current !== errorSignature) {
+        lastShownJavaVersionErrorRef.current = errorSignature
+        dialog.openDialog({
+          title: 'Minecraft Version Preparation Failed',
+          message: errorMessage,
+          buttons: [
+            {
+              label: 'OK',
+              onClick: () => undefined,
+            },
+          ],
+        })
+      }
+      console.error("Failed to load mcfunction command schema:", error)
+    } finally {
+      if (minecraftDataBootstrapRunIdRef.current === runId) {
+        setIsMinecraftDataBootstrapOpen(false)
+      }
+    }
+  }
+
+  const handlePreferenceAction = async (actionId: string) => {
+    if (actionId === 'retryMinecraftDataBootstrap') {
+      if (isMinecraftDataBootstrapOpen) return
+      await runMinecraftDataBootstrap()
+    }
+  }
+
+  useEffect(() => {
+    void runMinecraftDataBootstrap()
   }, [minecraftDataVersion])
 
   useEffect(() => {
@@ -4524,6 +4533,7 @@ function CodeEditor() {
           preferences={appPreferences}
           schema={defaultPreferencesSchema}
           onPreferenceChange={handlePreferenceChange}
+          onPreferenceAction={handlePreferenceAction}
           isLoading={isPreferencesLoading}
         />
       )

@@ -13,6 +13,7 @@ export type PreferenceFieldType =
   | 'select'
   | 'color'
   | 'textarea'
+  | 'button'
   // Add more types as needed
 
 export interface BaseFieldConfig {
@@ -66,6 +67,12 @@ export interface TextareaFieldConfig extends BaseFieldConfig {
   placeholder?: string
 }
 
+export interface ButtonFieldConfig extends BaseFieldConfig {
+  type: 'button'
+  buttonLabel?: string
+  actionId: string
+}
+
 export type FieldConfig = 
   | TextFieldConfig
   | NumberFieldConfig
@@ -73,6 +80,7 @@ export type FieldConfig =
   | DropdownFieldConfig
   | ColorFieldConfig
   | TextareaFieldConfig
+  | ButtonFieldConfig
 
 export interface PreferenceSection {
   id: string
@@ -172,6 +180,12 @@ export const fieldConfigs = {
 
   textarea: (label: string, config?: Partial<TextareaFieldConfig>): TextareaFieldConfig => ({
     type: 'textarea',
+    label,
+    ...config,
+  }),
+
+  button: (label: string, config: Omit<Partial<ButtonFieldConfig>, 'actionId'> & { actionId: string }): ButtonFieldConfig => ({
+    type: 'button',
     label,
     ...config,
   }),
