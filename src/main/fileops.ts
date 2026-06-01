@@ -201,6 +201,74 @@ const parseJavaVersionText = (rawOutput: string): string | null => {
   return genericMatch?.[1] ?? null
 }
 
+const KNOWN_JAVA_VENDOR_KEYWORDS = [
+  'oracle',
+  'openjdk',
+  'adoptopenjdk',
+  'temurin',
+  'azul',
+  'amazon',
+  'microsoft',
+  'red hat',
+  'redhat',
+  'bellsoft',
+  'eclipse',
+]
+
+const runAuthenticodeCheck = async (executablePath: string): Promise<{ status: string; subject: string }> => {
+  if (process.platform !== 'win32') {
+    return { status: 'UnsupportedPlatform', subject: '' }
+  }
+
+  const escaped = executablePath.replace(/'/g, "''")
+  const script = `try { $s = Get-AuthenticodeSignature -FilePath '${escaped}'; $status = $s.Status.ToString(); $sub = if ($s.SignerCertificate) { $s.SignerCertificate.Subject } else { '' }; Write-Output $status; Write-Output $sub } catch { Write-Output 'Error'; Write-Output $_.Exception.Message }`
+
+  return await new Promise((resolve) => {
+    const child = spawn('powershell.exe', ['-NoProfile', '-Command', script], { windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] })
+    let out = ''
+    child.stdout.on('data', (c) => { out += c.toString() })
+    child.stderr.on('data', (c) => { out += c.toString() })
+    child.on('error', () => resolve({ status: 'Error', subject: '' }))
+    child.on('close', () => {
+      const lines = out.split(/\r?\n/).map((l) => l.trim()).filter(Boolean)
+      const status = lines[0] ?? 'Unknown'
+      const subject = lines[1] ?? ''
+      resolve({ status, subject })
+    })
+  })
+}
+
+  const resolveExecutablePath = async (cmd: string): Promise<string | null> => {
+    if (!cmd) return null
+    if (path.isAbsolute(cmd)) return cmd
+
+    if (process.platform === 'win32') {
+      return await new Promise((resolve) => {
+        const child = spawn('where', [cmd], { windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] })
+        let out = ''
+        child.stdout.on('data', (c) => { out += c.toString() })
+        child.stderr.on('data', (c) => { out += c.toString() })
+        child.on('error', () => resolve(null))
+        child.on('close', () => {
+          const lines = out.split(/\r?\n/).map((l) => l.trim()).filter(Boolean)
+          resolve(lines[0] ?? null)
+        })
+      })
+    }
+
+    return await new Promise((resolve) => {
+      const child = spawn('which', [cmd], { windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] })
+      let out = ''
+      child.stdout.on('data', (c) => { out += c.toString() })
+      child.stderr.on('data', (c) => { out += c.toString() })
+      child.on('error', () => resolve(null))
+      child.on('close', () => {
+        const lines = out.split(/\r?\n/).map((l) => l.trim()).filter(Boolean)
+        resolve(lines[0] ?? null)
+      })
+    })
+  }
+
 const getJavaBrowseDefaultPath = (): string => {
   const rootsToCheck = [
     'C:\\',
@@ -284,9 +352,31 @@ export const registerValidateJavaExecutableHandler = () => {
         versionText: null,
       } satisfies JavaExecutableValidationResult
     }
-
     const executablePath = javaExecutable.trim()
 
+    // Resolve the actual executable path (handles when `java` is a PATH command)
+    const resolved = await resolveExecutablePath(executablePath)
+    const executableForSig = resolved ?? executablePath
+
+    // Validate authenticode signature and publisher on Windows when possible
+    const sig = await runAuthenticodeCheck(executableForSig)
+
+    // If platform doesn't support signature verification, continue to run version check.
+    if (sig.status === 'UnsupportedPlatform') {
+      // fallthrough to version check
+    } else {
+      if (sig.status !== 'Valid') {
+        return { valid: false, output: `Signature status: ${sig.status}`, versionText: null }
+      }
+
+      const subjectLower = (sig.subject || '').toLowerCase()
+      const matchedVendor = KNOWN_JAVA_VENDOR_KEYWORDS.find((k) => subjectLower.includes(k))
+      if (!matchedVendor) {
+        return { valid: false, output: `Unrecognized publisher: ${sig.subject || '<none>'}`, versionText: null }
+      }
+    }
+
+    // Run java -version after signature checks
     return await new Promise<JavaExecutableValidationResult>((resolve) => {
       const child = spawn(executablePath, ['-version'], {
         windowsHide: true,
