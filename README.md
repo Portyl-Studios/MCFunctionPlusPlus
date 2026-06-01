@@ -18,22 +18,6 @@ MCFunction++ is built for developers who want a faster, more reliable Minecraft 
 - Desktop and web experiences built on a shared core workflow.
 - Release-ready Windows installer distribution with auto-update support.
 
-### App Requirement: Java
-
-MCFunction++ now requires Java at runtime for automatic Minecraft data preparation.
-
-- Java must be installed and available in your system `PATH`.
-- If Java is missing or too old, Minecraft version preparation will fail in-app.
-- Installing a modern Java runtime (recommended: Java 25+) is strongly suggested.
-
-### How to Use It
-
-1. Install Java and ensure `java` is available in `PATH`.
-2. Install the Windows desktop app from the latest GitHub release, or run it from source.
-3. Open or create a datapack workspace.
-4. Author datapack files, use validation feedback, and package for release.
-5. Receive update checks once per app launch when using packaged desktop builds.
-
 ### Installing from GitHub Releases
 
 1. Open the latest release in `Portyl-Studios/MCFunctionPlusPlus`.
@@ -42,6 +26,40 @@ MCFunction++ now requires Java at runtime for automatic Minecraft data preparati
 4. Launch MCFunction++ after installation.
 
 For normal installation, you only need the `mcfunctionplusplus-setup-<version>.exe` file.
+
+### App Requirement: Java
+
+MCFunction++ requires Java at runtime for automatic Minecraft data preparation.
+
+- Java must be installed and usable either through system `PATH` (`java`) or by setting an explicit Java executable path in app preferences.
+- If Java is missing or too old, Minecraft version preparation will fail in-app.
+- Installing a modern Java runtime (recommended: Java 26+) is strongly suggested.
+
+### Java Executable Setup
+
+MCFunction++ supports two Java executable setups.
+
+#### Option A: Use `java` from PATH (recommended)
+
+- Leave Java Path empty in preferences.
+- The app uses `java` from your system `PATH`.
+- MCFunction++ resolves where `java` points and validates that executable before Java workflows run.
+
+#### Option B: Use an explicit executable path
+
+- Set Java Path to a full path such as `C:\Program Files\Java\jdk-26\bin\java.exe`.
+- MCFunction++ validates that exact executable before Java workflows run.
+
+#### Quick PATH Setup (New Java Install, Windows)
+
+1. Install a JDK (example install location: `C:\Program Files\Java\jdk-26`).
+2. Open Windows Search, find `Edit the system environment variables`, then open `Environment Variables...`.
+3. Under `System variables`, create `JAVA_HOME` with value `C:\Program Files\Java\jdk-26`.
+4. Edit `Path` and add `%JAVA_HOME%\bin`.
+5. Open a new terminal and run `java --version`.
+6. Optional: run `where java` to confirm which executable is being used.
+
+If `java --version` fails, fix PATH/JAVA_HOME first or switch to Option B with an explicit `java.exe` path in app preferences.
 
 ### Desktop Auto-Update (NSIS)
 
