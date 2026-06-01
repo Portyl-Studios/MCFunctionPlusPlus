@@ -71,12 +71,17 @@ function TextFieldRenderer({
     }
   }
 
+  const handleClear = () => {
+    if (isForceDisabled || isBrowsing) return
+    onChange('')
+  }
+
   const showBrowseButton = !!config.browseAction
   const browseButtonLabel = config.browseButtonLabel ?? 'Browse'
 
   if (config.multiline) {
     return (
-      <div className="flex gap-2">
+      <div className="flex flex-col gap-2">
         <textarea
           value={stringValue}
           onChange={(e) => onChange(e.target.value)}
@@ -87,21 +92,31 @@ function TextFieldRenderer({
           className={`${baseFieldClasses} ${isReadOnly ? readOnlyOpacityClass : ''}`}
         />
         {showBrowseButton && (
-          <button
-            type="button"
-            onClick={handleBrowse}
-            disabled={isForceDisabled || isBrowsing}
-            className={smallButtonClasses}
-          >
-            {isBrowsing ? '...' : browseButtonLabel}
-          </button>
+          <div className="flex gap-2 justify-start">
+            <button
+              type="button"
+              onClick={handleBrowse}
+              disabled={isForceDisabled || isBrowsing}
+              className={smallButtonClasses}
+            >
+              {isBrowsing ? '...' : browseButtonLabel}
+            </button>
+            <button
+              type="button"
+              onClick={handleClear}
+              disabled={isForceDisabled || isBrowsing || stringValue === ''}
+              className={smallButtonClasses}
+            >
+              Clear
+            </button>
+          </div>
         )}
       </div>
     )
   }
 
   return (
-    <div className="flex gap-2">
+    <div className="flex flex-col gap-2">
       <input
         type="text"
         value={stringValue}
@@ -112,14 +127,24 @@ function TextFieldRenderer({
         className={`${baseFieldClasses} ${horizontalScrollClasses} ${isReadOnly ? readOnlyOpacityClass : ''}`}
       />
       {showBrowseButton && (
-        <button
-          type="button"
-          onClick={handleBrowse}
-          disabled={isForceDisabled || isBrowsing}
-          className={smallBorderButtonClasses}
-        >
-          {isBrowsing ? '...' : browseButtonLabel}
-        </button>
+        <div className="flex gap-2 justify-start">
+          <button
+            type="button"
+            onClick={handleBrowse}
+            disabled={isForceDisabled || isBrowsing}
+            className={smallBorderButtonClasses}
+          >
+            {isBrowsing ? '...' : browseButtonLabel}
+          </button>
+          <button
+            type="button"
+            onClick={handleClear}
+            disabled={isForceDisabled || isBrowsing || stringValue === ''}
+            className={smallBorderButtonClasses}
+          >
+            Clear
+          </button>
+        </div>
       )}
     </div>
   )
