@@ -17,6 +17,7 @@ import type {
   ColorFieldConfig,
   ButtonFieldConfig,
 } from './preferences-schema'
+import { showToastEvent } from './overlays/toast-events'
 
 const baseFieldClasses = 'w-full px-2 py-1 bg-codemirror-600 border border-codemirror-500 rounded text-codemirror-100 text-sm font-mono focus:outline-none focus:border-codemirror-400'
 const horizontalScrollClasses = 'whitespace-nowrap overflow-x-auto'
@@ -53,6 +54,19 @@ function TextFieldRenderer({
   const isReadOnly = !!disabled || !!config.readOnly
   const isForceDisabled = !!disabled
 
+  const validateAndToastJavaExecutable = async (javaExecutable: string, onValid?: () => void) => {
+    const validation = await window.electron.validateJavaExecutable(javaExecutable)
+    if (validation.valid) {
+      onValid?.()
+      const versionLabel = validation.versionText ? `Java ${validation.versionText}` : 'Java (version unknown)'
+      showToastEvent(`Connected ${versionLabel}`)
+      return
+    }
+
+    const errorMessage = validation.output || 'Unknown error'
+    showToastEvent(`Invalid Java executable: ${errorMessage}`)
+  }
+
   const handleBrowse = async () => {
     if (!config.browseAction || isForceDisabled || isBrowsing) return
 
@@ -60,20 +74,32 @@ function TextFieldRenderer({
       setIsBrowsing(true)
       if (config.browseAction === 'pickJavaExecutable') {
         const selectedPath = await window.electron.pickJavaExecutable()
-        if (typeof selectedPath === 'string' && selectedPath.trim()) {
-          onChange(selectedPath.trim())
+        const trimmedPath = typeof selectedPath === 'string' ? selectedPath.trim() : ''
+        if (trimmedPath) {
+          await validateAndToastJavaExecutable(trimmedPath, () => onChange(trimmedPath))
         }
       }
     } catch (error) {
       console.error('Failed to browse for path:', error)
+      showToastEvent(`Invalid Java executable: ${error instanceof Error ? error.message : 'Unknown error'}`)
     } finally {
       setIsBrowsing(false)
     }
   }
 
-  const handleClear = () => {
+  const handleClear = async () => {
     if (isForceDisabled || isBrowsing) return
-    onChange('')
+
+    try {
+      setIsBrowsing(true)
+      onChange('')
+      await validateAndToastJavaExecutable('java')
+    } catch (error) {
+      console.error('Failed to validate default java command:', error)
+      showToastEvent(`Invalid Java executable: ${error instanceof Error ? error.message : 'Unknown error'}`)
+    } finally {
+      setIsBrowsing(false)
+    }
   }
 
   const showBrowseButton = !!config.browseAction

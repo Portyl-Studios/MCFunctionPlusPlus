@@ -51,6 +51,9 @@ const electronApi: ElectronAPI = {
   pickJavaExecutable: () => {
     return ipcRenderer.invoke('pick-java-executable')
   },
+  validateJavaExecutable: (javaExecutable: string) => {
+    return ipcRenderer.invoke('validate-java-executable', javaExecutable)
+  },
   writeFile: (directory: string, filename: string, contents: string) => {
     return ipcRenderer.invoke('write-file', { directory, filename, contents })
   },

@@ -1,5 +1,6 @@
 import { BrowserWindow, dialog, ipcMain, shell } from 'electron'
-import { promises as fs } from 'fs'
+import { spawn } from 'child_process'
+import fs, { promises as fsPromises } from 'fs'
 import path from 'path'
 import { wait } from './utils'
 
@@ -184,6 +185,48 @@ type FileOperationHandlerOptions = {
   getAllowedRoots?: () => string[]
 }
 
+export type JavaExecutableValidationResult = {
+  valid: boolean
+  output: string
+  versionText: string | null
+}
+
+const parseJavaVersionText = (rawOutput: string): string | null => {
+  const versionQuotedMatch = rawOutput.match(/version\s+"([^"]+)"/i)
+  if (versionQuotedMatch?.[1]) {
+    return versionQuotedMatch[1]
+  }
+
+  const genericMatch = rawOutput.match(/\b(?:openjdk|java)\s+(\d+(?:\.\d+)*)/i)
+  return genericMatch?.[1] ?? null
+}
+
+const getJavaBrowseDefaultPath = (): string => {
+  const rootsToCheck = [
+    'C:\\',
+    path.parse(process.cwd()).root,
+    path.parse(path.resolve('.')).root,
+  ].filter((root, index, roots) => Boolean(root) && roots.indexOf(root) === index)
+
+  for (const driveRoot of rootsToCheck) {
+    const javaFolder = path.join(driveRoot, 'Program Files', 'Java')
+    if (fs.existsSync(javaFolder)) {
+      return javaFolder
+    }
+
+    const programFilesFolder = path.join(driveRoot, 'Program Files')
+    if (fs.existsSync(programFilesFolder)) {
+      return programFilesFolder
+    }
+
+    if (fs.existsSync(driveRoot)) {
+      return driveRoot
+    }
+  }
+
+  return rootsToCheck[0] ?? 'C:\\'
+}
+
 // File operations
 export const registerPickDatapackMetadataFileHandler = (
   getMainWindow: () => BrowserWindow | null,
@@ -217,6 +260,7 @@ export const registerPickJavaExecutableHandler = (
 
     const result = await dialog.showOpenDialog(mainWindow, {
       properties: ['openFile'],
+      defaultPath: getJavaBrowseDefaultPath(),
       filters: [
         { name: 'Java Executable', extensions: ['exe'] },
         { name: 'All Files', extensions: ['*'] },
@@ -231,9 +275,59 @@ export const registerPickJavaExecutableHandler = (
   })
 }
 
+export const registerValidateJavaExecutableHandler = () => {
+  ipcMain.handle('validate-java-executable', async (_event, javaExecutable: unknown) => {
+    if (typeof javaExecutable !== 'string' || !javaExecutable.trim()) {
+      return {
+        valid: false,
+        output: 'Java executable path is empty',
+        versionText: null,
+      } satisfies JavaExecutableValidationResult
+    }
+
+    const executablePath = javaExecutable.trim()
+
+    return await new Promise<JavaExecutableValidationResult>((resolve) => {
+      const child = spawn(executablePath, ['-version'], {
+        windowsHide: true,
+        stdio: ['ignore', 'pipe', 'pipe'],
+      })
+
+      let output = ''
+
+      child.stdout.on('data', (chunk) => {
+        output += chunk.toString()
+      })
+
+      child.stderr.on('data', (chunk) => {
+        output += chunk.toString()
+      })
+
+      child.on('error', (error) => {
+        const message = error instanceof Error ? error.message : String(error)
+        resolve({
+          valid: false,
+          output: message,
+          versionText: null,
+        })
+      })
+
+      child.on('close', (exitCode) => {
+        const trimmedOutput = output.trim()
+        const versionText = parseJavaVersionText(trimmedOutput)
+        resolve({
+          valid: exitCode === 0,
+          output: trimmedOutput,
+          versionText,
+        })
+      })
+    })
+  })
+}
+
 export const getAllFiles = async (rootDir: string): Promise<string[]> => {
   const results: string[] = []
-  const entries = await withFileBusyRetry('List files', () => fs.readdir(rootDir, { withFileTypes: true }))
+  const entries = await withFileBusyRetry('List files', () => fsPromises.readdir(rootDir, { withFileTypes: true }))
 
   for (const entry of entries) {
     const fullPath = path.join(rootDir, entry.name)
@@ -265,7 +359,7 @@ export async function readFile(filePath: string): Promise<string> {
   }
 
   try {
-    const stats = await withFileBusyRetry('Inspect file', () => fs.stat(filePath))
+    const stats = await withFileBusyRetry('Inspect file', () => fsPromises.stat(filePath))
     if (!stats.isFile()) {
       throw new Error('Path is not a file')
     }
@@ -275,7 +369,7 @@ export async function readFile(filePath: string): Promise<string> {
       throw new Error('File is too large')
     }
 
-    const contents = await withFileBusyRetry('Read file', () => fs.readFile(filePath, 'utf-8'))
+    const contents = await withFileBusyRetry('Read file', () => fsPromises.readFile(filePath, 'utf-8'))
     return contents
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
@@ -310,7 +404,7 @@ export async function writeFile(directory: string, filename: string, contents: s
   }
 
   try {
-    const stats = await withFileBusyRetry('Inspect directory', () => fs.stat(directory))
+    const stats = await withFileBusyRetry('Inspect directory', () => fsPromises.stat(directory))
     if (!stats.isDirectory()) {
       throw new Error('Path is not a directory')
     }
@@ -322,7 +416,7 @@ export async function writeFile(directory: string, filename: string, contents: s
       throw new Error('Access denied')
     }
 
-    await withFileBusyRetry('Write file', () => fs.writeFile(targetPath, contents, 'utf-8'))
+    await withFileBusyRetry('Write file', () => fsPromises.writeFile(targetPath, contents, 'utf-8'))
     return targetPath
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
@@ -366,7 +460,7 @@ export async function writeFileFromDirectory(directory: string, filePath: string
   }
 
   try {
-    const stats = await withFileBusyRetry('Inspect directory', () => fs.stat(directory))
+    const stats = await withFileBusyRetry('Inspect directory', () => fsPromises.stat(directory))
     if (!stats.isDirectory()) {
       throw new Error('Base path is not a directory')
     }
@@ -378,7 +472,7 @@ export async function writeFileFromDirectory(directory: string, filePath: string
       throw new Error('Access denied')
     }
 
-    await withFileBusyRetry('Write file', () => fs.writeFile(targetPath, contents, 'utf-8'))
+    await withFileBusyRetry('Write file', () => fsPromises.writeFile(targetPath, contents, 'utf-8'))
     return targetPath
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
@@ -403,7 +497,7 @@ export async function readFileFromDirectory(directory: string, filePath: string)
   }
 
   try {
-    const stats = await withFileBusyRetry('Inspect directory', () => fs.stat(directory))
+    const stats = await withFileBusyRetry('Inspect directory', () => fsPromises.stat(directory))
     if (!stats.isDirectory()) {
       throw new Error('Base path is not a directory')
     }
@@ -433,7 +527,7 @@ export async function createFolder(folderPath: string): Promise<string> {
 
   try {
     // Create the folder recursively (mkdir -p equivalent)
-    await withFileBusyRetry('Create folder', () => fs.mkdir(folderPath, { recursive: true }))
+    await withFileBusyRetry('Create folder', () => fsPromises.mkdir(folderPath, { recursive: true }))
     return folderPath
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === 'EEXIST') {
@@ -453,7 +547,7 @@ export async function validateDatapackFolder(folderPath: string): Promise<boolea
   }
 
   try {
-    const stats = await withFileBusyRetry('Inspect datapack folder', () => fs.stat(folderPath))
+    const stats = await withFileBusyRetry('Inspect datapack folder', () => fsPromises.stat(folderPath))
     if (!stats.isDirectory()) {
       throw new Error('Path is not a directory')
     }
@@ -463,7 +557,7 @@ export async function validateDatapackFolder(folderPath: string): Promise<boolea
     const packMcmetaDisabledPath = path.join(folderPath, 'pack.mcmeta.disabled')
 
     try {
-      const packMcmetaStats = await withFileBusyRetry('Inspect pack.mcmeta', () => fs.stat(packMcmetaPath))
+      const packMcmetaStats = await withFileBusyRetry('Inspect pack.mcmeta', () => fsPromises.stat(packMcmetaPath))
       if (packMcmetaStats.isFile()) return true
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === 'EBUSY') {
@@ -472,7 +566,7 @@ export async function validateDatapackFolder(folderPath: string): Promise<boolea
     }
 
     try {
-      const packMcmetaDisabledStats = await withFileBusyRetry('Inspect pack.mcmeta.disabled', () => fs.stat(packMcmetaDisabledPath))
+      const packMcmetaDisabledStats = await withFileBusyRetry('Inspect pack.mcmeta.disabled', () => fsPromises.stat(packMcmetaDisabledPath))
       return packMcmetaDisabledStats.isFile()
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === 'EBUSY') {
@@ -533,7 +627,7 @@ export async function renameFileOrFolder(oldPath: string, newName: string): Prom
 
   try {
     // Check if source exists
-    await withFileBusyRetry('Inspect source path', () => fs.stat(oldPath))
+    await withFileBusyRetry('Inspect source path', () => fsPromises.stat(oldPath))
     
     // Construct new path in the same directory
     const directory = path.dirname(oldPath)
@@ -543,11 +637,11 @@ export async function renameFileOrFolder(oldPath: string, newName: string): Prom
       throw new Error('New name resolves outside the current folder')
     }
 
-    await withFileBusyRetry('Create target parent directories', () => fs.mkdir(path.dirname(newPath), { recursive: true }))
+    await withFileBusyRetry('Create target parent directories', () => fsPromises.mkdir(path.dirname(newPath), { recursive: true }))
 
     // Check if target already exists
     try {
-      await withFileBusyRetry('Inspect target path', () => fs.stat(newPath))
+      await withFileBusyRetry('Inspect target path', () => fsPromises.stat(newPath))
       throw new Error('A file or folder with that name already exists')
     } catch (error) {
       // ENOENT is expected - target should not exist
@@ -557,7 +651,7 @@ export async function renameFileOrFolder(oldPath: string, newName: string): Prom
     }
 
     // Rename the file or folder
-    await withFileBusyRetry('Rename file or folder', () => fs.rename(oldPath, newPath))
+    await withFileBusyRetry('Rename file or folder', () => fsPromises.rename(oldPath, newPath))
     return newPath
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
@@ -578,14 +672,14 @@ export async function deleteFileOrFolder(targetPath: string): Promise<void> {
   }
 
   try {
-    const stats = await withFileBusyRetry('Inspect target path', () => fs.stat(targetPath))
+    const stats = await withFileBusyRetry('Inspect target path', () => fsPromises.stat(targetPath))
     
     if (stats.isDirectory()) {
       // Remove directory and all contents recursively
-      await withFileBusyRetry('Delete folder', () => fs.rm(targetPath, { recursive: true, force: true }))
+      await withFileBusyRetry('Delete folder', () => fsPromises.rm(targetPath, { recursive: true, force: true }))
     } else {
       // Remove file
-      await withFileBusyRetry('Delete file', () => fs.unlink(targetPath))
+      await withFileBusyRetry('Delete file', () => fsPromises.unlink(targetPath))
     }
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') {

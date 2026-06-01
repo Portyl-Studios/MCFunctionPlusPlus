@@ -77,6 +77,12 @@ export type ExternalDirectoryChangeEvent = {
 
 export type ExternalDestination = 'bug-report'
 
+export type JavaExecutableValidationResult = {
+  valid: boolean
+  output: string
+  versionText: string | null
+}
+
 export type PreferencesChangedEvent = {
   keys: Array<keyof AppPreferences>
 }
@@ -93,6 +99,7 @@ export interface ElectronAPI {
   quitCancelled: () => Promise<void>
   pickDatapackMetadataFile: () => Promise<string | null>
   pickJavaExecutable: () => Promise<string | null>
+  validateJavaExecutable: (javaExecutable: string) => Promise<JavaExecutableValidationResult>
   writeFile: (directory: string, filename: string, contents: string) => Promise<string>
   saveFile: (directory: string, relativePath: string, contents: string) => Promise<string>
   readFile: (directory: string, filePath: string) => Promise<string>
