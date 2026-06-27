@@ -16,7 +16,33 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  test:
+    # Gate the release on a green unit-test run. Runs on windows-latest to match
+    # the release environment (the app is Windows-only and some tests exercise
+    # Windows path behavior). [skip ci] commits never trigger this workflow, so
+    # the bot's version-bump commit does not run this job.
+    runs-on: windows-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+
+      - name: Setup Node.js
+        uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run unit tests
+        run: npm test
+
   release:
+    needs: test
     if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && github.actor != 'github-actions[bot]' }}
     runs-on: windows-latest
     permissions:
