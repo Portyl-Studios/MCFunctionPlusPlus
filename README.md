@@ -1,219 +1,97 @@
-# MCFunctionPlusPlus
+<div align="center">
 
-MCFunction++ streamlines professional datapack workflows with a unified IDE for authoring, validation, and release-ready packaging.
+<img src="assets/icon.png" alt="MCFunction++ logo" width="128" height="128" />
 
-## App Showcase And Usage
+# MCFunction++
 
-### Who is MCFunction++ For?
-MCFunction++ is built for developers who want a faster, more reliable Minecraft datapack workflow.
+### The IDE for building, validating, and shipping Minecraft datapacks.
 
-- New datapack creators who need an approachable IDE with useful feedback while learning commands and structure.
-- Experienced datapack developers who want stronger editing, validation, and packaging workflows for larger projects.
-- Teams and collaborators who need a consistent toolchain for building and shipping datapacks across environments.
-- Creators who want flexibility: a desktop app for full local workflows and a web app for lightweight access.
+Write commands faster with smart autocomplete, catch mistakes before they hit the game with live diagnostics, and package release-ready datapacks — all in one desktop app.
 
-### What MCFunction++ Offers
+[![Latest release](https://img.shields.io/github/v/release/Portyl-Studios/MCFunctionPlusPlus?label=download&style=for-the-badge)](https://github.com/Portyl-Studios/MCFunctionPlusPlus/releases/latest)
+[![Downloads](https://img.shields.io/github/downloads/Portyl-Studios/MCFunctionPlusPlus/total?style=for-the-badge)](https://github.com/Portyl-Studios/MCFunctionPlusPlus/releases)
+[![License: GPL v3](https://img.shields.io/badge/license-GPLv3-blue?style=for-the-badge)](LICENSE)
+![Platform](https://img.shields.io/badge/platform-Windows-0078D6?style=for-the-badge&logo=windows)
 
-- A unified environment for authoring, validating, and packaging datapacks.
-- Desktop and web experiences built on a shared core workflow.
-- Release-ready Windows installer distribution with auto-update support.
+**[⬇️ Download the latest release](https://github.com/Portyl-Studios/MCFunctionPlusPlus/releases/latest)**
 
-### Installing from GitHub Releases
+</div>
 
-1. Open the latest release in `Portyl-Studios/MCFunctionPlusPlus`.
-2. Download the Windows installer file matching `mcfunctionplusplus-setup-<version>.exe`.
-3. Run the installer and choose your installation directory.
-4. Launch MCFunction++ after installation.
+<img src="assets/screenshots/editor.png" alt="MCFunction++ editor" width="900" />
 
-For normal installation, you only need the `mcfunctionplusplus-setup-<version>.exe` file.
+---
 
-### App Requirement: Java
+## Why MCFunction++
 
-MCFunction++ requires Java at runtime for automatic Minecraft data preparation.
+Authoring Minecraft datapacks usually means juggling a plain text editor, the wiki, and trial-and-error reloads in-game. MCFunction++ pulls the whole loop into one place: a real editor that understands `.mcfunction` syntax, tells you when a command is wrong, and packages your work when you're done.
 
-- Java must be installed and usable either through system `PATH` (`java`) or by setting an explicit Java executable path in app preferences.
-- If Java is missing or too old, Minecraft version preparation will fail in-app.
-- Installing a modern Java runtime (recommended: Java 26+) is strongly suggested.
+## Features
 
-### Java Executable Setup
+- **Purpose-built `.mcfunction` editor** — full syntax highlighting for Minecraft commands via a custom CodeMirror 6 language, not a generic text mode.
+- **Smart, context-aware autocomplete** — suggestions for commands, subcommands, selectors, objectives, scoreboard slots, and more, driven by the actual command schema for your target version.
+- **Live diagnostics** — inline linting and context-aware error checking catch invalid commands and arguments as you type, before you ever load the world.
+- **Automatic Minecraft data preparation** — point at a version and the app downloads and generates the command/schema data for you. No manual `server.jar` extraction or report wrangling.
+- **Datapack inspector & project navigation** — browse your workspace and datapack structure with dedicated file and datapack trees, plus an inspector panel.
+- **Built-in themes** — ships with Portyl Dark, Dracula, Material Dark, and Material Light.
+- **Workspaces & file associations** — organize multiple datapacks in a workspace; double-click `.mpp-workspace` and `.mpp-datapack` files to open them straight in the app.
+- **One-click packaging & auto-update** — produce a release-ready datapack and keep the app current automatically through GitHub Releases.
 
-MCFunction++ supports two Java executable setups.
+> [!TODO]
+> _Add a short GIF for each headline feature (autocomplete firing, live error squiggles, automatic data prep progress). Place them under `assets/screenshots/` and embed inline next to the matching bullet._
 
-#### Option A: Use `java` from PATH (recommended)
+## Download & Install
 
-- Leave Java Path empty in preferences.
-- The app uses `java` from your system `PATH`.
-- MCFunction++ resolves where `java` points and validates that executable before Java workflows run.
+1. Go to the **[latest release](https://github.com/Portyl-Studios/MCFunctionPlusPlus/releases/latest)**.
+2. Download `mcfunctionplusplus-setup-<version>.exe`.
+3. Run the installer and pick your install directory.
+4. Launch MCFunction++.
 
-#### Option B: Use an explicit executable path
+The app updates itself on launch when a new release is available.
 
-- Set Java Path to a full path such as `C:\Program Files\Java\jdk-26\bin\java.exe`.
-- MCFunction++ validates that exact executable before Java workflows run.
+## Requirements
 
-#### Quick PATH Setup (New Java Install, Windows)
+MCFunction++ needs **Java 26+** at runtime to prepare Minecraft command data. It's auto-detected from your system `PATH`; if you'd rather point at a specific runtime, set an explicit Java path in app preferences.
 
-1. Install a JDK (example install location: `C:\Program Files\Java\jdk-26`).
-2. Open Windows Search, find `Edit the system environment variables`, then open `Environment Variables...`.
-3. Under `System variables`, create `JAVA_HOME` with value `C:\Program Files\Java\jdk-26`.
+<details>
+<summary>Java setup details (PATH vs. explicit path)</summary>
+
+**Option A — use `java` from PATH (recommended).** Leave Java Path empty in preferences; the app resolves and validates `java` from your `PATH`.
+
+**Option B — explicit executable.** Set Java Path to a full path such as `C:\Program Files\Java\jdk-26\bin\java.exe`.
+
+**Quick PATH setup on Windows:**
+
+1. Install a JDK (e.g. to `C:\Program Files\Java\jdk-26`).
+2. Open *Edit the system environment variables* → *Environment Variables…*.
+3. Under *System variables*, add `JAVA_HOME` = `C:\Program Files\Java\jdk-26`.
 4. Edit `Path` and add `%JAVA_HOME%\bin`.
-5. Open a new terminal and run `java --version`.
-6. Optional: run `where java` to confirm which executable is being used.
+5. Open a new terminal and run `java --version` to confirm.
 
-If `java --version` fails, fix PATH/JAVA_HOME first or switch to Option B with an explicit `java.exe` path in app preferences.
+If `java --version` fails, fix `PATH`/`JAVA_HOME`, or use Option B with an explicit `java.exe` path.
 
-### Desktop Auto-Update (NSIS)
+</details>
 
-Desktop auto-updates use `electron-builder` + `electron-updater` with GitHub Releases.
+> ℹ️ MCFunction++ is currently distributed for **Windows** (NSIS installer). macOS and Linux builds are not officially supported yet.
 
-- Provider repo: `Portyl-Studios/MCFunctionPlusPlus`
-- Windows update channel: NSIS artifacts + `latest.yml`
-- Update check behavior: exactly once per app launch (no background polling until restart)
+## Roadmap
 
-This behavior is implemented in the Electron main process and only runs in packaged builds.
+- **Web app** — a lightweight browser version sharing the desktop core. Planned once the desktop app is fully featured; not yet available.
+- macOS and Linux distribution.
 
-### Windows Installer Format
+Have a feature in mind? [Open an issue](https://github.com/Portyl-Studios/MCFunctionPlusPlus/issues).
 
-Windows packaging is configured for NSIS installer only (no portable target).
-Installer behavior allows users to choose install directory.
+## Contributing
 
----
+MCFunction++ is open source and contributions are welcome. Build instructions, the release pipeline, and asset specs live in **[CONTRIBUTING.md](CONTRIBUTING.md)**.
 
-## Development Setup
+If the project saves you time, please ⭐ **[star the repo](https://github.com/Portyl-Studios/MCFunctionPlusPlus)** — it genuinely helps.
 
-### Prerequisites
+## License
 
-- [Node.js](https://nodejs.org/) (v20 or higher)
-- [npm](https://www.npmjs.com/) (v10 or higher, comes with Node.js)
-
-### Installation
-
-1. Clone the repository:
-   ```bash
-   git clone https://github.com/Portyl-Studios/MCFunctionPlusPlus.git
-   cd MCFunctionPlusPlus
-   ```
-
-2. Install dependencies:
-   ```bash
-   npm install
-   ```
-
-### Development Workflow
-
-Start the development server with hot module replacement:
-```bash
-npm run dev
-```
-
-This will launch Vite's dev server with hot reload enabled. Edit files in `src/renderer/` and see changes instantly.
-
-### Running Locally
-
-Launch the Electron application:
-```bash
-npm start
-```
-
-Or build and run in one command:
-```bash
-npm run electron
-```
-
-### Building
-
-Compile TypeScript and build the React application:
-```bash
-npm run build
-```
-
-This will:
-1. Compile TypeScript files from `src/main/` to `out/main/`
-2. Bundle the React application from `src/renderer/` to `out/renderer/`
-
-### Building Distributables
-
-Create a distributable executable for Windows:
-```bash
-npm run dist:win
-```
-
-This will create an NSIS installer in the `release/` folder.
-
-**Other platforms:**
-- macOS: `npm run dist:mac` (DMG and ZIP)
-- Linux: `npm run dist:linux` (AppImage and DEB)
-- All platforms: `npm run dist`
-
-### App Icon And Installer Art Assets
-
-Required app icon files:
-
-- Windows: `assets/icon.ico` (256x256 or multi-size ICO)
-- macOS: `assets/icon.icns` (512x512@2x recommended)
-- Linux: `assets/icon.png` (512x512 recommended)
-
-Required NSIS installer art files:
-
-- Installer header: `assets/installer-header.bmp` (150x57)
-- Installer sidebar: `assets/installer-sidebar.bmp` (164x314)
-
-You can generate icon formats from a single PNG using:
-
-- https://www.icoconverter.com/
-- https://cloudconvert.com/png-to-icns
-- https://www.img2go.com/convert-to-icon
-
-### Desktop CI/CD (Auto Version + Release)
-
-The `.github/workflows/desktop-release-pipeline.yml` workflow automates version bumping and release publishing on pushes to `main`:
-
-- **Trigger**: Pushes to `main` by a non-bot actor
-- **Version**: Reads `major.minor` from `package.json`; auto-computes patch from existing tags (`vMAJOR.MINOR.*`), ignoring user-provided patch
-- **Bump**: Commits version bump to `package.json` if version changes, with `[skip ci]` to prevent re-triggering
-- **Tag & Release**: Creates tag `vX.Y.Z` and GitHub Release
-- **Assets**: Builds and publishes NSIS artifacts (`.exe`, `.exe.blockmap`, `latest.yml`) if any are missing
-- **Safeguard**: Skips publish if all required assets exist for the target tag
-
-### Tip: Push Without Triggering Release Workflows
-
-Add `[skip ci]` to your commit message to prevent the workflow from running:
-```bash
-git commit -m "docs: update README [skip ci]"
-git push
-```
-
-### How to Choose Your Major/Minor
-
-Before pushing to `main`, set `package.json` version to the major/minor line you want, using patch `0` (example: `2.4.0`). The pipeline creates `v2.4.0` for the first release in that series, then `v2.4.1`, `v2.4.2`, etc. on subsequent pushes.
-
-### Web Deployment (Firebase Hosting)
-
-Web deployment is on the roadmap. It will only be implemented once the main application is fully featured.
-
-### Minecraft Source Files
-
-Minecraft command/schema data is now prepared automatically by the desktop app.
-
-- On startup (and when the selected datapack Minecraft version changes), MCFunction++ checks a local cache first.
-- If the requested version is missing, the app downloads the official `server.jar` metadata source, runs report generation, and builds the required cache files automatically.
-- Cached data is stored under the app user data directory in `Minecraft Data Cache/<mc_version>`.
-- Progress and errors are surfaced in-app during bootstrap/refresh.
-
-### Minecraft Source Files (Legacy Manual Process)
-
-Use this only for manual verification, debugging, or if you want to inspect raw Mojang report output yourself.
-
-1. Download the target `server.jar` from [Minecraft Server Downloads](https://www.minecraft.net/en-us/download/server).
-2. Run `java -DbundlerMainClass=net.minecraft.data.Main -jar server.jar --reports`.
-3. Inspect output in `generated/reports/`.
-
-Note: MCFunction++ no longer requires you to manually place generated reports into `resources/minecraft/<mc_version>` for normal usage.
-
-### License
-
-GPLv3 (General Public License)
-Any derived works must also be open-source and licensed under GPLv3.
-
-Support the project by contributing!
+Licensed under **[GPLv3](LICENSE)**. Derived works must also be open source and GPLv3-licensed.
 
 ---
+
+<div align="center">
+Built by <strong>Portyl Studios</strong>
+</div>
