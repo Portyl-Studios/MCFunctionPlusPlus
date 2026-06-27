@@ -50,6 +50,7 @@ import {
   loadMinecraftData,
   mergeMcfunctionContextIndexes,
   parseMcfunctionContextIndex,
+  resolveDatapackObjectiveBindings,
   pruneDatapackContextIndexes,
   setActiveDatapackContext,
   setDatapackContextIndex,
@@ -2531,6 +2532,7 @@ function CodeEditor() {
     seenMcfunctionFileKeys?: Set<string>,
   ) => {
     let mergedIndex = parseMcfunctionContextIndex("")
+    const mcfunctionContents: string[] = []
 
     for (const relativePathRaw of datapack.paths) {
       if (contextScanRunIdRef.current !== scanRunId) return null
@@ -2568,7 +2570,14 @@ function CodeEditor() {
       }
 
       mergedIndex = mergeMcfunctionContextIndexes(mergedIndex, fileContext)
+      mcfunctionContents.push(content)
     }
+
+    // Per-file parsing only links a holder to an objective when both appear in the same
+    // file, so objectives declared in one file (e.g. load.mcfunction) and used elsewhere
+    // produce no binding. Re-resolve bindings across the whole datapack against the merged
+    // objective set so every scoreboard usage shows up in the inspector.
+    mergedIndex.objectivesByHolder = resolveDatapackObjectiveBindings(mcfunctionContents, mergedIndex)
 
     return mergedIndex
   }

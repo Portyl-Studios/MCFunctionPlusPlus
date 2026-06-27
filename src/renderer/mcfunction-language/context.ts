@@ -556,6 +556,48 @@ export const parseMcfunctionContextIndex = (content: string, resourcePaths: Iter
   return parseContextIndex(doc, resourcePaths)
 }
 
+/**
+ * Re-resolve holder→objective bindings across an entire datapack.
+ *
+ * When the datapack index is built, every .mcfunction file is parsed in isolation,
+ * so `handleScorePair` only records a binding when the `scoreboard objectives add`
+ * declaration lives in the same file as the usage. The common pattern of declaring
+ * objectives in one file (e.g. load.mcfunction) and using them elsewhere therefore
+ * drops every cross-file binding. This re-runs the resolve pass over each file seeded
+ * with the datapack-wide objective set so those bindings are captured.
+ */
+export const resolveDatapackObjectiveBindings = (
+  contents: Iterable<string>,
+  seedIndex: McfunctionContextIndex,
+): Map<string, Set<string>> => {
+  const bindings = new Map<string, Set<string>>()
+
+  for (const content of contents) {
+    const lines = content.replace(/\r\n/g, "\n").split("\n")
+    const doc = Text.of(lines)
+    const resolved = parseContextIndex(
+      doc,
+      [],
+      seedIndex.objectives,
+      seedIndex.tags,
+      seedIndex.holders,
+      undefined,
+      false,
+    )
+
+    for (const [holder, objectives] of resolved.objectivesByHolder.entries()) {
+      const existing = bindings.get(holder)
+      if (existing) {
+        for (const objective of objectives) existing.add(objective)
+      } else {
+        bindings.set(holder, new Set(objectives))
+      }
+    }
+  }
+
+  return bindings
+}
+
 export const setDatapackContextIndex = (datapackDir: string, index: McfunctionContextIndex | null) => {
   if (!index) {
     datapackContextIndexes.delete(datapackDir)

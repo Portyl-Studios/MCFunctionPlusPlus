@@ -15,6 +15,7 @@ export {
   isMcfunctionContextIndexEqual,
   setWorkspaceResourcePathsFromRelativePaths,
   parseMcfunctionContextIndex,
+  resolveDatapackObjectiveBindings,
   mergeMcfunctionContextIndexes,
   setDatapackContextIndex,
   clearDatapackContextIndexes,
