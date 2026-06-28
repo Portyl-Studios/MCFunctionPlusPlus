@@ -1,11 +1,26 @@
 import { promises as fs } from 'fs'
 import path from 'path'
 import { preferencesManager } from './preferences'
+import { DEFAULT_EXPORT_FILENAME_TEMPLATE } from '../shared/export-utils'
 
 const FALLBACK_MINECRAFT_VERSION = '26.1.2'
 
 const DATAPACK_VERSION = 1
 const DATAPACK_EXTENSION = '.mpp-datapack'
+
+export interface DatapackExportSettings {
+  // Absolute output folder. Blank/undefined means the default (~/dist).
+  outputDir?: string
+  // Filename template with %TOKEN% placeholders (see shared/export-utils).
+  fileNameTemplate?: string
+  // When true, the patch component of packVersion is bumped on each export.
+  autoIncrementVersion?: boolean
+  // Extra exclude globs applied within the export allowlist.
+  excludeGlobs?: string[]
+  // Bookkeeping written after a successful export.
+  lastExportedAt?: string
+  lastExportPath?: string
+}
 
 export interface DatapackMetadata {
   version: number
@@ -19,6 +34,46 @@ export interface DatapackMetadata {
   packFormatVersionMin?: number
   packFormatVersionMax?: number
   tags?: string[]
+  export?: DatapackExportSettings
+}
+
+export const createDefaultExportSettings = (): DatapackExportSettings => ({
+  outputDir: '',
+  fileNameTemplate: DEFAULT_EXPORT_FILENAME_TEMPLATE,
+  autoIncrementVersion: true,
+  excludeGlobs: [],
+})
+
+const sanitizeExportSettings = (
+  rawValue: unknown,
+  defaults: DatapackExportSettings,
+): DatapackExportSettings => {
+  if (!rawValue || typeof rawValue !== 'object' || Array.isArray(rawValue)) {
+    return { ...defaults }
+  }
+
+  const value = rawValue as Record<string, unknown>
+
+  return {
+    outputDir: typeof value.outputDir === 'string'
+      ? value.outputDir
+      : defaults.outputDir,
+    fileNameTemplate: typeof value.fileNameTemplate === 'string' && value.fileNameTemplate.trim().length > 0
+      ? value.fileNameTemplate
+      : defaults.fileNameTemplate,
+    autoIncrementVersion: typeof value.autoIncrementVersion === 'boolean'
+      ? value.autoIncrementVersion
+      : defaults.autoIncrementVersion,
+    excludeGlobs: Array.isArray(value.excludeGlobs)
+      ? value.excludeGlobs.filter((entry): entry is string => typeof entry === 'string')
+      : defaults.excludeGlobs,
+    lastExportedAt: typeof value.lastExportedAt === 'string'
+      ? value.lastExportedAt
+      : defaults.lastExportedAt,
+    lastExportPath: typeof value.lastExportPath === 'string'
+      ? value.lastExportPath
+      : defaults.lastExportPath,
+  }
 }
 
 export const getDatapackMetadataPath = (datapackDir: string): string => {
@@ -86,6 +141,7 @@ const sanitizeDatapackMetadata = (rawMetadata: unknown, defaults: DatapackMetada
     tags: Array.isArray(value.tags)
       ? value.tags.filter((tag): tag is string => typeof tag === 'string')
       : defaults.tags,
+    export: sanitizeExportSettings(value.export, defaults.export ?? createDefaultExportSettings()),
   }
 }
 
@@ -149,7 +205,8 @@ export const createDefaultDatapackMetadata = (
     description: 'made by unknown',
     packFormatVersionMin: 12,
     packFormatVersionMax: 12,
-    tags: []
+    tags: [],
+    export: createDefaultExportSettings(),
   }
 }
 

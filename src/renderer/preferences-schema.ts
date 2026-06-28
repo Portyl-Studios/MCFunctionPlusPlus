@@ -28,7 +28,7 @@ export interface TextFieldConfig extends BaseFieldConfig {
   type: 'text'
   placeholder?: string
   multiline?: boolean
-  browseAction?: 'pickJavaExecutable'
+  browseAction?: 'pickJavaExecutable' | 'pickExportFolder'
   browseButtonLabel?: string
 }
 

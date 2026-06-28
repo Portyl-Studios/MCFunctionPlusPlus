@@ -10,6 +10,7 @@ import {
   isValidFileAccess,
   assertPathAllowedForFileOperation,
 } from './path-validation'
+import { withKeyedLock, normalizeLockKey } from './async-lock'
 
 const FILE_BUSY_RETRY_ATTEMPTS = 4
 const FILE_BUSY_RETRY_BASE_DELAY_MS = 120
@@ -671,16 +672,19 @@ export async function deleteFileOrFolder(targetPath: string): Promise<void> {
 export const registerFileOperationHandlers = (options?: FileOperationHandlerOptions) => {
   const getAllowedRoots = options?.getAllowedRoots
 
-  // IPC handler to write a file after validation
+  // IPC handler to write a file after validation. Writes to the same target are
+  // serialized so concurrent read-modify-write callers cannot clobber each other.
   ipcMain.handle('write-file', async (_event, { directory, filename, contents }) => {
     const safeDirectory = assertPathAllowedForFileOperation(directory, 'write-file', getAllowedRoots?.())
-    return await writeFile(safeDirectory, filename, contents)
+    const lockKey = normalizeLockKey(path.join(safeDirectory, String(filename ?? '')))
+    return await withKeyedLock(lockKey, () => writeFile(safeDirectory, filename, contents))
   })
 
   // IPC handler to save a file (similar to write-file but for existing files)
   ipcMain.handle('save-file', async (_event, { directory, relativePath, contents }) => {
     const safeDirectory = assertPathAllowedForFileOperation(directory, 'save-file', getAllowedRoots?.())
-    return await writeFileFromDirectory(safeDirectory, relativePath, contents)
+    const lockKey = normalizeLockKey(path.join(safeDirectory, String(relativePath ?? '')))
+    return await withKeyedLock(lockKey, () => writeFileFromDirectory(safeDirectory, relativePath, contents))
   })
 
   // IPC handler to read a file

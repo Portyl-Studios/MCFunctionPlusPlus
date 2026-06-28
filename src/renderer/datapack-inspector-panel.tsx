@@ -1,9 +1,16 @@
 import React from 'react'
-import type { DatapackMetadata } from '../main/datapack-parser'
+import type { DatapackMetadata, DatapackExportSettings } from '../main/datapack-parser'
 import { fieldConfigs, getSectionFields, type PreferenceSchema, type PreferenceSection } from './preferences-schema'
 import { PreferenceFieldRenderer } from './preference-field-renderer'
 import { getDatapackContextIndex } from './mcfunction-language'
 import type { McfunctionContextIndex } from './mcfunction-language/context'
+import {
+  applyExportFileNameTemplate,
+  sanitizeExportFileName,
+  formatExportDateStamp,
+  DEFAULT_EXPORT_FILENAME_TEMPLATE,
+  EXPORT_TEMPLATE_TOKENS,
+} from '../shared/export-utils'
 
 type DatapackInspectorDatapack = {
   dir: string
@@ -19,12 +26,17 @@ type DatapackInspectorDatapack = {
   packFormatVersionMin?: number
   packFormatVersionMax?: number
   tags?: string[]
+  export?: DatapackExportSettings
 }
+
+type ExportSettingFieldKey = 'outputDir' | 'fileNameTemplate' | 'autoIncrementVersion' | 'excludeGlobs'
 
 type DatapackInspectorPanelProps = {
   datapack: DatapackInspectorDatapack | null
   contextRevision: number
   onMetadataChange: (fieldKey: keyof DatapackMetadata, value: unknown) => void | Promise<void>
+  onExportSettingChange: (fieldKey: ExportSettingFieldKey, value: unknown) => void | Promise<void>
+  onExportNow: () => void | Promise<void>
   sectionExpansionById: Record<string, boolean>
   onSectionExpansionChange: (sectionId: string, expanded: boolean) => void
 }
@@ -198,6 +210,160 @@ function InspectorFieldSection({
   )
 }
 
+function ExportSettingsSection({
+  datapack,
+  onExportSettingChange,
+  onExportNow,
+  sectionExpansionById,
+  onSectionExpansionChange,
+}: {
+  datapack: DatapackInspectorDatapack
+  onExportSettingChange: (fieldKey: ExportSettingFieldKey, value: unknown) => void | Promise<void>
+  onExportNow: () => void | Promise<void>
+  sectionExpansionById: Record<string, boolean>
+  onSectionExpansionChange: (sectionId: string, expanded: boolean) => void
+}) {
+  const [isExporting, setIsExporting] = React.useState(false)
+  // Defend against a hand-edited / older-format .mpp-datapack: the renderer reads
+  // the file directly and bypasses the main-process sanitizer, so coerce each
+  // field to its expected shape before use.
+  const settings = datapack.export ?? {}
+  const outputDirValue = typeof settings.outputDir === 'string' ? settings.outputDir : ''
+  const autoIncrementValue = typeof settings.autoIncrementVersion === 'boolean' ? settings.autoIncrementVersion : true
+  const excludeGlobsValue = Array.isArray(settings.excludeGlobs)
+    ? settings.excludeGlobs.filter((entry): entry is string => typeof entry === 'string')
+    : []
+  const template = (typeof settings.fileNameTemplate === 'string' ? settings.fileNameTemplate.trim() : '') || DEFAULT_EXPORT_FILENAME_TEMPLATE
+
+  const previewFileName = sanitizeExportFileName(
+    applyExportFileNameTemplate(template, {
+      projectName: datapack.displayName ?? datapack.name,
+      mcVersion: datapack.minecraftVersion ?? '',
+      packVersion: datapack.packVersion ?? '',
+      datapackId: datapack.id ?? '',
+      author: datapack.author ?? '',
+      packFormat: datapack.packFormatVersionMax != null ? String(datapack.packFormatVersionMax) : '',
+      date: formatExportDateStamp(new Date()),
+    }),
+  )
+
+  const outputDirConfig = fieldConfigs.text('Output Folder', {
+    placeholder: 'Default (~/dist)',
+    browseAction: 'pickExportFolder',
+    browseButtonLabel: 'Browse',
+  })
+  const templateConfig = fieldConfigs.text('File Name Template', {
+    placeholder: DEFAULT_EXPORT_FILENAME_TEMPLATE,
+  })
+  const autoIncrementConfig = fieldConfigs.checkbox('Auto-increment patch version on export')
+  const excludeConfig = fieldConfigs.textarea('Exclude Patterns', {
+    placeholder: 'One glob per line, e.g. data/**/*.test.mcfunction',
+    rows: 3,
+  })
+
+  const lastExportedLabel = settings.lastExportedAt
+    ? new Date(settings.lastExportedAt).toLocaleString()
+    : null
+
+  const handleExport = async () => {
+    if (isExporting) return
+    try {
+      setIsExporting(true)
+      await onExportNow()
+    } finally {
+      setIsExporting(false)
+    }
+  }
+
+  return (
+    <CollapsibleInspectorSection
+      sectionId="export:settings"
+      title="Export"
+      description="Package this datapack into a Minecraft-ready .zip."
+      sectionExpansionById={sectionExpansionById}
+      onSectionExpansionChange={onSectionExpansionChange}
+    >
+      <div className="inspector-panel-field">
+        <label className="inspector-panel-field-label">
+          <span>{outputDirConfig.label}</span>
+        </label>
+        <div className="inspector-panel-field-input">
+          <PreferenceFieldRenderer
+            fieldKey="outputDir"
+            config={outputDirConfig}
+            value={outputDirValue}
+            onChange={(value) => void onExportSettingChange('outputDir', value)}
+          />
+        </div>
+      </div>
+
+      <div className="inspector-panel-field">
+        <label className="inspector-panel-field-label">
+          <span>{templateConfig.label}</span>
+        </label>
+        <p className="inspector-panel-field-description">Variables: {EXPORT_TEMPLATE_TOKENS.join(', ')}</p>
+        <div className="inspector-panel-field-input">
+          <PreferenceFieldRenderer
+            fieldKey="fileNameTemplate"
+            config={templateConfig}
+            value={template}
+            onChange={(value) => void onExportSettingChange('fileNameTemplate', value)}
+          />
+        </div>
+        <p className="inspector-panel-field-description">Preview: {previewFileName}</p>
+      </div>
+
+      <div className="inspector-panel-field">
+        <label className="inspector-panel-field-label">
+          <span>{autoIncrementConfig.label}</span>
+        </label>
+        <div className="inspector-panel-field-input">
+          <PreferenceFieldRenderer
+            fieldKey="autoIncrementVersion"
+            config={autoIncrementConfig}
+            value={autoIncrementValue}
+            onChange={(value) => void onExportSettingChange('autoIncrementVersion', value)}
+          />
+        </div>
+      </div>
+
+      <div className="inspector-panel-field">
+        <label className="inspector-panel-field-label">
+          <span>{excludeConfig.label}</span>
+        </label>
+        <div className="inspector-panel-field-input">
+          <PreferenceFieldRenderer
+            fieldKey="excludeGlobs"
+            config={excludeConfig}
+            value={excludeGlobsValue.join('\n')}
+            onChange={(value) => void onExportSettingChange('excludeGlobs', value)}
+          />
+        </div>
+      </div>
+
+      {lastExportedLabel && (
+        <div className="inspector-panel-field">
+          <div className="inspector-panel-field-description">
+            Last exported {lastExportedLabel}
+            {settings.lastExportPath ? ` → ${settings.lastExportPath}` : ''}
+          </div>
+        </div>
+      )}
+
+      <div className="inspector-panel-field">
+        <button
+          type="button"
+          onClick={() => void handleExport()}
+          disabled={isExporting}
+          className="button border-codemirror-400 text-sm"
+        >
+          {isExporting ? 'Exporting...' : 'Export Now'}
+        </button>
+      </div>
+    </CollapsibleInspectorSection>
+  )
+}
+
 function ContextListSection({
   sectionId,
   title,
@@ -285,6 +451,8 @@ export function DatapackInspectorPanel({
   datapack,
   contextRevision,
   onMetadataChange,
+  onExportSettingChange,
+  onExportNow,
   sectionExpansionById,
   onSectionExpansionChange,
 }: DatapackInspectorPanelProps) {
@@ -327,6 +495,14 @@ export function DatapackInspectorPanel({
             onSectionExpansionChange={onSectionExpansionChange}
           />
         ))}
+
+        <ExportSettingsSection
+          datapack={datapack}
+          onExportSettingChange={onExportSettingChange}
+          onExportNow={onExportNow}
+          sectionExpansionById={sectionExpansionById}
+          onSectionExpansionChange={onSectionExpansionChange}
+        />
 
         {contextIndex ? (
           <>

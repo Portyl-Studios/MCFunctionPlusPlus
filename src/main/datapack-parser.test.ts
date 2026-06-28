@@ -20,6 +20,7 @@ vi.mock('fs', () => ({
 import {
   getDatapackMetadataPath,
   createDefaultDatapackMetadata,
+  createDefaultExportSettings,
   updateDatapackLastOpened,
   parseDatapackMetadata,
   writeDatapackMetadata,
@@ -128,6 +129,7 @@ describe('parseDatapackMetadata (fs wrapper)', () => {
       packFormatVersionMin: 12,
       packFormatVersionMax: 12,
       tags: [],
+      export: createDefaultExportSettings(),
     }
     mockReadFile.mockResolvedValue(JSON.stringify(canonical))
 

@@ -29,6 +29,7 @@ interface DataPackTreeProps {
   onFolderCreated?: () => void
   onRefreshRequested?: () => void
   onRemoveFromWorkspaceRequested?: () => void
+  onExportRequested?: () => void
   onFileRenamed?: (oldRelativePath: string, newName: string) => Promise<boolean>
   onFileDeleted?: (relativePath: string) => Promise<boolean>
   onContextMenuRequest?: (event: React.MouseEvent, items: MenuItem[]) => void
@@ -364,7 +365,7 @@ const isTreePathValidByDatapackJson = (relativePath: string, validLeafPaths: Set
   return false
 }
 
-export function DatapackTree({ paths, className, folderName, rootId, rootName, rootPackVersion, rootPackFormatVersion, minecraftVersion, rootTags, basePath, onSelect, onFolderCreated, onRefreshRequested, onRemoveFromWorkspaceRequested, onFileRenamed, onFileDeleted, onContextMenuRequest, modifiedFileKeys, fileDiagnosticSummaries, externalSelectedPath, externalSelectedFileKey, externalSelectionRevealNonce, externalExpandedPaths, onExpandedPathsChange, treeContainerRef }: DataPackTreeProps) {
+export function DatapackTree({ paths, className, folderName, rootId, rootName, rootPackVersion, rootPackFormatVersion, minecraftVersion, rootTags, basePath, onSelect, onFolderCreated, onRefreshRequested, onRemoveFromWorkspaceRequested, onExportRequested, onFileRenamed, onFileDeleted, onContextMenuRequest, modifiedFileKeys, fileDiagnosticSummaries, externalSelectedPath, externalSelectedFileKey, externalSelectionRevealNonce, externalExpandedPaths, onExpandedPathsChange, treeContainerRef }: DataPackTreeProps) {
   const [versionValidLeafPaths, setVersionValidLeafPaths] = React.useState<Set<string> | null>(null)
   const [datapackSchema, setDatapackSchema] = React.useState<DatapackSchemaNode | undefined>(undefined)
   const lastHandledRevealNonceRef = React.useRef<number | null>(null)
@@ -1473,6 +1474,12 @@ export function DatapackTree({ paths, className, folderName, rootId, rootName, r
         disabled: !basePath,
       },
       {},
+      {
+        label: 'Export Datapack...',
+        onClick: onExportRequested,
+        // A disabled datapack has no pack.mcmeta, so its export would be invalid.
+        disabled: !onExportRequested || isDatapackDisabled,
+      },
       {
         label: 'Remove Datapack from Workspace',
         onClick: onRemoveFromWorkspaceRequested,

@@ -78,10 +78,16 @@ function TextFieldRenderer({
         if (trimmedPath) {
           await validateAndToastJavaExecutable(trimmedPath, () => onChange(trimmedPath))
         }
+      } else if (config.browseAction === 'pickExportFolder') {
+        const selectedPath = await window.electron.pickExportFolder()
+        const trimmedPath = typeof selectedPath === 'string' ? selectedPath.trim() : ''
+        if (trimmedPath) {
+          onChange(trimmedPath)
+        }
       }
     } catch (error) {
       console.error('Failed to browse for path:', error)
-      showToastEvent(`Invalid Java executable: ${error instanceof Error ? error.message : 'Unknown error'}`)
+      showToastEvent(`Failed to browse: ${error instanceof Error ? error.message : 'Unknown error'}`)
     } finally {
       setIsBrowsing(false)
     }
@@ -89,6 +95,12 @@ function TextFieldRenderer({
 
   const handleClear = async () => {
     if (isForceDisabled || isBrowsing) return
+
+    if (config.browseAction === 'pickExportFolder') {
+      onChange('')
+      showToastEvent('Using default export folder (~/dist)')
+      return
+    }
 
     try {
       setIsBrowsing(true)

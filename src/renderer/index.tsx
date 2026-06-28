@@ -65,7 +65,8 @@ import { deletePathWithConfirm, renamePathWithPrompt } from "./path-actions"
 import type { MinecraftDataEnsureProgress, MinecraftVersionEntry, ShortcutAction } from "../main/electron-api"
 import type { AppPreferences } from "../main/preferences"
 import datapackSchemaHistory from "../../resources/datapack-schema/history.json"
-import { compareDottedVersions, isDottedNumericVersion } from "../shared/utils"
+import { compareDottedVersions, isDottedNumericVersion, resetPatchOnMajorMinorIncrement } from "../shared/utils"
+import type { DatapackExportSettings } from "../main/datapack-parser"
 import { PreferencesPanel } from "./preferences-panel"
 import { defaultPreferencesSchema } from "./default-preferences-schema"
 import { DatapackInspectorPanel } from "./datapack-inspector-panel"
@@ -87,6 +88,7 @@ type DatapackEntry = {
   packFormatVersionMin?: number
   packFormatVersionMax?: number
   tags?: string[]
+  export?: DatapackExportSettings
 }
 
 type DatapackSchemaHistoryEntry = {
@@ -1205,6 +1207,7 @@ function CodeEditor() {
       let packFormatVersionMin: number | undefined
       let packFormatVersionMax: number | undefined
       let tags: string[] | undefined
+      let exportSettings: DatapackExportSettings | undefined
       try {
         const parsedRecord = await parseDatapackMetadataRecord(datapackDir)
         const nextMetadataRecord = parsedRecord ? { ...parsedRecord } : null
@@ -1277,6 +1280,15 @@ function CodeEditor() {
             .map((tag) => tag.trim())
             .filter((tag) => tag.length > 0)
         }
+
+        if (
+          parsedRecord &&
+          parsedRecord.export &&
+          typeof parsedRecord.export === "object" &&
+          !Array.isArray(parsedRecord.export)
+        ) {
+          exportSettings = parsedRecord.export as DatapackExportSettings
+        }
       } catch {
         version = undefined
         id = undefined
@@ -1287,6 +1299,7 @@ function CodeEditor() {
         author = undefined
         description = undefined
         packFormatVersionMin = undefined
+        exportSettings = undefined
       }
       return {
         dir: datapackDir,
@@ -1303,6 +1316,7 @@ function CodeEditor() {
         packFormatVersionMin,
         packFormatVersionMax,
         tags,
+        export: exportSettings,
       }
     } catch {
       return null
@@ -1635,6 +1649,13 @@ function CodeEditor() {
         return
       }
       nextMetadata[fieldKey] = value
+    } else if (fieldKey === 'packVersion') {
+      // Bumping major or minor resets the auto-managed patch component to 0.
+      const previousVersion = typeof metadataRecord.packVersion === 'string' ? metadataRecord.packVersion : ''
+      const nextVersion = typeof value === 'string' ? value : String(value ?? '')
+      nextMetadata.packVersion = previousVersion
+        ? resetPatchOnMajorMinorIncrement(previousVersion, nextVersion)
+        : nextVersion
     } else {
       nextMetadata[fieldKey] = typeof value === 'string' ? value : String(value ?? '')
     }
@@ -1644,6 +1665,72 @@ function CodeEditor() {
 
     if (fieldKey === 'minecraftVersion') {
       await queueContextsThenDiagnosticsReload(datapackDir)
+    }
+  }
+
+  const handleExportSettingChange = async (datapackDir: string, fieldKey: string, value: unknown) => {
+    const metadataRecord = await parseDatapackMetadataRecord(datapackDir)
+    if (!metadataRecord) {
+      throw new Error('Invalid datapack metadata format')
+    }
+
+    const existingExport = metadataRecord.export && typeof metadataRecord.export === 'object' && !Array.isArray(metadataRecord.export)
+      ? { ...(metadataRecord.export as Record<string, unknown>) }
+      : {}
+
+    if (fieldKey === 'excludeGlobs') {
+      const list = typeof value === 'string'
+        ? value.split(/[\r\n,]+/).map((entry) => entry.trim()).filter((entry) => entry.length > 0)
+        : Array.isArray(value)
+          ? value.filter((entry): entry is string => typeof entry === 'string')
+          : []
+      existingExport.excludeGlobs = list
+    } else if (fieldKey === 'autoIncrementVersion') {
+      existingExport.autoIncrementVersion = Boolean(value)
+    } else if (fieldKey === 'outputDir' || fieldKey === 'fileNameTemplate') {
+      existingExport[fieldKey] = typeof value === 'string' ? value : String(value ?? '')
+    } else {
+      return
+    }
+
+    const nextMetadata = { ...metadataRecord, export: existingExport }
+    await window.electron.writeFile(datapackDir, '.mpp-datapack', JSON.stringify(nextMetadata, null, 2))
+    await refreshDatapacks(datapacksRef.current.map((datapack) => datapack.dir))
+  }
+
+  const handleExportDatapack = async (datapackDir: string) => {
+    const datapack = datapacksRef.current.find((entry) => entry.dir === datapackDir) ?? null
+    const label = datapack?.displayName ?? datapack?.name ?? 'datapack'
+
+    try {
+      const result = await window.electron.exportDatapack(datapackDir)
+      await refreshDatapacks(datapacksRef.current.map((entry) => entry.dir))
+
+      const sizeKb = Math.max(1, Math.round(result.zipBytes / 1024))
+      const versionLabel = result.packVersion ? ` (v${result.packVersion})` : ''
+      const warningSuffix = result.versionWarning ? `\n\nNote: ${result.versionWarning}` : ''
+      dialog.openDialog({
+        title: 'Export Complete',
+        message: `Exported ${label}${versionLabel} — ${result.fileCount} files, ${sizeKb} KB. Saved to ${result.outputPath}${warningSuffix}`,
+        buttons: [
+          {
+            label: 'Open Folder',
+            onClick: () => {
+              void window.electron.exportReveal(result.outputPath).catch((error) => {
+                showToastEvent(`Failed to open export folder: ${error instanceof Error ? error.message : 'Unknown error'}`)
+              })
+            },
+          },
+          {
+            label: 'Close',
+            onClick: () => undefined,
+          },
+        ],
+      })
+      showToastEvent(`Exported ${label} to ${result.outputPath}`)
+    } catch (error) {
+      console.error('Failed to export datapack:', error)
+      await dialog.showAlert('Export Failed', error instanceof Error ? error.message : 'Unknown error')
     }
   }
 
@@ -4442,6 +4529,7 @@ function CodeEditor() {
                   onFolderCreated={handleRefreshExplorer}
                   onRefreshRequested={handleRefreshExplorer}
                   onRemoveFromWorkspaceRequested={() => handleRemoveDatapack(datapack.dir)}
+                  onExportRequested={() => { void handleExportDatapack(datapack.dir) }}
                   onSelect={(pathKey, isFile, selectMode) => handleExplorerSelect(datapack.dir, pathKey, isFile, selectMode)}
                   onFileRenamed={(oldRelativePath, newName) => handleFileRenamed(datapack.dir, oldRelativePath, newName)}
                   onFileDeleted={async (relativePath) => {
@@ -4559,6 +4647,15 @@ function CodeEditor() {
           onMetadataChange={(fieldKey, value) => {
             if (!inspectorDatapack) return
             void handleInspectorMetadataChange(inspectorDatapack.dir, fieldKey, value)
+          }}
+          onExportSettingChange={(fieldKey, value) => {
+            if (!inspectorDatapack) return
+            void handleExportSettingChange(inspectorDatapack.dir, fieldKey, value)
+          }}
+          onExportNow={() => {
+            if (!inspectorDatapack) return undefined
+            // Return the promise so the panel's busy state lasts the whole export.
+            return handleExportDatapack(inspectorDatapack.dir)
           }}
           sectionExpansionById={inspectorSectionExpansionById}
           onSectionExpansionChange={(sectionId, expanded) => {
@@ -4688,10 +4785,24 @@ function CodeEditor() {
             disabled={dialog.isOpen}
           />
 
-          <DropdownMenu 
+          <DropdownMenu
             label="Export"
             items={[
-              { label: "Export Datapack", onClick: undefined, disabled: true }
+              {
+                label: "Export Datapack",
+                onClick: inspectorDatapack ? () => { void handleExportDatapack(inspectorDatapack.dir) } : undefined,
+                disabled: !inspectorDatapack,
+              },
+              {},
+              {
+                label: "Export Specific Datapack",
+                children: datapacks.length > 0
+                  ? datapacks.map((datapack) => ({
+                      label: `${datapack.displayName ?? datapack.name}${datapack.packVersion ? ` (v${datapack.packVersion})` : ""}`,
+                      onClick: () => { void handleExportDatapack(datapack.dir) },
+                    }))
+                  : [{ label: "No datapacks loaded", disabled: true }],
+              },
             ] as MenuItem[]}
             isOpen={isHeaderMenuFiveOpen}
             setIsOpen={setIsHeaderMenuFiveOpen}

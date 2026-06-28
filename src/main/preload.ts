@@ -172,6 +172,15 @@ const electronApi: ElectronAPI = {
   datapackClear: () => {
     return ipcRenderer.invoke('datapack-clear')
   },
+  pickExportFolder: () => {
+    return ipcRenderer.invoke('pick-export-folder')
+  },
+  exportDatapack: (datapackDir: string) => {
+    return ipcRenderer.invoke('export-datapack', { datapackDir })
+  },
+  exportReveal: (filePath: string) => {
+    return ipcRenderer.invoke('export-reveal', { filePath })
+  },
   onShortcut: (callback: ShortcutHandler) => {
     ipcRenderer.on('shortcut', callback)
     return () => {

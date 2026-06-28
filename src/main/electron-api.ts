@@ -1,6 +1,9 @@
-import type { DatapackMetadata } from './datapack-parser'
+import type { DatapackMetadata, DatapackExportSettings } from './datapack-parser'
+import type { ExportDatapackResult } from './export'
 import type { AppPreferences } from './preferences'
 import type { WorkspaceData } from './workspace-parser'
+
+export type { DatapackExportSettings, ExportDatapackResult }
 
 export type TitlebarContextMenuPosition = { x: number; y: number }
 
@@ -134,6 +137,9 @@ export interface ElectronAPI {
   datapackUpdate: (updates: Partial<DatapackMetadata>) => Promise<DatapackMetadata | null>
   datapackSave: () => Promise<DatapackMetadata | null>
   datapackClear: () => Promise<void>
+  pickExportFolder: () => Promise<string | null>
+  exportDatapack: (datapackDir: string) => Promise<ExportDatapackResult>
+  exportReveal: (filePath: string) => Promise<void>
   onShortcut: (callback: ShortcutHandler) => () => void
   revealInFileExplorer: (filePath: string) => Promise<void>
   renameFileOrFolder: (oldPath: string, newName: string) => Promise<string>

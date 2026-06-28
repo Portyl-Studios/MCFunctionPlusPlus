@@ -9,6 +9,7 @@ import { readFile, registerFileOperationHandlers, registerPickDatapackMetadataFi
 import { registerWorkspaceHandlers } from './workspace'
 import workspaceManager from './workspace'
 import { registerDatapackHandlers, datapackManager } from './datapack'
+import { registerExportHandlers } from './export'
 import { registerMinecraftDataHandlers } from './minecraft-data'
 import { ensureInitialMinecraftVersionPreference, syncDefaultMinecraftVersionPreference } from './minecraft-default-version'
 import {
@@ -352,6 +353,10 @@ registerMinecraftDataHandlers(ipcMain, {
   userDataPath: __userDataPath,
 })
 registerFileOperationHandlers({
+  getAllowedRoots: getAllowedFileOperationRoots,
+})
+registerExportHandlers({
+  getMainWindow: () => mainWindow,
   getAllowedRoots: getAllowedFileOperationRoots,
 })
 
