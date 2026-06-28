@@ -135,13 +135,14 @@ const runExport = async (
 
   const zipBuffer = createZipArchive(zipEntries, exportDate)
 
-  // Resolve output directory (default ~/dist) and the templated filename. Only
-  // honor a configured directory when it is a valid absolute path (the
-  // isInvalidDirectory check rejects null bytes, reserved device names, and bad
-  // segments); otherwise fall back to the default.
+  // Resolve output directory (default ~/dist) and the templated filename. The
+  // configured path is stored relative to the datapack dir; resolve it back to an
+  // absolute path (an absolute stored value resolves to itself), then validate it
+  // (isInvalidDirectory rejects null bytes, reserved device names, bad segments).
   const configuredOutputDir = settings.outputDir?.trim()
-  const outputDir = configuredOutputDir && !isInvalidDirectory(configuredOutputDir)
-    ? configuredOutputDir
+  const resolvedOutputDir = configuredOutputDir ? path.resolve(datapackDir, configuredOutputDir) : ''
+  const outputDir = resolvedOutputDir && !isInvalidDirectory(resolvedOutputDir)
+    ? resolvedOutputDir
     : path.join(os.homedir(), DEFAULT_EXPORT_DIR_NAME)
   await fs.mkdir(outputDir, { recursive: true })
 
@@ -196,7 +197,7 @@ const runExport = async (
 export const registerExportHandlers = (options: ExportHandlerOptions): void => {
   const { getMainWindow, getAllowedRoots } = options
 
-  ipcMain.handle('pick-export-folder', async () => {
+  ipcMain.handle('pick-export-folder', async (_event, relativeToDir) => {
     const mainWindow = getMainWindow()
     if (!mainWindow) throw new Error('No main window')
 
@@ -208,7 +209,19 @@ export const registerExportHandlers = (options: ExportHandlerOptions): void => {
       return null
     }
 
-    return result.filePaths[0]
+    const picked = result.filePaths[0]
+
+    // Persist the path relative to the datapack metadata file when a base dir is
+    // given, so the export target stays valid if the datapack is moved/shared.
+    if (typeof relativeToDir === 'string' && isAbsolutePath(relativeToDir)) {
+      const relative = path.relative(relativeToDir, picked).replace(/\\/g, '/')
+      // '' means the datapack dir itself; an absolute result means cross-drive
+      // (no relative form exists on Windows) — keep that absolute.
+      if (relative === '') return '.'
+      if (!path.isAbsolute(relative)) return relative
+    }
+
+    return picked
   })
 
   ipcMain.handle('export-datapack', async (_event, { datapackDir }): Promise<ExportDatapackResult> => {

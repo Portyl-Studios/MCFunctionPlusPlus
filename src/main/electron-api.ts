@@ -137,7 +137,7 @@ export interface ElectronAPI {
   datapackUpdate: (updates: Partial<DatapackMetadata>) => Promise<DatapackMetadata | null>
   datapackSave: () => Promise<DatapackMetadata | null>
   datapackClear: () => Promise<void>
-  pickExportFolder: () => Promise<string | null>
+  pickExportFolder: (relativeToDir?: string) => Promise<string | null>
   exportDatapack: (datapackDir: string) => Promise<ExportDatapackResult>
   exportReveal: (filePath: string) => Promise<void>
   onShortcut: (callback: ShortcutHandler) => () => void

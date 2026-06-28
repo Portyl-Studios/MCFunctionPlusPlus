@@ -172,8 +172,8 @@ const electronApi: ElectronAPI = {
   datapackClear: () => {
     return ipcRenderer.invoke('datapack-clear')
   },
-  pickExportFolder: () => {
-    return ipcRenderer.invoke('pick-export-folder')
+  pickExportFolder: (relativeToDir?: string) => {
+    return ipcRenderer.invoke('pick-export-folder', relativeToDir)
   },
   exportDatapack: (datapackDir: string) => {
     return ipcRenderer.invoke('export-datapack', { datapackDir })

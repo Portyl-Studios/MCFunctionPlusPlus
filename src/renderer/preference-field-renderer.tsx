@@ -79,7 +79,7 @@ function TextFieldRenderer({
           await validateAndToastJavaExecutable(trimmedPath, () => onChange(trimmedPath))
         }
       } else if (config.browseAction === 'pickExportFolder') {
-        const selectedPath = await window.electron.pickExportFolder()
+        const selectedPath = await window.electron.pickExportFolder(config.browseRelativeTo)
         const trimmedPath = typeof selectedPath === 'string' ? selectedPath.trim() : ''
         if (trimmedPath) {
           onChange(trimmedPath)

@@ -249,8 +249,10 @@ function ExportSettingsSection({
 
   const outputDirConfig = fieldConfigs.text('Output Folder', {
     placeholder: 'Default (~/dist)',
+    description: 'Saved relative to the datapack folder (leave blank for ~/dist).',
     browseAction: 'pickExportFolder',
     browseButtonLabel: 'Browse',
+    browseRelativeTo: datapack.dir,
   })
   const templateConfig = fieldConfigs.text('File Name Template', {
     placeholder: DEFAULT_EXPORT_FILENAME_TEMPLATE,
@@ -287,6 +289,7 @@ function ExportSettingsSection({
         <label className="inspector-panel-field-label">
           <span>{outputDirConfig.label}</span>
         </label>
+        <p className="inspector-panel-field-description">{outputDirConfig.description}</p>
         <div className="inspector-panel-field-input">
           <PreferenceFieldRenderer
             fieldKey="outputDir"

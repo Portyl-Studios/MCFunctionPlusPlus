@@ -30,6 +30,8 @@ export interface TextFieldConfig extends BaseFieldConfig {
   multiline?: boolean
   browseAction?: 'pickJavaExecutable' | 'pickExportFolder'
   browseButtonLabel?: string
+  // For 'pickExportFolder': the dir the picked path is stored relative to.
+  browseRelativeTo?: string
 }
 
 export interface NumberFieldConfig extends BaseFieldConfig {
