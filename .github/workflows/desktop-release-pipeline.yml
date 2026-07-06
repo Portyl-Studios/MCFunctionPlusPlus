@@ -17,11 +17,11 @@ concurrency:
 
 jobs:
   test:
-    # Gate the release on a green unit-test run. Runs on windows-latest to match
+    # Gate the release on a green unit-test run. Pinned to windows-2022 to match
     # the release environment (the app is Windows-only and some tests exercise
     # Windows path behavior). [skip ci] commits never trigger this workflow, so
     # the bot's version-bump commit does not run this job.
-    runs-on: windows-latest
+    runs-on: windows-2022
     permissions:
       contents: read
 
@@ -44,7 +44,13 @@ jobs:
   release:
     needs: test
     if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && github.actor != 'github-actions[bot]' }}
-    runs-on: windows-latest
+    # Pinned to windows-2022. The electron-builder step runs @electron/rebuild,
+    # which compiles the native @parcel/watcher module against the Electron ABI
+    # and therefore needs the Visual Studio C++ toolchain. GitHub's windows-latest
+    # image moved to Windows Server 2025, where node-gyp can no longer locate that
+    # toolchain ("Could not find any Visual Studio installation to use"). windows-2022
+    # ships VS 2022 with the C++ workload that node-gyp detects.
+    runs-on: windows-2022
     permissions:
       actions: read
       contents: write
