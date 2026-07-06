@@ -219,12 +219,35 @@ jobs:
         if: steps.release-assets.outputs.should_publish == 'true'
         run: npm run build
 
-      - name: Build and publish NSIS release
+      # Build only -- do NOT let electron-builder publish. With --publish always it
+      # stages artifacts into its own draft release and then fails to finalize it,
+      # because the workflow-owned published release already claims this tag. That
+      # split leaves the installer + latest.yml stranded in a draft. Instead we
+      # build here and attach the artifacts to the workflow's release below.
+      - name: Build NSIS installer
+        if: steps.release-assets.outputs.should_publish == 'true'
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+        run: npx electron-builder --win nsis --publish never
+
+      # Attach the installer, its blockmap, and the auto-update feed (latest.yml)
+      # to the single release the workflow created. Explicit paths (not globs) so a
+      # missing latest.yml fails the run loudly rather than shipping an installer
+      # with no update metadata. --clobber makes re-runs idempotent.
+      - name: Upload installer assets to release
         if: steps.release-assets.outputs.should_publish == 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
-        run: npx electron-builder --win nsis --publish always
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION=$(node -p "require('./package.json').version")
+          # NSIS artifactName is "${name}-setup-${version}.${ext}" (lowercase package name)
+          gh release upload "${{ steps.release-tag.outputs.tag }}" \
+            "release/mcfunctionplusplus-setup-${VERSION}.exe" \
+            "release/mcfunctionplusplus-setup-${VERSION}.exe.blockmap" \
+            "release/latest.yml" \
+            --clobber
 
       - name: Summary
         if: steps.release-assets.outputs.should_publish != 'true'
